@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Pencil } from 'lucide-react';
 import { EditHourlyRateModal } from '@/components/EditHourlyRateModal';
-import { formatStaffHourlyRate } from '@/utils/staffRate';
+import { formatStaffHourlyRatePlain } from '@/utils/staffRate';
 import type { TeacherProfile } from '@/types';
 
 interface TeacherHourlyRateCellProps {
@@ -18,7 +18,7 @@ export function TeacherHourlyRateCell({
   onSave,
 }: TeacherHourlyRateCellProps) {
   const [open, setOpen] = useState(false);
-  const label = formatStaffHourlyRate(teacher.hourlyRate);
+  const label = formatStaffHourlyRatePlain(teacher.hourlyRate);
 
   if (!editable) {
     return <span className="text-sm text-slate-800">{label}</span>;

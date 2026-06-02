@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Calendar, X } from 'lucide-react';
+import { Calendar, Pencil, X } from 'lucide-react';
 import { PageHeader } from '@/components/PageHeader';
 import { SearchBox } from '@/components/SearchBox';
+import { StudentFormModal } from '@/components/StudentFormModal';
 import { DataTable } from '@/components/ui/DataTable';
 import { SlidingTabs } from '@/components/ui/SlidingTabs';
 import { Card, CardContent } from '@/components/ui/Card';
@@ -11,7 +12,9 @@ import { studentsApi } from '@/api/resources';
 import { mockStudents } from '@/utils/mockData';
 import { ACTIVE_STATUSES } from '@/utils/constants';
 import { activeRecordStatus, filterByStatus, getStatusCounts } from '@/utils/statusFilter';
+import { formatDateDDMMYYYY } from '@/utils/dateFormat';
 import { formatGender } from '@/utils/gender';
+import { formToStudentPayload, type StudentFormValues } from '@/utils/studentForm';
 import type { StudentProfile } from '@/types';
 
 const STATUS_TABS = ['All', ...ACTIVE_STATUSES] as const;
@@ -21,18 +24,14 @@ function dateOfBirthKey(value?: string) {
   return value.slice(0, 10);
 }
 
-function formatDateOfBirth(value?: string) {
-  if (!value) return '—';
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return value;
-  return d.toLocaleDateString('en-MY', { day: 'numeric', month: 'short', year: 'numeric' });
-}
-
 export default function StudentsManagement() {
   const [students, setStudents] = useState<StudentProfile[]>([]);
   const [nameFilter, setNameFilter] = useState('');
   const [dateFilter, setDateFilter] = useState('');
   const [statusTab, setStatusTab] = useState('All');
+  const [editing, setEditing] = useState<StudentProfile | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
 
   useEffect(() => {
     studentsApi
@@ -80,12 +79,65 @@ export default function StudentsManagement() {
     setStatusTab('All');
   };
 
+  const handleSave = async (values: StudentFormValues) => {
+    if (!editing) return;
+    setSaving(true);
+    setError('');
+    const payload = formToStudentPayload(values);
+
+    try {
+      const updated =
+        import.meta.env.VITE_USE_MOCK === 'true'
+          ? {
+              ...editing,
+              fullName: payload.fullName,
+              email: payload.email,
+              studentCode: payload.studentCode,
+              dateOfBirth: payload.dateOfBirth,
+              gender: payload.gender,
+              schoolName: payload.schoolName,
+              notes: payload.notes,
+            }
+          : await studentsApi.update(editing.id, payload);
+      setStudents((list) => list.map((s) => (s.id === editing.id ? { ...s, ...updated } : s)));
+      setEditing(null);
+    } catch {
+      setStudents((list) =>
+        list.map((s) =>
+          s.id === editing.id
+            ? {
+                ...s,
+                fullName: payload.fullName,
+                email: payload.email,
+                studentCode: payload.studentCode,
+                dateOfBirth: payload.dateOfBirth,
+                gender: payload.gender,
+                schoolName: payload.schoolName,
+                notes: payload.notes,
+              }
+            : s
+        )
+      );
+      setError('Could not save to server — change applied locally.');
+      setEditing(null);
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
     <div>
       <PageHeader
         title="Students Management"
         description="Filter by name, date of birth, and record status"
       />
+
+      {error && (
+        <p className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800">
+          {error}
+        </p>
+      )}
+
       <Card>
         <CardContent className="p-0">
           <div className="flex flex-col gap-3 border-b border-slate-200 p-4 sm:flex-row sm:items-center">
@@ -131,21 +183,73 @@ export default function StudentsManagement() {
 
             <DataTable
               embedded
+              centered
               data={filtered}
               columns={[
-                { key: 'studentCode', header: 'Code' },
-                { key: 'fullName', header: 'Name' },
-                { key: 'email', header: 'Email' },
+                {
+                  key: 'studentCode',
+                  header: 'Code',
+                  sortable: true,
+                  sortType: 'text',
+                  getSortValue: (s) => s.studentCode,
+                },
+                {
+                  key: 'fullName',
+                  header: 'Name',
+                  sortable: true,
+                  sortType: 'text',
+                  getSortValue: (s) => s.fullName,
+                },
+                {
+                  key: 'email',
+                  header: 'Email',
+                  sortable: true,
+                  sortType: 'text',
+                  getSortValue: (s) => s.email,
+                },
                 {
                   key: 'dateOfBirth',
                   header: 'Date of birth',
-                  render: (s) => formatDateOfBirth(s.dateOfBirth),
+                  sortable: true,
+                  sortType: 'date',
+                  getSortValue: (s) => s.dateOfBirth ?? '',
+                  render: (s) => formatDateDDMMYYYY(s.dateOfBirth),
                 },
-                { key: 'schoolName', header: 'School' },
+                {
+                  key: 'schoolName',
+                  header: 'School',
+                  sortable: true,
+                  sortType: 'text',
+                  getSortValue: (s) => s.schoolName ?? '',
+                  render: (s) => s.schoolName || '—',
+                },
                 {
                   key: 'gender',
                   header: 'Gender',
+                  sortable: true,
+                  sortType: 'text',
+                  getSortValue: (s) => s.gender ?? '',
                   render: (s) => formatGender(s.gender),
+                },
+                {
+                  key: 'actions',
+                  header: '',
+                  className: 'w-[1%] whitespace-nowrap',
+                  render: (s) => (
+                    <div className="flex justify-center">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 w-8 p-0"
+                        onClick={() => setEditing(s)}
+                        aria-label={`Edit ${s.fullName}`}
+                        title="Edit student"
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  ),
                 },
               ]}
               emptyMessage={
@@ -157,6 +261,14 @@ export default function StudentsManagement() {
           </div>
         </CardContent>
       </Card>
+
+      <StudentFormModal
+        open={Boolean(editing)}
+        onClose={() => setEditing(null)}
+        student={editing}
+        onSubmit={handleSave}
+        saving={saving}
+      />
     </div>
   );
 }

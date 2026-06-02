@@ -3,6 +3,12 @@ export function formatStaffHourlyRate(rate?: number): string {
   return `RM ${Number.isInteger(value) ? value : value.toFixed(2)}`;
 }
 
+/** Plain number for tables (no currency prefix). */
+export function formatStaffHourlyRatePlain(rate?: number): string {
+  const value = rate ?? 0;
+  return Number.isInteger(value) ? String(value) : value.toFixed(2);
+}
+
 export function parseStaffHourlyRateInput(value: string): number | null {
   const trimmed = value.trim();
   if (!trimmed) return null;

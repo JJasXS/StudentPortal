@@ -16,14 +16,9 @@ import { applyInvoiceStatusOverrides } from '@/utils/mockInvoicePayments';
 import { loadParentPaymentDetails } from '@/utils/parentPaymentDetails';
 import type { Invoice } from '@/types';
 import type { ParentPaymentDetails } from '@/types/parentPayment';
+import { formatDateDDMMYYYY } from '@/utils/dateFormat';
 
 const STATUS_TABS = ['All', ...INVOICE_STATUSES] as const;
-
-function formatDueDate(value: string) {
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return value;
-  return d.toLocaleDateString('en-MY', { day: 'numeric', month: 'short', year: 'numeric' });
-}
 
 export default function ParentInvoicesPage() {
   const { user } = useAuth();
@@ -115,7 +110,7 @@ export default function ParentInvoicesPage() {
               {
                 key: 'dueDate',
                 header: 'Due',
-                render: (i) => formatDueDate(i.dueDate),
+                render: (i) => formatDateDDMMYYYY(i.dueDate),
               },
               {
                 key: 'status',

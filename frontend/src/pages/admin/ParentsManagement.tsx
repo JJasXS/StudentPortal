@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Calendar, Users, X } from 'lucide-react';
+import { Calendar, Pencil, Users, X } from 'lucide-react';
 import { PageHeader } from '@/components/PageHeader';
 import { SearchBox } from '@/components/SearchBox';
+import { ParentFormModal } from '@/components/ParentFormModal';
 import { DataTable } from '@/components/ui/DataTable';
 import { SlidingTabs } from '@/components/ui/SlidingTabs';
 import { ParentChildrenModal } from '@/components/ParentChildrenModal';
@@ -12,6 +13,8 @@ import { parentsApi, studentsApi } from '@/api/resources';
 import { mockParents, mockStudents } from '@/utils/mockData';
 import { ACTIVE_STATUSES } from '@/utils/constants';
 import { activeRecordStatus, filterByStatus, getStatusCounts } from '@/utils/statusFilter';
+import { formatDateDDMMYYYY } from '@/utils/dateFormat';
+import { formToParentPayload, type ParentFormValues } from '@/utils/parentForm';
 import type { ParentProfile, StudentProfile } from '@/types';
 
 const STATUS_TABS = ['All', ...ACTIVE_STATUSES] as const;
@@ -21,13 +24,6 @@ function createdDateKey(value?: string) {
   return value.slice(0, 10);
 }
 
-function formatCreatedDate(value?: string) {
-  if (!value) return '—';
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return '—';
-  return d.toLocaleDateString('en-MY', { day: 'numeric', month: 'short', year: 'numeric' });
-}
-
 export default function ParentsManagement() {
   const [parents, setParents] = useState<ParentProfile[]>([]);
   const [students, setStudents] = useState<StudentProfile[]>([]);
@@ -35,6 +31,9 @@ export default function ParentsManagement() {
   const [dateFilter, setDateFilter] = useState('');
   const [statusTab, setStatusTab] = useState('All');
   const [viewParent, setViewParent] = useState<ParentProfile | null>(null);
+  const [editing, setEditing] = useState<ParentProfile | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
 
   useEffect(() => {
     parentsApi
@@ -102,12 +101,61 @@ export default function ParentsManagement() {
     setStatusTab('All');
   };
 
+  const handleSave = async (values: ParentFormValues) => {
+    if (!editing) return;
+    setSaving(true);
+    setError('');
+    const payload = formToParentPayload(values);
+
+    try {
+      const updated =
+        import.meta.env.VITE_USE_MOCK === 'true'
+          ? {
+              ...editing,
+              fullName: payload.fullName,
+              email: payload.email,
+              phoneNumber: payload.phoneNumber,
+              relationship: payload.relationship,
+              address: payload.address,
+            }
+          : await parentsApi.update(editing.id, payload);
+      setParents((list) => list.map((p) => (p.id === editing.id ? { ...p, ...updated } : p)));
+      setEditing(null);
+    } catch {
+      setParents((list) =>
+        list.map((p) =>
+          p.id === editing.id
+            ? {
+                ...p,
+                fullName: payload.fullName,
+                email: payload.email,
+                phoneNumber: payload.phoneNumber,
+                relationship: payload.relationship,
+                address: payload.address,
+              }
+            : p
+        )
+      );
+      setError('Could not save to server — change applied locally.');
+      setEditing(null);
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
     <div>
       <PageHeader
         title="Parents Management"
         description="Filter by name, account date, and status — view linked children per parent"
       />
+
+      {error && (
+        <p className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800">
+          {error}
+        </p>
+      )}
+
       <Card>
         <CardContent className="p-0">
           <div className="flex flex-col gap-3 border-b border-slate-200 p-4 sm:flex-row sm:items-center">
@@ -153,37 +201,84 @@ export default function ParentsManagement() {
 
             <DataTable
               embedded
+              centered
               data={filtered}
               columns={[
-                { key: 'fullName', header: 'Name' },
-                { key: 'email', header: 'Email' },
-                { key: 'phoneNumber', header: 'Phone', render: (p) => p.phoneNumber || '—' },
-                { key: 'relationship', header: 'Relationship', render: (p) => p.relationship || '—' },
+                {
+                  key: 'fullName',
+                  header: 'Name',
+                  sortable: true,
+                  sortType: 'text',
+                  getSortValue: (p) => p.fullName,
+                },
+                {
+                  key: 'email',
+                  header: 'Email',
+                  sortable: true,
+                  sortType: 'text',
+                  getSortValue: (p) => p.email,
+                },
+                {
+                  key: 'phoneNumber',
+                  header: 'Phone',
+                  sortable: true,
+                  sortType: 'text',
+                  getSortValue: (p) => p.phoneNumber ?? '',
+                  render: (p) => p.phoneNumber || '—',
+                },
+                {
+                  key: 'relationship',
+                  header: 'Relationship',
+                  sortable: true,
+                  sortType: 'text',
+                  getSortValue: (p) => p.relationship ?? '',
+                  render: (p) => p.relationship || '—',
+                },
                 {
                   key: 'children',
                   header: 'Children',
+                  sortable: true,
+                  sortType: 'number',
+                  getSortValue: (p) => childCountByParent.get(p.id) ?? 0,
                   render: (p) => childCountByParent.get(p.id) ?? 0,
                 },
                 {
                   key: 'createdAt',
                   header: 'Joined',
-                  render: (p) => formatCreatedDate(p.createdAt),
+                  sortable: true,
+                  sortType: 'date',
+                  getSortValue: (p) => p.createdAt ?? '',
+                  render: (p) => formatDateDDMMYYYY(p.createdAt),
                 },
                 {
                   key: 'actions',
                   header: '',
                   className: 'w-[1%] whitespace-nowrap',
                   render: (p) => (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="h-8 w-8 p-0"
-                      onClick={() => setViewParent(p)}
-                      aria-label={`View children of ${p.fullName}`}
-                    >
-                      <Users className="h-4 w-4" />
-                    </Button>
+                    <div className="flex justify-center gap-1">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 w-8 p-0"
+                        onClick={() => setEditing(p)}
+                        aria-label={`Edit ${p.fullName}`}
+                        title="Edit parent"
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-8 w-8 p-0"
+                        onClick={() => setViewParent(p)}
+                        aria-label={`View children of ${p.fullName}`}
+                        title="View children"
+                      >
+                        <Users className="h-4 w-4" />
+                      </Button>
+                    </div>
                   ),
                 },
               ]}
@@ -194,6 +289,14 @@ export default function ParentsManagement() {
           </div>
         </CardContent>
       </Card>
+
+      <ParentFormModal
+        open={Boolean(editing)}
+        onClose={() => setEditing(null)}
+        parent={editing}
+        onSubmit={handleSave}
+        saving={saving}
+      />
 
       <ParentChildrenModal
         parent={viewParent}

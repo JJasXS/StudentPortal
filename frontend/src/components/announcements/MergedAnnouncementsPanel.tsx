@@ -6,6 +6,7 @@ import { StatusBadge } from '@/components/ui/StatusBadge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { HolidayCarousel } from '@/components/HolidayCarousel';
 import { GeneralAnnouncementList } from '@/components/announcements/GeneralAnnouncementList';
+import { formatDateDDMMYYYY } from '@/utils/dateFormat';
 import type { Announcement } from '@/types';
 
 type MergedAnnouncementsVariant = 'dashboard-admin' | 'page-admin' | 'page-viewer';
@@ -124,7 +125,7 @@ export function MergedAnnouncementsPanel({
                           {
                             key: 'createdAt',
                             header: 'Posted',
-                            render: (a) => new Date(a.createdAt).toLocaleDateString(),
+                            render: (a) => formatDateDDMMYYYY(a.createdAt),
                           },
                         ]
                       : [
@@ -137,7 +138,7 @@ export function MergedAnnouncementsPanel({
                           {
                             key: 'createdAt',
                             header: 'Posted',
-                            render: (a) => new Date(a.createdAt).toLocaleDateString(),
+                            render: (a) => formatDateDDMMYYYY(a.createdAt),
                           },
                         ]
                   }

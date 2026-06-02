@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { PageHeader } from '@/components/PageHeader';
-import { PageBackLink } from '@/components/PageBackLink';
+import { Breadcrumbs } from '@/components/ui/Breadcrumbs';
+import { AttendanceCheckInPanel } from '@/components/AttendanceCheckInPanel';
 import { AttendanceRoster } from '@/components/AttendanceRoster';
-import { teacherAttendanceHubUrl } from '@/utils/attendanceLinks';
+import { teacherClassesUrl } from '@/utils/attendanceLinks';
 import {
   ensureTodaySessions,
   formatClassSchedule,
@@ -180,19 +181,24 @@ export default function TakeAttendancePage() {
   if (!classId) {
     return (
       <div className="py-12 text-center text-sm text-slate-500">
-        <Link to={teacherAttendanceHubUrl()} className="text-primary-600 hover:underline">
-          Back to attendance
+        <Link to={teacherClassesUrl()} className="text-primary-600 hover:underline">
+          Back to my classes
         </Link>
       </div>
     );
   }
 
+  const breadcrumbs = [
+    { label: 'My Classes', to: teacherClassesUrl() },
+    { label: classItem?.className ?? 'Attendance' },
+  ];
+
   return (
     <div>
-      <PageBackLink to={teacherAttendanceHubUrl()} label="Attendance" />
+      <Breadcrumbs items={breadcrumbs} />
 
       <PageHeader
-        title={classItem?.className ?? 'Roster'}
+        title={classItem?.className ?? 'Attendance'}
         description={classItem ? formatClassSchedule(classItem) : undefined}
         actions={
           <>
@@ -231,6 +237,15 @@ export default function TakeAttendancePage() {
           </>
         }
       />
+
+      {todaySession && classItem && (
+        <Card className="mb-6">
+          <CardContent className="p-4 sm:p-6">
+            <p className="mb-3 text-sm font-medium text-slate-700">Student check-in code</p>
+            <AttendanceCheckInPanel session={todaySession} className={classItem.className} />
+          </CardContent>
+        </Card>
+      )}
 
       <Card>
         <CardContent className="p-0">

@@ -1,5 +1,6 @@
 import { Calendar, GraduationCap, Mail, Music2, School } from 'lucide-react';
 import { cn } from '@/utils/cn';
+import { formatDateDDMMYYYY } from '@/utils/dateFormat';
 import { formatGender } from '@/utils/gender';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import type { StudentProfile } from '@/types';
@@ -14,13 +15,6 @@ const accents = [
 
 function accentAt(index: number) {
   return accents[index % accents.length];
-}
-
-function formatDob(value?: string) {
-  if (!value) return '—';
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return value;
-  return d.toLocaleDateString('en-MY', { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
 function ageFromDob(value?: string) {
@@ -83,7 +77,7 @@ export function ChildProfileCard({ child, index = 0, className }: ChildProfileCa
         <ul className="space-y-2 text-sm text-slate-600">
           <li className="flex items-center gap-2">
             <Calendar className="h-4 w-4 shrink-0 text-slate-400" />
-            Born {formatDob(child.dateOfBirth)}
+            Born {formatDateDDMMYYYY(child.dateOfBirth)}
           </li>
           <li className="flex items-center gap-2">
             <School className="h-4 w-4 shrink-0 text-slate-400" />
@@ -139,7 +133,7 @@ export function PendingChildCard({ registration, className }: PendingChildCardPr
         <ul className="space-y-2 text-sm text-slate-600">
           <li className="flex items-center gap-2">
             <Calendar className="h-4 w-4 shrink-0 text-slate-400" />
-            Born {formatDob(registration.dateOfBirth)}
+            Born {formatDateDDMMYYYY(registration.dateOfBirth)}
             {age != null && ` · ${age} years`}
           </li>
           {registration.schoolName && (

@@ -57,7 +57,9 @@ export function SlidingTabs({ tabs, value, onChange, counts, className, trailing
                 onClick={() => onChange(tab)}
                 className={cn(
                   'relative flex-1 whitespace-nowrap px-2 pb-3 pt-3 text-center text-sm font-medium transition-colors',
-                  active ? 'text-primary-600' : 'text-slate-500 hover:text-slate-700'
+                  active
+                    ? 'text-primary-600 hover:text-primary-700'
+                    : 'text-slate-500 hover:text-slate-700'
                 )}
               >
                 {tab}

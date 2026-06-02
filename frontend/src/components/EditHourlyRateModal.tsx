@@ -47,7 +47,7 @@ export function EditHourlyRateModal({
       </p>
 
       <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">
-        Rate (RM)
+        Rate
       </label>
       <Input
         type="number"

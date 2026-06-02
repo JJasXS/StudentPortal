@@ -4,6 +4,7 @@ import { useAuth } from '@/context/AuthContext';
 import { PageHeader } from '@/components/PageHeader';
 import { StatCard } from '@/components/StatCard';
 import { TodayClassesList } from '@/components/TodayClassesList';
+import { TeacherStudentProgressSection } from '@/components/teacher/TeacherStudentProgressSection';
 import { Modal } from '@/components/ui/Modal';
 import { Button } from '@/components/ui/Button';
 import { classesApi, classSessionsApi, lessonNotesApi } from '@/api/resources';
@@ -68,6 +69,8 @@ export default function TeacherDashboard() {
         <StatCard title="Sessions" value={sessions.length} icon={ClipboardCheck} />
         <StatCard title="Lesson Notes" value={notesCount} icon={NotebookPen} />
       </div>
+
+      <TeacherStudentProgressSection teacherUserId={user?.id} lessonNotesCount={notesCount} />
 
       <Modal open={tipsOpen} onClose={() => setTipsOpen(false)} title="Quick tips" className="max-w-md">
         <ul className="space-y-3 text-sm text-slate-600">

@@ -1,9 +1,7 @@
 import { Link } from 'react-router-dom';
-import { teacherAttendanceHubUrl } from '@/utils/attendanceLinks';
+import { teacherClassAttendanceUrl } from '@/utils/attendanceLinks';
 import { Calendar, Clock, MapPin, Users, GraduationCap } from 'lucide-react';
 import { cn } from '@/utils/cn';
-import { StatusBadge } from '@/components/ui/StatusBadge';
-import { activeRecordStatus } from '@/utils/statusFilter';
 import type { ClassItem } from '@/types';
 
 const courseAccent: Record<string, string> = {
@@ -29,7 +27,6 @@ interface TeacherClassCardProps {
 
 export function TeacherClassCard({ classItem, className }: TeacherClassCardProps) {
   const accent = accentForClass(classItem);
-  const status = activeRecordStatus(classItem.isActive);
 
   return (
     <article
@@ -52,15 +49,12 @@ export function TeacherClassCard({ classItem, className }: TeacherClassCardProps
       </div>
 
       <div className="flex flex-1 flex-col gap-3 p-4">
-        <div className="flex flex-wrap items-center gap-2">
-          <StatusBadge status={status} />
-          {classItem.enrolledCount != null && (
-            <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-600">
-              <Users className="h-3 w-3" />
-              {classItem.enrolledCount} / {classItem.maxStudents}
-            </span>
-          )}
-        </div>
+        {classItem.enrolledCount != null && (
+          <span className="inline-flex w-fit items-center gap-1 rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-600">
+            <Users className="h-3 w-3" />
+            {classItem.enrolledCount} / {classItem.maxStudents}
+          </span>
+        )}
 
         <ul className="space-y-2 text-sm text-slate-600">
           <li className="flex items-center gap-2">
@@ -79,16 +73,16 @@ export function TeacherClassCard({ classItem, className }: TeacherClassCardProps
 
         <div className="mt-auto flex gap-2 border-t border-slate-100 pt-3">
           <Link
-            to="/teacher/sessions"
+            to={`/teacher/classes/${classItem.id}/sessions`}
             className="flex-1 rounded-lg bg-primary-50 px-3 py-2 text-center text-sm font-medium text-primary-700 transition-colors hover:bg-primary-100"
           >
             Sessions
           </Link>
           <Link
-            to={teacherAttendanceHubUrl()}
+            to={teacherClassAttendanceUrl(classItem.id)}
             className="flex-1 rounded-lg border border-slate-200 px-3 py-2 text-center text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50"
           >
-            Check-in code
+            Attendance
           </Link>
         </div>
       </div>

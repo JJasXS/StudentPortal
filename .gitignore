@@ -1,0 +1,29 @@
+# Dependencies
+node_modules/
+frontend/dist/
+
+# Build outputs
+backend/**/bin/
+backend/**/obj/
+backend/**/*.db
+backend/**/*.db-shm
+backend/**/*.db-wal
+
+# Environment
+.env
+.env.local
+frontend/.env.local
+
+# IDE
+.vs/
+.vscode/
+*.user
+*.suo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*

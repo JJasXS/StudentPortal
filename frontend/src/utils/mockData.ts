@@ -420,14 +420,12 @@ export const mockCourses: Course[] = [
 
 export const mockClasses: ClassItem[] = [
   { id: 'cl1', courseId: 'c1', courseName: 'Piano Beginner', teacherUserId: '2', teacherName: 'Sarah Chen', className: 'Piano Mon AM', dayOfWeek: 'Monday', startTime: '10:00', endTime: '11:00', maxStudents: 12, enrolledCount: 10, location: 'Room A', isActive: true },
-  { id: 'cl2', courseId: 'c2', courseName: 'Guitar Beginner', teacherUserId: '3', teacherName: 'David Wong', className: 'Guitar Wed PM', dayOfWeek: 'Wednesday', startTime: '15:00', endTime: '16:00', maxStudents: 6, enrolledCount: 4, location: 'Room B', isActive: true },
-  { id: 'cl3', courseId: 'c1', courseName: 'Piano Beginner', teacherUserId: '2', teacherName: 'Sarah Chen', className: 'Piano Sat AM', dayOfWeek: 'Saturday', startTime: '09:00', endTime: '10:00', maxStudents: 8, enrolledCount: 6, location: 'Room A', isActive: true },
+  { id: 'cl2', courseId: 'c2', courseName: 'Guitar Beginner', teacherUserId: '3', teacherName: 'David Wong', className: 'Guitar Wed PM', dayOfWeek: 'Wednesday', startTime: '15:00', endTime: '16:00', maxStudents: 6, enrolledCount: 2, location: 'Room B', isActive: true },
+  { id: 'cl3', courseId: 'c1', courseName: 'Piano Beginner', teacherUserId: '2', teacherName: 'Sarah Chen', className: 'Piano Sat AM', dayOfWeek: 'Saturday', startTime: '09:00', endTime: '10:00', maxStudents: 8, enrolledCount: 2, location: 'Room A', isActive: true },
 ];
 
 export const mockEnrollments: Enrollment[] = [
   { id: 'e1', studentUserId: '4', studentName: 'Emily Tan', classId: 'cl1', className: 'Piano Mon AM', enrollmentDate: '2025-01-15', status: 'Active' },
-  { id: 'e2', studentUserId: '5', studentName: 'James Lim', classId: 'cl2', className: 'Guitar Wed PM', enrollmentDate: '2025-02-01', status: 'Active' },
-  { id: 'e3', studentUserId: '4', studentName: 'Emily Tan', classId: 'cl3', className: 'Piano Sat AM', enrollmentDate: '2025-01-20', status: 'Active' },
   { id: 'e4', studentUserId: '8', studentName: 'Sophia Lee', classId: 'cl1', className: 'Piano Mon AM', enrollmentDate: '2025-02-10', status: 'Active' },
   { id: 'e5', studentUserId: '10', studentName: 'Chloe Ng', classId: 'cl1', className: 'Piano Mon AM', enrollmentDate: '2025-03-01', status: 'Active' },
   { id: 'e6', studentUserId: '9', studentName: 'Ahmad Razak', classId: 'cl1', className: 'Piano Mon AM', enrollmentDate: '2025-03-15', status: 'Active' },
@@ -437,6 +435,10 @@ export const mockEnrollments: Enrollment[] = [
   { id: 'e10', studentUserId: '32', studentName: 'Zara Ali', classId: 'cl1', className: 'Piano Mon AM', enrollmentDate: '2025-04-18', status: 'Active' },
   { id: 'e11', studentUserId: '33', studentName: 'Ethan Lim', classId: 'cl1', className: 'Piano Mon AM', enrollmentDate: '2025-05-01', status: 'Active' },
   { id: 'e12', studentUserId: '34', studentName: 'Olivia Chan', classId: 'cl1', className: 'Piano Mon AM', enrollmentDate: '2025-05-05', status: 'Active' },
+  { id: 'e13', studentUserId: '5', studentName: 'James Lim', classId: 'cl2', className: 'Guitar Wed PM', enrollmentDate: '2025-02-01', status: 'Active' },
+  { id: 'e14', studentUserId: '8', studentName: 'Sophia Lee', classId: 'cl2', className: 'Guitar Wed PM', enrollmentDate: '2025-02-15', status: 'Active' },
+  { id: 'e15', studentUserId: '4', studentName: 'Emily Tan', classId: 'cl3', className: 'Piano Sat AM', enrollmentDate: '2025-01-20', status: 'Active' },
+  { id: 'e16', studentUserId: '9', studentName: 'Ahmad Razak', classId: 'cl3', className: 'Piano Sat AM', enrollmentDate: '2025-03-01', status: 'Active' },
 ];
 
 export const mockClassSessions: ClassSession[] = [

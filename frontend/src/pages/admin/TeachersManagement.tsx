@@ -266,11 +266,20 @@ export default function TeachersManagement() {
               embedded
               data={filtered}
               columns={[
-                { key: 'fullName', header: 'Name' },
+                {
+                  key: 'fullName',
+                  header: 'Name',
+                  sortable: true,
+                  sortType: 'text',
+                  getSortValue: (t) => t.fullName,
+                },
                 {
                   key: 'specialization',
                   header: 'Specialization',
                   className: 'max-w-[240px]',
+                  sortable: true,
+                  sortType: 'text',
+                  getSortValue: (t) => t.specialization ?? '',
                   render: (t) => (
                     <TeacherSpecializationCell
                       teacher={t}
@@ -284,6 +293,9 @@ export default function TeachersManagement() {
                 {
                   key: 'employmentType',
                   header: 'Employment',
+                  sortable: true,
+                  sortType: 'text',
+                  getSortValue: (t) => getEmploymentTypeLabel(t.employmentType),
                   render: (t) => (
                     <TeacherEmploymentTypeCell
                       teacher={t}
@@ -296,6 +308,9 @@ export default function TeachersManagement() {
                 {
                   key: 'hourlyRate',
                   header: 'Rate',
+                  sortable: true,
+                  sortType: 'number',
+                  getSortValue: (t) => t.hourlyRate ?? 0,
                   render: (t) => (
                     <TeacherHourlyRateCell
                       teacher={t}

@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { teacherAttendanceHubUrl } from '@/utils/attendanceLinks';
+import { teacherClassAttendanceUrl } from '@/utils/attendanceLinks';
 import { Calendar, Clock, ClipboardCheck, BookOpen } from 'lucide-react';
 import { cn } from '@/utils/cn';
 import { StatusBadge } from '@/components/ui/StatusBadge';
@@ -80,7 +80,7 @@ export function TeacherSessionCard({ session, className }: TeacherSessionCardPro
 
         <div className="mt-auto flex gap-2 border-t border-slate-100 pt-3">
           <Link
-            to={teacherAttendanceHubUrl()}
+            to={teacherClassAttendanceUrl(session.classId)}
             className="flex flex-1 items-center justify-center gap-1 rounded-lg bg-primary-50 px-3 py-2 text-sm font-medium text-primary-700 transition-colors hover:bg-primary-100"
           >
             <ClipboardCheck className="h-4 w-4" />

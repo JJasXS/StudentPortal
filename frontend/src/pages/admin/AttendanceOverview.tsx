@@ -4,7 +4,6 @@ import { PageHeader } from '@/components/PageHeader';
 import { SearchBox } from '@/components/SearchBox';
 import { DataTable } from '@/components/ui/DataTable';
 import { SlidingTabs } from '@/components/ui/SlidingTabs';
-import { StatusBadge } from '@/components/ui/StatusBadge';
 import { Card, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
@@ -12,16 +11,10 @@ import { attendanceApi } from '@/api/resources';
 import { mockAttendance } from '@/utils/mockData';
 import { ATTENDANCE_STATUSES } from '@/utils/constants';
 import { filterByStatus, getStatusCounts } from '@/utils/statusFilter';
+import { formatDateDDMMYYYY } from '@/utils/dateFormat';
 import type { Attendance } from '@/types';
 
 const STATUS_TABS = ['All', ...ATTENDANCE_STATUSES] as const;
-
-function formatSessionDate(value?: string) {
-  if (!value) return '—';
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return value;
-  return d.toLocaleDateString('en-MY', { day: 'numeric', month: 'short', year: 'numeric' });
-}
 
 function sessionDateKey(value?: string) {
   if (!value) return '';
@@ -124,15 +117,10 @@ export default function AttendanceOverview() {
                 {
                   key: 'sessionDate',
                   header: 'Date',
-                  render: (a) => formatSessionDate(a.sessionDate),
+                  render: (a) => formatDateDDMMYYYY(a.sessionDate),
                 },
                 { key: 'className', header: 'Class' },
                 { key: 'studentName', header: 'Student' },
-                {
-                  key: 'status',
-                  header: 'Status',
-                  render: (a) => <StatusBadge status={a.status} />,
-                },
                 { key: 'remarks', header: 'Remarks', render: (a) => a.remarks || '—' },
               ]}
               emptyMessage={

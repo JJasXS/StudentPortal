@@ -1,12 +1,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { StatusBadge } from '@/components/ui/StatusBadge';
+import { formatDateDDMMYYYY } from '@/utils/dateFormat';
 import type { Announcement } from '@/types';
-
-function formatPosted(value: string) {
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return value;
-  return d.toLocaleDateString('en-MY', { day: 'numeric', month: 'short', year: 'numeric' });
-}
 
 interface GeneralAnnouncementListProps {
   items: Announcement[];
@@ -35,7 +30,7 @@ export function GeneralAnnouncementList({
               {a.targetRole !== 'All' && <StatusBadge status={a.targetRole} />}
             </div>
             <p className="text-xs text-slate-400">
-              {formatPosted(a.createdAt)}
+              {formatDateDDMMYYYY(a.createdAt)}
               {a.createdByName ? ` · ${a.createdByName}` : ''}
             </p>
           </CardHeader>

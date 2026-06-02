@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
+import { Link, useParams } from 'react-router-dom';
 import { X } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { PageHeader } from '@/components/PageHeader';
+import { Breadcrumbs } from '@/components/ui/Breadcrumbs';
 import { SearchBox } from '@/components/SearchBox';
 import { TeacherSessionCard } from '@/components/TeacherSessionCard';
 import { SlidingTabs } from '@/components/ui/SlidingTabs';
@@ -11,7 +13,7 @@ import { classSessionsApi, classesApi } from '@/api/resources';
 import { mockClassSessions, mockClasses } from '@/utils/mockData';
 import { SESSION_STATUSES } from '@/utils/constants';
 import { filterByStatus, getStatusCounts } from '@/utils/statusFilter';
-import type { ClassSession } from '@/types';
+import type { ClassItem, ClassSession } from '@/types';
 
 const STATUS_TABS = ['All', ...SESSION_STATUSES] as const;
 
@@ -21,35 +23,48 @@ function sessionSortKey(s: ClassSession) {
 
 export default function ClassSessionsPage() {
   const { user } = useAuth();
+  const { classId } = useParams<{ classId: string }>();
+  const [classItem, setClassItem] = useState<ClassItem | null>(null);
   const [sessions, setSessions] = useState<ClassSession[]>([]);
   const [statusTab, setStatusTab] = useState('All');
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!user?.id) return;
+    if (!user?.id || !classId) return;
     setLoading(true);
+
     Promise.all([
       classSessionsApi.getAll().catch(() => mockClassSessions),
       classesApi.getAll().catch(() => mockClasses),
     ])
       .then(([sess, classes]) => {
-        const myClassIds = classes.filter((c) => c.teacherUserId === user.id).map((c) => c.id);
+        const cls =
+          classes.find((c) => c.id === classId && c.teacherUserId === user.id) ??
+          mockClasses.find((c) => c.id === classId && c.teacherUserId === user.id) ??
+          null;
+
+        setClassItem(cls);
+
+        if (!cls) {
+          setSessions([]);
+          return;
+        }
+
         setSessions(
           sess
-            .filter((s) => myClassIds.includes(s.classId))
+            .filter((s) => s.classId === classId)
             .sort((a, b) => sessionSortKey(b).localeCompare(sessionSortKey(a)))
         );
       })
       .finally(() => setLoading(false));
-  }, [user?.id]);
+  }, [user?.id, classId]);
 
   const filteredBySearch = useMemo(() => {
     const q = search.trim().toLowerCase();
     if (!q) return sessions;
     return sessions.filter(
       (s) =>
-        (s.className?.toLowerCase().includes(q) ?? false) ||
         (s.topic?.toLowerCase().includes(q) ?? false) ||
         s.sessionDate.slice(0, 10).includes(q) ||
         s.status.toLowerCase().includes(q)
@@ -69,11 +84,52 @@ export default function ClassSessionsPage() {
 
   const hasActiveFilters = Boolean(search.trim() || statusTab !== 'All');
 
+  if (!classId) {
+    return (
+      <p className="text-center text-sm text-slate-500">
+        Invalid link.{' '}
+        <Link to="/teacher/classes" className="text-primary-600 hover:underline">
+          Back to my classes
+        </Link>
+      </p>
+    );
+  }
+
+  if (!loading && !classItem) {
+    return (
+      <div>
+        <Breadcrumbs
+          items={[
+            { label: 'My Classes', to: '/teacher/classes' },
+            { label: 'Class not found' },
+          ]}
+        />
+        <p className="text-center text-sm text-slate-500">
+          This class is not assigned to you.{' '}
+          <Link to="/teacher/classes" className="text-primary-600 hover:underline">
+            Back to my classes
+          </Link>
+        </p>
+      </div>
+    );
+  }
+
+  const breadcrumbs = [
+    { label: 'My Classes', to: '/teacher/classes' },
+    { label: classItem?.className ?? 'Sessions' },
+  ];
+
   return (
     <div>
+      <Breadcrumbs items={breadcrumbs} />
+
       <PageHeader
-        title="Class Sessions"
-        description="Lesson sessions for your classes — newest first"
+        title={classItem?.className ?? 'Class sessions'}
+        description={
+          classItem
+            ? `${classItem.courseName ?? 'Class'} · ${classItem.dayOfWeek}, ${classItem.startTime} – ${classItem.endTime}`
+            : 'Lesson sessions for this class'
+        }
       />
 
       <Card>
@@ -82,7 +138,7 @@ export default function ClassSessionsPage() {
             <SearchBox
               value={search}
               onChange={setSearch}
-              placeholder="Search by class, topic, or date..."
+              placeholder="Search by topic or date..."
               className="max-w-none flex-1"
             />
             {hasActiveFilters && (
@@ -119,7 +175,7 @@ export default function ClassSessionsPage() {
                 <p className="mt-1 text-sm text-slate-500">
                   {hasActiveFilters
                     ? 'Try adjusting your search or status filter.'
-                    : 'No lesson sessions are scheduled for your classes yet.'}
+                    : 'No lesson sessions are scheduled for this class yet.'}
                 </p>
               </div>
             ) : (

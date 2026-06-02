@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Pencil, Plus, Trash2, X } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { Eye, Pencil, Plus, Trash2, X } from 'lucide-react';
 import { PageHeader } from '@/components/PageHeader';
 import { SearchBox } from '@/components/SearchBox';
 import { CourseFormModal } from '@/components/CourseFormModal';
@@ -21,7 +22,7 @@ const STATUS_TABS = ['All', ...ACTIVE_STATUSES] as const;
 export default function CoursesManagement() {
   const [courses, setCourses] = useState<Course[]>([]);
   const [search, setSearch] = useState('');
-  const [statusTab, setStatusTab] = useState('All');
+  const [statusTab, setStatusTab] = useState('Active');
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<Course | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Course | null>(null);
@@ -72,11 +73,11 @@ export default function CoursesManagement() {
     [filteredBySearch, statusTab]
   );
 
-  const hasActiveFilters = Boolean(search.trim() || statusTab !== 'All');
+  const hasActiveFilters = Boolean(search.trim() || statusTab !== 'Active');
 
   const clearFilters = () => {
     setSearch('');
-    setStatusTab('All');
+    setStatusTab('Active');
   };
 
   const openCreate = () => {
@@ -261,13 +262,22 @@ export default function CoursesManagement() {
                 {
                   key: 'actions',
                   header: '',
-                  className: 'w-24',
+                  className: 'w-28',
                   render: (c) => (
                     <div className="flex justify-center gap-1">
+                      <Link
+                        to={`/admin/courses/${c.id}?tab=classes`}
+                        className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-600 transition-colors hover:bg-slate-100 hover:text-primary-700"
+                        aria-label={`View classes for ${c.courseName}`}
+                        title="View classes"
+                      >
+                        <Eye className="h-4 w-4" />
+                      </Link>
                       <Button
                         type="button"
                         variant="ghost"
                         size="sm"
+                        className="h-8 w-8 p-0"
                         onClick={() => openEdit(c)}
                         aria-label={`Edit ${c.courseName}`}
                         title="Edit"

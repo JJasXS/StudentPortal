@@ -1,5 +1,6 @@
 import type { Announcement } from '@/types';
 import { getAnnouncementCategory } from './announcements';
+import { formatDateDDMMYYYY } from './dateFormat';
 
 export function getHolidayDate(announcement: Announcement): Date | null {
   if (announcement.holidayDate) {
@@ -27,21 +28,12 @@ export function getDaysUntil(date: Date, from: Date = new Date()): number {
 }
 
 export function formatHolidayDate(date: Date) {
-  return date.toLocaleDateString('en-MY', {
-    weekday: 'long',
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric',
-  });
+  const weekday = date.toLocaleDateString('en-MY', { weekday: 'long' });
+  return `${weekday}, ${formatDateDDMMYYYY(date)}`;
 }
 
 export function formatHolidayDateShort(date: Date) {
-  return date.toLocaleDateString('en-MY', {
-    weekday: 'short',
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric',
-  });
+  return formatDateDDMMYYYY(date);
 }
 
 export function getDaysLeftLabel(days: number): string {

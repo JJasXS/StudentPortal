@@ -1,7 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
 import { TrendingUp, Users, ClipboardCheck, BookOpen } from 'lucide-react';
-import { useAuth } from '@/context/AuthContext';
-import { PageHeader } from '@/components/PageHeader';
 import { StatCard } from '@/components/StatCard';
 import { StudentProgressGrid } from '@/components/StudentProgressGrid';
 import {
@@ -10,30 +8,42 @@ import {
   StudentSkillBarChart,
 } from '@/components/progress/ProgressCharts';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
-import { attendanceApi, lessonNotesApi } from '@/api/resources';
-import { mockAttendance, mockLessonNotes } from '@/utils/mockData';
+import { lessonNotesApi } from '@/api/resources';
+import { mockLessonNotes } from '@/utils/mockData';
 import { getMockProgressForTeacher } from '@/utils/mockStudentProgress';
 import type { TeacherProgressData } from '@/types/progress';
 
-export default function StudentProgressPage() {
-  const { user } = useAuth();
+interface TeacherStudentProgressSectionProps {
+  teacherUserId?: string;
+  lessonNotesCount?: number;
+}
+
+export function TeacherStudentProgressSection({
+  teacherUserId,
+  lessonNotesCount,
+}: TeacherStudentProgressSectionProps) {
   const [progress, setProgress] = useState<TeacherProgressData>(() =>
-    getMockProgressForTeacher(user?.id)
+    getMockProgressForTeacher(teacherUserId)
   );
-  const [liveNotes, setLiveNotes] = useState(0);
+  const [liveNotes, setLiveNotes] = useState(lessonNotesCount ?? 0);
 
   useEffect(() => {
-    setProgress(getMockProgressForTeacher(user?.id));
-  }, [user?.id]);
+    setProgress(getMockProgressForTeacher(teacherUserId));
+  }, [teacherUserId]);
 
   useEffect(() => {
-    Promise.all([
-      attendanceApi.getAll().catch(() => mockAttendance),
-      lessonNotesApi.getAll().catch(() => mockLessonNotes),
-    ]).then(([, notes]) => {
-      setLiveNotes(notes.filter((n) => n.teacherUserId === user?.id).length);
-    });
-  }, [user?.id]);
+    if (lessonNotesCount != null) {
+      setLiveNotes(lessonNotesCount);
+      return;
+    }
+    if (!teacherUserId) return;
+    lessonNotesApi
+      .getAll()
+      .catch(() => mockLessonNotes)
+      .then((notes) => {
+        setLiveNotes(notes.filter((n) => n.teacherUserId === teacherUserId).length);
+      });
+  }, [teacherUserId, lessonNotesCount]);
 
   const summary = useMemo(() => {
     const students = progress.students;
@@ -58,11 +68,13 @@ export default function StudentProgressPage() {
   );
 
   return (
-    <div>
-      <PageHeader
-        title="Student Progress"
-        description="Attendance trends, skill growth, and per-student overview"
-      />
+    <section className="mt-8">
+      <div className="mb-4">
+        <h2 className="text-lg font-semibold text-slate-900">Student progress</h2>
+        <p className="mt-0.5 text-sm text-slate-500">
+          Attendance trends, skill growth, and per-student overview
+        </p>
+      </div>
 
       <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard title="Students" value={summary.studentCount} icon={Users} />
@@ -104,7 +116,7 @@ export default function StudentProgressPage() {
         </Card>
       </div>
 
-      <div className="mb-6 grid gap-4 lg:grid-cols-5">
+      <div className="grid gap-4 lg:grid-cols-5">
         <Card className="lg:col-span-2">
           <CardHeader>
             <CardTitle className="text-base">Skill by student</CardTitle>
@@ -129,6 +141,6 @@ export default function StudentProgressPage() {
           </CardContent>
         </Card>
       </div>
-    </div>
+    </section>
   );
 }

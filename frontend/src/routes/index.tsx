@@ -1,4 +1,4 @@
-import { Navigate, Route, Routes } from 'react-router-dom';
+import { Navigate, Route, Routes, useParams } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
 import ProtectedRoute from '@/components/ProtectedRoute';
 import DashboardLayout from '@/layouts/DashboardLayout';
@@ -11,6 +11,8 @@ import StudentsManagement from '@/pages/admin/StudentsManagement';
 import ParentsManagement from '@/pages/admin/ParentsManagement';
 import TeachersManagement from '@/pages/admin/TeachersManagement';
 import CoursesManagement from '@/pages/admin/CoursesManagement';
+import CourseDetailPage from '@/pages/admin/CourseDetailPage';
+import ClassDetailPage from '@/pages/admin/ClassDetailPage';
 import ClassesManagement from '@/pages/admin/ClassesManagement';
 import EnrollmentsManagement from '@/pages/admin/EnrollmentsManagement';
 import AttendanceOverview from '@/pages/admin/AttendanceOverview';
@@ -20,10 +22,8 @@ import SettingsPage from '@/pages/admin/SettingsPage';
 import TeacherDashboard from '@/pages/teacher/TeacherDashboard';
 import TeacherClassesPage from '@/pages/teacher/TeacherClassesPage';
 import ClassSessionsPage from '@/pages/teacher/ClassSessionsPage';
-import TeacherAttendanceHub from '@/pages/teacher/TeacherAttendanceHub';
 import TakeAttendancePage from '@/pages/teacher/TakeAttendancePage';
 import TeacherLessonNotesPage from '@/pages/teacher/TeacherLessonNotesPage';
-import StudentProgressPage from '@/pages/teacher/StudentProgressPage';
 import TeacherAnnouncementsPage from '@/pages/teacher/TeacherAnnouncementsPage';
 import StudentDashboard from '@/pages/student/StudentDashboard';
 import StudentClassesPage from '@/pages/student/StudentClassesPage';
@@ -38,6 +38,12 @@ import ParentLessonNotesPage from '@/pages/parent/ParentLessonNotesPage';
 import ParentAnnouncementsPage from '@/pages/parent/ParentAnnouncementsPage';
 import ParentInvoicesPage from '@/pages/parent/ParentInvoicesPage';
 import type { UserRole } from '@/types';
+
+function LegacyTeacherAttendanceRedirect() {
+  const { classId } = useParams<{ classId: string }>();
+  if (!classId) return <Navigate to="/teacher/classes" replace />;
+  return <Navigate to={`/teacher/classes/${classId}/attendance`} replace />;
+}
 
 function RoleRedirect() {
   const { user } = useAuth();
@@ -69,6 +75,8 @@ export default function AppRoutes() {
             <Route path="/admin/parents" element={<ParentsManagement />} />
             <Route path="/admin/teachers" element={<TeachersManagement />} />
             <Route path="/admin/courses" element={<CoursesManagement />} />
+            <Route path="/admin/courses/:courseId" element={<CourseDetailPage />} />
+            <Route path="/admin/courses/:courseId/classes/:classId" element={<ClassDetailPage />} />
             <Route path="/admin/classes" element={<ClassesManagement />} />
             <Route path="/admin/enrollments" element={<EnrollmentsManagement />} />
             <Route path="/admin/attendance" element={<AttendanceOverview />} />
@@ -80,11 +88,12 @@ export default function AppRoutes() {
           <Route element={<ProtectedRoute allowedRoles={['Teacher']} />}>
             <Route path="/teacher/dashboard" element={<TeacherDashboard />} />
             <Route path="/teacher/classes" element={<TeacherClassesPage />} />
-            <Route path="/teacher/sessions" element={<ClassSessionsPage />} />
-            <Route path="/teacher/attendance" element={<TeacherAttendanceHub />} />
-            <Route path="/teacher/attendance/:classId" element={<TakeAttendancePage />} />
+            <Route path="/teacher/classes/:classId/sessions" element={<ClassSessionsPage />} />
+            <Route path="/teacher/classes/:classId/attendance" element={<TakeAttendancePage />} />
+            <Route path="/teacher/sessions" element={<Navigate to="/teacher/classes" replace />} />
+            <Route path="/teacher/attendance" element={<Navigate to="/teacher/classes" replace />} />
+            <Route path="/teacher/attendance/:classId" element={<LegacyTeacherAttendanceRedirect />} />
             <Route path="/teacher/lesson-notes" element={<TeacherLessonNotesPage />} />
-            <Route path="/teacher/progress" element={<StudentProgressPage />} />
             <Route path="/teacher/announcements" element={<TeacherAnnouncementsPage />} />
           </Route>
 

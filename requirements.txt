@@ -1,0 +1,64 @@
+# Music Tuition Portal - Setup Requirements
+
+This file is a human-readable checklist of tools required before running the project.
+
+## 1. .NET SDK 8 or latest stable
+Download: https://dotnet.microsoft.com/en-us/download
+
+Verify:
+dotnet --version
+
+## 2. Node.js LTS
+Download: https://nodejs.org
+
+Verify:
+node --version
+npm --version
+
+## 3. PostgreSQL
+Download: https://www.postgresql.org/download/
+
+Default local setup used by this project:
+- Host: localhost
+- Port: 5432
+- Database: music_tuition_portal
+- Username: postgres
+- Password: postgres
+
+## 4. Git
+Download: https://git-scm.com/downloads
+
+Verify:
+git --version
+
+## 5. IDE
+Visual Studio Code or Cursor
+
+## 6. Recommended VS Code / Cursor extensions
+- C#
+- C# Dev Kit
+- ESLint
+- Prettier
+- Tailwind CSS IntelliSense
+- PostgreSQL extension
+
+## 7. Backend NuGet packages (installed via dotnet restore)
+- Microsoft.EntityFrameworkCore
+- Microsoft.EntityFrameworkCore.Design
+- Npgsql.EntityFrameworkCore.PostgreSQL
+- Microsoft.AspNetCore.Authentication.JwtBearer
+- System.IdentityModel.Tokens.Jwt
+- Swashbuckle.AspNetCore
+- BCrypt.Net-Next
+
+## 8. Frontend npm packages (installed via npm install)
+- react
+- react-dom
+- vite
+- typescript
+- react-router-dom
+- axios
+- tailwindcss
+- postcss
+- autoprefixer
+- lucide-react
