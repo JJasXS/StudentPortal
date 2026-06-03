@@ -1,12 +1,15 @@
+import { useMemo } from 'react';
 import { Megaphone } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { SearchBox } from '@/components/SearchBox';
 import { DataTable } from '@/components/ui/DataTable';
-import { StatusBadge } from '@/components/ui/StatusBadge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
-import { HolidayCarousel } from '@/components/HolidayCarousel';
-import { GeneralAnnouncementList } from '@/components/announcements/GeneralAnnouncementList';
 import { formatDateDDMMYYYY } from '@/utils/dateFormat';
+import {
+  filterAnnouncementsBySearch,
+  getAnnouncementCategory,
+  mergeAnnouncements,
+} from '@/utils/announcements';
 import type { Announcement } from '@/types';
 
 type MergedAnnouncementsVariant = 'dashboard-admin' | 'page-admin' | 'page-viewer';
@@ -15,12 +18,13 @@ interface MergedAnnouncementsPanelProps {
   holidays: Announcement[];
   general: Announcement[];
   variant: MergedAnnouncementsVariant;
-  /** Show link from holiday carousel to full announcements page */
   announcementsPath?: string;
   search?: string;
   onSearchChange?: (value: string) => void;
   generalEmptyMessage?: string;
   className?: string;
+  /** e.g. /teacher/announcements — enables title links to /:id with route state */
+  announcementDetailBasePath?: string;
 }
 
 export function MergedAnnouncementsPanel({
@@ -32,25 +36,42 @@ export function MergedAnnouncementsPanel({
   onSearchChange,
   generalEmptyMessage = 'No announcements.',
   className,
+  announcementDetailBasePath,
 }: MergedAnnouncementsPanelProps) {
   const isDashboard = variant === 'dashboard-admin';
   const isAdminPage = variant === 'page-admin';
-  const showViewAll = Boolean(announcementsPath) && isDashboard;
+  const isViewerPage = variant === 'page-viewer';
+  const detailEnabled = Boolean(announcementDetailBasePath);
 
-  const filteredGeneral =
-    isAdminPage && search != null
-      ? general.filter((a) => {
-          const q = search.trim().toLowerCase();
-          if (!q) return true;
-          return (
-            a.title.toLowerCase().includes(q) ||
-            a.content.toLowerCase().includes(q) ||
-            a.createdByName?.toLowerCase().includes(q)
-          );
-        })
-      : general;
+  const titleCell = (a: Announcement) =>
+    detailEnabled ? (
+      <Link
+        to={`${announcementDetailBasePath}/${a.id}`}
+        state={{ announcement: a }}
+        className="text-left font-medium text-primary-700 hover:text-primary-800 hover:underline"
+      >
+        {a.title}
+      </Link>
+    ) : (
+      <span className="font-medium text-slate-900">{a.title}</span>
+    );
 
-  const hasNothing = holidays.length === 0 && filteredGeneral.length === 0;
+  const merged = useMemo(() => {
+    const combined = mergeAnnouncements(holidays, general);
+    if (isAdminPage && search != null) {
+      return filterAnnouncementsBySearch(combined, search);
+    }
+    return combined;
+  }, [holidays, general, isAdminPage, search]);
+
+  const senderLabel = (a: Announcement) => a.createdByName?.trim() || 'Centre';
+
+  const dateLabel = (a: Announcement) => {
+    if (getAnnouncementCategory(a) === 'Holiday' && a.holidayDate) {
+      return formatDateDDMMYYYY(a.holidayDate);
+    }
+    return formatDateDDMMYYYY(a.createdAt);
+  };
 
   return (
     <Card className={className}>
@@ -59,9 +80,9 @@ export function MergedAnnouncementsPanel({
           <CardTitle className="flex items-center gap-2 text-base">
             <Megaphone className="h-4 w-4 text-primary-600" />
             Announcements
-            {(holidays.length > 0 || general.length > 0) && (
+            {merged.length > 0 && (
               <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-normal text-slate-600">
-                {holidays.length + general.length}
+                {merged.length}
               </span>
             )}
           </CardTitle>
@@ -75,79 +96,103 @@ export function MergedAnnouncementsPanel({
           )}
         </div>
       </CardHeader>
-      <CardContent className="space-y-6 pt-0">
-        {hasNothing ? (
-          <p className="py-8 text-center text-sm text-slate-500">{generalEmptyMessage}</p>
-        ) : (
-          <>
-            {holidays.length > 0 && (
-              <section>
-                <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  Public holidays
-                </h3>
-                <HolidayCarousel
-                  holidays={holidays}
-                  showViewAllLink={showViewAll}
-                  viewAllPath={announcementsPath}
-                />
-              </section>
-            )}
+      <CardContent className="pt-0">
+        {isAdminPage && onSearchChange != null && (
+          <div className="mb-4">
+            <SearchBox
+              value={search ?? ''}
+              onChange={onSearchChange}
+              placeholder="Search announcements..."
+            />
+          </div>
+        )}
 
-            <section>
-              <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                Notices
-              </h3>
-              {isAdminPage && onSearchChange != null && (
-                <div className="mb-4">
-                  <SearchBox
-                    value={search ?? ''}
-                    onChange={onSearchChange}
-                    placeholder="Search announcements..."
-                  />
-                </div>
-              )}
-              {isDashboard || isAdminPage ? (
-                <DataTable
-                  embedded
-                  data={filteredGeneral}
-                  emptyMessage={generalEmptyMessage}
-                  columns={
-                    isAdminPage
-                      ? [
-                          { key: 'title', header: 'Title' },
-                          { key: 'content', header: 'Content', className: 'max-w-xs truncate' },
-                          {
-                            key: 'targetRole',
-                            header: 'Target',
-                            render: (a) => <StatusBadge status={a.targetRole} />,
-                          },
-                          { key: 'createdByName', header: 'Created By' },
-                          {
-                            key: 'createdAt',
-                            header: 'Posted',
-                            render: (a) => formatDateDDMMYYYY(a.createdAt),
-                          },
-                        ]
-                      : [
-                          { key: 'title', header: 'Title' },
-                          {
-                            key: 'targetRole',
-                            header: 'For',
-                            render: (a) => <StatusBadge status={a.targetRole} />,
-                          },
-                          {
-                            key: 'createdAt',
-                            header: 'Posted',
-                            render: (a) => formatDateDDMMYYYY(a.createdAt),
-                          },
-                        ]
-                  }
-                />
-              ) : (
-                <GeneralAnnouncementList items={general} emptyMessage={generalEmptyMessage} />
-              )}
-            </section>
-          </>
+        {merged.length === 0 ? (
+          <p className="py-8 text-center text-sm text-slate-500">{generalEmptyMessage}</p>
+        ) : isViewerPage ? (
+          <DataTable
+            embedded
+            data={merged}
+            emptyMessage={generalEmptyMessage}
+            columns={[
+              {
+                key: 'title',
+                header: 'Title',
+                sortable: true,
+                sortType: 'text',
+                getSortValue: (a) => a.title,
+                className: 'whitespace-normal pr-6',
+                render: (a) => titleCell(a),
+              },
+              {
+                key: 'sender',
+                header: 'Sender',
+                colWidth: '10rem',
+                sortable: true,
+                sortType: 'text',
+                getSortValue: (a) => senderLabel(a),
+                render: (a) => <span className="text-slate-700">{senderLabel(a)}</span>,
+              },
+              {
+                key: 'date',
+                header: 'Date',
+                colWidth: '7rem',
+                sortable: true,
+                sortType: 'date',
+                getSortValue: (a) =>
+                  getAnnouncementCategory(a) === 'Holiday' && a.holidayDate
+                    ? a.holidayDate
+                    : a.createdAt,
+                render: (a) => (
+                  <span className="tabular-nums text-slate-600">{dateLabel(a)}</span>
+                ),
+              },
+            ]}
+          />
+        ) : (
+          <DataTable
+            embedded
+            data={merged}
+            emptyMessage={generalEmptyMessage}
+            columns={
+              isAdminPage
+                ? [
+                    {
+                      key: 'title',
+                      header: 'Title',
+                      className: 'whitespace-normal pr-6',
+                      render: (a) => titleCell(a),
+                    },
+                    {
+                      key: 'sender',
+                      header: 'Sender',
+                      colWidth: '10rem',
+                      render: (a) => senderLabel(a),
+                    },
+                    {
+                      key: 'date',
+                      header: 'Date',
+                      colWidth: '7rem',
+                      render: (a) => dateLabel(a),
+                    },
+                  ]
+                : [
+                    { key: 'title', header: 'Title', className: 'pr-6' },
+                    {
+                      key: 'sender',
+                      header: 'Sender',
+                      colWidth: '10rem',
+                      render: (a) => senderLabel(a),
+                    },
+                    {
+                      key: 'date',
+                      header: 'Date',
+                      colWidth: '7rem',
+                      render: (a) => dateLabel(a),
+                    },
+                  ]
+            }
+          />
         )}
       </CardContent>
     </Card>

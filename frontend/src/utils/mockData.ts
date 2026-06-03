@@ -12,6 +12,12 @@ import type {
   TeacherProfile,
   User,
 } from '@/types';
+import {
+  dashboardSeedEnrollments,
+  dashboardSeedInvoices,
+  dashboardSeedStudents,
+  dashboardSeedUsers,
+} from '@/utils/mockDashboardSeed';
 
 export const mockUsers: User[] = [
   { id: '1', fullName: 'System Admin', email: 'admin@demo.com', role: 'Admin', phoneNumber: '+60123456789', isActive: true },
@@ -50,6 +56,7 @@ export const mockUsers: User[] = [
   { id: '16', fullName: 'Siti Rahman', email: 'siti.rahman@demo.com', role: 'Parent', phoneNumber: '+60123456801', isActive: true },
   { id: '17', fullName: 'Helen Koh', email: 'helen.koh@demo.com', role: 'Parent', phoneNumber: '+60123456802', isActive: false },
   { id: '18', fullName: 'Robert Ng', email: 'robert.ng@demo.com', role: 'Parent', phoneNumber: '+60123456803', isActive: false },
+  ...dashboardSeedUsers,
 ];
 
 export const mockStudents: StudentProfile[] = [
@@ -169,6 +176,7 @@ export const mockStudents: StudentProfile[] = [
     notes: 'Younger sibling — piano beginner',
     isActive: true,
   },
+  ...dashboardSeedStudents,
 ];
 
 export const mockParents: ParentProfile[] = [
@@ -419,27 +427,12 @@ export const mockCourses: Course[] = [
 ];
 
 export const mockClasses: ClassItem[] = [
-  { id: 'cl1', courseId: 'c1', courseName: 'Piano Beginner', teacherUserId: '2', teacherName: 'Sarah Chen', className: 'Piano Mon AM', dayOfWeek: 'Monday', startTime: '10:00', endTime: '11:00', maxStudents: 12, enrolledCount: 10, location: 'Room A', isActive: true },
-  { id: 'cl2', courseId: 'c2', courseName: 'Guitar Beginner', teacherUserId: '3', teacherName: 'David Wong', className: 'Guitar Wed PM', dayOfWeek: 'Wednesday', startTime: '15:00', endTime: '16:00', maxStudents: 6, enrolledCount: 2, location: 'Room B', isActive: true },
-  { id: 'cl3', courseId: 'c1', courseName: 'Piano Beginner', teacherUserId: '2', teacherName: 'Sarah Chen', className: 'Piano Sat AM', dayOfWeek: 'Saturday', startTime: '09:00', endTime: '10:00', maxStudents: 8, enrolledCount: 2, location: 'Room A', isActive: true },
+  { id: 'cl1', courseId: 'c1', courseName: 'Piano Beginner', teacherUserId: '2', teacherName: 'Sarah Chen', className: 'Piano Mon AM', dayOfWeek: 'Monday', startTime: '10:00', endTime: '11:00', maxStudents: 16, enrolledCount: 14, location: 'Room A', isActive: true },
+  { id: 'cl2', courseId: 'c2', courseName: 'Guitar Beginner', teacherUserId: '3', teacherName: 'David Wong', className: 'Guitar Wed PM', dayOfWeek: 'Wednesday', startTime: '15:00', endTime: '16:00', maxStudents: 10, enrolledCount: 8, location: 'Room B', isActive: true },
+  { id: 'cl3', courseId: 'c1', courseName: 'Piano Beginner', teacherUserId: '2', teacherName: 'Sarah Chen', className: 'Piano Sat AM', dayOfWeek: 'Saturday', startTime: '09:00', endTime: '10:00', maxStudents: 10, enrolledCount: 7, location: 'Room A', isActive: true },
 ];
 
-export const mockEnrollments: Enrollment[] = [
-  { id: 'e1', studentUserId: '4', studentName: 'Emily Tan', classId: 'cl1', className: 'Piano Mon AM', enrollmentDate: '2025-01-15', status: 'Active' },
-  { id: 'e4', studentUserId: '8', studentName: 'Sophia Lee', classId: 'cl1', className: 'Piano Mon AM', enrollmentDate: '2025-02-10', status: 'Active' },
-  { id: 'e5', studentUserId: '10', studentName: 'Chloe Ng', classId: 'cl1', className: 'Piano Mon AM', enrollmentDate: '2025-03-01', status: 'Active' },
-  { id: 'e6', studentUserId: '9', studentName: 'Ahmad Razak', classId: 'cl1', className: 'Piano Mon AM', enrollmentDate: '2025-03-15', status: 'Active' },
-  { id: 'e7', studentUserId: '11', studentName: 'Daniel Koh', classId: 'cl1', className: 'Piano Mon AM', enrollmentDate: '2025-04-01', status: 'Active' },
-  { id: 'e8', studentUserId: '30', studentName: 'Lucas Tan', classId: 'cl1', className: 'Piano Mon AM', enrollmentDate: '2025-04-10', status: 'Active' },
-  { id: 'e9', studentUserId: '31', studentName: 'Mia Wong', classId: 'cl1', className: 'Piano Mon AM', enrollmentDate: '2025-04-12', status: 'Active' },
-  { id: 'e10', studentUserId: '32', studentName: 'Zara Ali', classId: 'cl1', className: 'Piano Mon AM', enrollmentDate: '2025-04-18', status: 'Active' },
-  { id: 'e11', studentUserId: '33', studentName: 'Ethan Lim', classId: 'cl1', className: 'Piano Mon AM', enrollmentDate: '2025-05-01', status: 'Active' },
-  { id: 'e12', studentUserId: '34', studentName: 'Olivia Chan', classId: 'cl1', className: 'Piano Mon AM', enrollmentDate: '2025-05-05', status: 'Active' },
-  { id: 'e13', studentUserId: '5', studentName: 'James Lim', classId: 'cl2', className: 'Guitar Wed PM', enrollmentDate: '2025-02-01', status: 'Active' },
-  { id: 'e14', studentUserId: '8', studentName: 'Sophia Lee', classId: 'cl2', className: 'Guitar Wed PM', enrollmentDate: '2025-02-15', status: 'Active' },
-  { id: 'e15', studentUserId: '4', studentName: 'Emily Tan', classId: 'cl3', className: 'Piano Sat AM', enrollmentDate: '2025-01-20', status: 'Active' },
-  { id: 'e16', studentUserId: '9', studentName: 'Ahmad Razak', classId: 'cl3', className: 'Piano Sat AM', enrollmentDate: '2025-03-01', status: 'Active' },
-];
+export const mockEnrollments: Enrollment[] = dashboardSeedEnrollments;
 
 export const mockClassSessions: ClassSession[] = [
   { id: 'cs1', classId: 'cl1', className: 'Piano Mon AM', sessionDate: '2025-05-26', startTime: '10:00', endTime: '11:00', topic: 'Scales and Hand Position', status: 'Scheduled' },
@@ -485,151 +478,126 @@ export const mockLessonNotes: LessonNote[] = [
   },
 ];
 
+/** Ten sample announcements (holidays + notices) for demos and mock mode. */
 export const mockAnnouncements: Announcement[] = [
   {
-    id: 'an-h1',
-    title: 'King\'s Birthday — Centre Closed',
-    content: 'Centre closed for public holiday. All classes on this date are cancelled.',
+    id: 'an-01',
+    title: "King's Birthday — Centre Closed",
+    content:
+      'The music centre will be closed on Saturday, 7 June 2026 in observance of the King\'s Birthday public holiday. All group and individual classes on this date are cancelled. Your teacher will reach out to schedule any required makeup lessons. Please check Class Sessions in the portal once classes resume for your updated timetable.',
     category: 'Holiday',
     holidayDate: '2026-06-07',
     targetRole: 'All',
     createdByUserId: '1',
     createdByName: 'System Admin',
-    createdAt: '2025-05-22T09:00:00',
+    createdAt: '2026-05-28T09:00:00',
   },
   {
-    id: 'an-h2',
+    id: 'an-02',
     title: 'Public Holiday — Class Reschedule',
-    content: 'Classes on June 2 will be rescheduled. Please check your class sessions.',
+    content:
+      'Due to the public holiday on 2 June 2026, all classes originally scheduled for that day have been postponed. Updated session times are published under Class Sessions. If you are unsure of your new slot, please contact the front desk or your teacher before your next lesson.',
     category: 'Holiday',
     holidayDate: '2026-06-02',
     targetRole: 'All',
     createdByUserId: '1',
     createdByName: 'System Admin',
-    createdAt: '2025-05-20T09:00:00',
+    createdAt: '2026-05-25T09:00:00',
   },
   {
-    id: 'an-h3',
+    id: 'an-03',
     title: 'Mid-Year Break',
-    content: 'Centre closed for mid-year break. Normal classes resume the following week.',
+    content:
+      'The centre will close for our mid-year break beginning 20 July 2026. There will be no teaching during this period. Normal classes resume on the following Monday unless your teacher advises otherwise. We hope students enjoy a restful break and return ready for the second half of the term.',
     category: 'Holiday',
     holidayDate: '2026-07-20',
     targetRole: 'All',
     createdByUserId: '1',
     createdByName: 'System Admin',
-    createdAt: '2025-05-15T09:00:00',
+    createdAt: '2026-05-20T09:00:00',
   },
   {
-    id: 'an-h4',
+    id: 'an-04',
     title: 'Merdeka Day — Centre Closed',
-    content: 'The centre will be closed on 31 August for Merdeka Day. No classes on that date.',
+    content:
+      'In observance of Merdeka Day on 31 August 2026, the centre will be closed and no classes will run. The front desk reopens on the next working day. We wish everyone a meaningful national day celebration.',
     category: 'Holiday',
     holidayDate: '2026-08-31',
     targetRole: 'All',
     createdByUserId: '1',
     createdByName: 'System Admin',
-    createdAt: '2025-05-10T09:00:00',
+    createdAt: '2026-05-15T09:00:00',
   },
   {
-    id: 'an-h5',
-    title: 'Malaysia Day — Centre Closed',
-    content: 'Centre closed for Malaysia Day. Classes will not run on this date.',
+    id: 'an-05',
+    title: 'Deepavali — Centre Closed',
+    content:
+      'The music centre will be closed on Monday, 20 October 2026 for Deepavali. There will be no lessons, rehearsals, or practice room bookings on that day. We encourage students to continue light practice at home and to review lesson notes from the past week so skills stay fresh. Regular classes resume on the next scheduled teaching day. If you had a lesson booked on this date, your teacher will contact you about a makeup session. We wish all our families a joyful Deepavali.',
     category: 'Holiday',
-    holidayDate: '2026-09-16',
+    holidayDate: '2026-10-20',
     targetRole: 'All',
     createdByUserId: '1',
     createdByName: 'System Admin',
-    createdAt: '2025-05-08T09:00:00',
+    createdAt: '2026-05-10T09:00:00',
   },
   {
-    id: 'an-h6',
-    title: 'Christmas Day — Centre Closed',
-    content: 'Centre closed for Christmas. Happy holidays to all students and families.',
-    category: 'Holiday',
-    holidayDate: '2026-12-25',
-    targetRole: 'All',
-    createdByUserId: '1',
-    createdByName: 'System Admin',
-    createdAt: '2025-05-01T09:00:00',
-  },
-  {
-    id: 'an2',
-    title: 'Recital Registration Open',
-    content: 'Annual student recital registration is now open. Register by June 15.',
+    id: 'an-06',
+    title: 'Centre Open Day',
+    content:
+      'We invite all families to our Centre Open Day this Saturday from 10:00 to 14:00. Tour our studios, meet your child\'s teacher, and enjoy short performances from students across our programmes. Light refreshments will be served in the lobby. No registration is required — simply drop in at any time during the event.',
     category: 'General',
-    targetRole: 'Student',
+    targetRole: 'All',
     createdByUserId: '1',
     createdByName: 'System Admin',
-    createdAt: '2025-05-18T14:00:00',
+    createdAt: '2026-05-22T11:00:00',
   },
   {
-    id: 'an3',
-    title: 'Teacher Meeting',
-    content: 'Monthly teacher meeting on Friday at 4 PM in the staff room.',
+    id: 'an-07',
+    title: 'Parking & Drop-off Reminder',
+    content:
+      'During peak hours (16:00–19:00), please use the rear car park and avoid blocking the fire lane. For safety, students under 12 must be collected at the main lobby. Thank you for helping us keep arrival and dismissal smooth for everyone.',
+    category: 'General',
+    targetRole: 'All',
+    createdByUserId: '1',
+    createdByName: 'System Admin',
+    createdAt: '2026-05-18T10:00:00',
+  },
+  {
+    id: 'an-08',
+    title: 'Monthly Teacher Meeting',
+    content:
+      'All teaching staff are required to attend the monthly meeting this Friday at 16:00 in the staff room. We will review recital planning, updated attendance guidelines, and term schedules. Please bring your class roll if you have outstanding attendance entries to discuss.',
     category: 'General',
     targetRole: 'Teacher',
     createdByUserId: '1',
     createdByName: 'System Admin',
-    createdAt: '2025-05-17T10:00:00',
+    createdAt: '2026-05-17T10:00:00',
   },
   {
-    id: 'an5',
-    title: 'Practice Room Booking',
-    content: 'Extra practice rooms available on weekends. Book at the front desk.',
+    id: 'an-09',
+    title: 'Lesson Observation Week',
+    content:
+      'Lesson Observation Week runs from 9 to 13 June. Please sign up for a peer observation slot on the staff board. Observations will focus on warm-ups, student feedback, and homework follow-up. Participation supports our continuous professional development goals.',
+    category: 'General',
+    targetRole: 'Teacher',
+    createdByUserId: '1',
+    createdByName: 'System Admin',
+    createdAt: '2026-05-16T14:00:00',
+  },
+  {
+    id: 'an-10',
+    title: 'Annual Recital Registration',
+    content:
+      'Registration for the annual student recital is now open until 15 June. Speak with your teacher to confirm your repertoire, then submit the signed registration form at the front desk. Late entries may not be guaranteed a performance slot.',
     category: 'General',
     targetRole: 'Student',
     createdByUserId: '1',
     createdByName: 'System Admin',
-    createdAt: '2025-05-16T10:00:00',
-  },
-  {
-    id: 'an6',
-    title: 'Term Fee Reminder',
-    content: 'Term 2 invoices are available under Invoices. Payment is due by the 15th of the month.',
-    category: 'General',
-    targetRole: 'Parent',
-    createdByUserId: '1',
-    createdByName: 'System Admin',
-    createdAt: '2025-05-19T09:00:00',
-  },
-  {
-    id: 'an7',
-    title: 'Centre Open Day',
-    content: 'Families are welcome to visit on Saturday 10am–2pm. Meet teachers and tour our studios.',
-    category: 'General',
-    targetRole: 'All',
-    createdByUserId: '1',
-    createdByName: 'System Admin',
-    createdAt: '2025-05-14T11:00:00',
+    createdAt: '2026-05-14T09:00:00',
   },
 ];
 
-export const mockInvoices: Invoice[] = [
-  {
-    id: 'inv1',
-    studentUserId: '4',
-    studentName: 'Emily Tan',
-    parentUserId: '6',
-    parentName: 'Michael Tan',
-    invoiceNo: 'INV-2025-001',
-    amount: 350,
-    status: 'Unpaid',
-    dueDate: '2025-06-15',
-    createdAt: '2025-05-01T00:00:00',
-  },
-  {
-    id: 'inv2',
-    studentUserId: '5',
-    studentName: 'James Lim',
-    parentUserId: '7',
-    parentName: 'Lisa Lim',
-    invoiceNo: 'INV-2025-002',
-    amount: 280,
-    status: 'Paid',
-    dueDate: '2025-05-15',
-    createdAt: '2025-04-01T00:00:00',
-  },
-];
+export const mockInvoices: Invoice[] = dashboardSeedInvoices;
 
 export const demoCredentials = [
   { email: 'admin@demo.com', password: 'Admin@123', role: 'Admin' as const },

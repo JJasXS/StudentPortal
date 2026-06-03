@@ -439,7 +439,7 @@ public static class DbInitializer
             {
                 Id = Guid.NewGuid(),
                 Title = "King's Birthday — Centre Closed",
-                Content = "Centre closed for public holiday. All classes on this date are cancelled.",
+                Content = "The centre will be closed for the public holiday. All classes on this date are cancelled. Makeup lessons will be arranged by your teacher.",
                 Category = "Holiday",
                 HolidayDate = new DateTime(2026, 6, 7, 0, 0, 0, DateTimeKind.Utc),
                 TargetRole = "All",
@@ -449,7 +449,7 @@ public static class DbInitializer
             {
                 Id = Guid.NewGuid(),
                 Title = "Public Holiday — Class Reschedule",
-                Content = "Classes on June 2 will be rescheduled. Please check your class sessions.",
+                Content = "Classes scheduled on 2 June are postponed. Please check Class Sessions for updated times. Contact the office if you have questions.",
                 Category = "Holiday",
                 HolidayDate = new DateTime(2026, 6, 2, 0, 0, 0, DateTimeKind.Utc),
                 TargetRole = "All",
@@ -459,7 +459,7 @@ public static class DbInitializer
             {
                 Id = Guid.NewGuid(),
                 Title = "Mid-Year Break",
-                Content = "Centre closed for mid-year break. Normal classes resume the following week.",
+                Content = "Centre closed for the mid-year break from 20 July. Normal classes resume the following Monday. Enjoy the rest!",
                 Category = "Holiday",
                 HolidayDate = new DateTime(2026, 7, 20, 0, 0, 0, DateTimeKind.Utc),
                 TargetRole = "All",
@@ -469,7 +469,7 @@ public static class DbInitializer
             {
                 Id = Guid.NewGuid(),
                 Title = "Merdeka Day — Centre Closed",
-                Content = "The centre will be closed on 31 August for Merdeka Day. No classes on that date.",
+                Content = "No classes on 31 August in observance of Merdeka Day. The front desk will reopen on the next working day.",
                 Category = "Holiday",
                 HolidayDate = new DateTime(2026, 8, 31, 0, 0, 0, DateTimeKind.Utc),
                 TargetRole = "All",
@@ -478,37 +478,36 @@ public static class DbInitializer
             new Announcement
             {
                 Id = Guid.NewGuid(),
-                Title = "Malaysia Day — Centre Closed",
-                Content = "Centre closed for Malaysia Day. Classes will not run on this date.",
+                Title = "Deepavali — Centre Closed",
+                Content = "The music centre will be closed on Monday, 20 October 2026 for Deepavali. There will be no lessons, rehearsals, or practice room bookings on that day. We encourage students to continue light practice at home and to review lesson notes from the past week so skills stay fresh. Regular classes resume on the next scheduled teaching day. If you had a lesson booked on this date, your teacher will contact you about a makeup session. We wish all our families a joyful Deepavali.",
                 Category = "Holiday",
-                HolidayDate = new DateTime(2026, 9, 16, 0, 0, 0, DateTimeKind.Utc),
+                HolidayDate = new DateTime(2026, 10, 20, 0, 0, 0, DateTimeKind.Utc),
                 TargetRole = "All",
                 CreatedByUserId = adminId
             },
             new Announcement
             {
                 Id = Guid.NewGuid(),
-                Title = "Christmas Day — Centre Closed",
-                Content = "Centre closed for Christmas. Happy holidays to all students and families.",
-                Category = "Holiday",
-                HolidayDate = new DateTime(2026, 12, 25, 0, 0, 0, DateTimeKind.Utc),
-                TargetRole = "All",
-                CreatedByUserId = adminId
-            },
-            new Announcement
-            {
-                Id = Guid.NewGuid(),
-                Title = "Recital Registration Open",
-                Content = "Annual student recital registration is now open. Register by June 15.",
+                Title = "Centre Open Day",
+                Content = "Families are welcome Saturday 10:00–14:00. Meet teachers, tour studios, and hear short performances from our students.",
                 Category = "General",
-                TargetRole = "Student",
+                TargetRole = "All",
                 CreatedByUserId = adminId
             },
             new Announcement
             {
                 Id = Guid.NewGuid(),
-                Title = "Teacher Meeting",
-                Content = "Monthly teacher meeting on Friday at 4 PM in the staff room.",
+                Title = "Parking & Drop-off Reminder",
+                Content = "Please use the rear car park during peak hours (16:00–19:00). Do not block the fire lane. Students under 12 must be collected at the lobby.",
+                Category = "General",
+                TargetRole = "All",
+                CreatedByUserId = adminId
+            },
+            new Announcement
+            {
+                Id = Guid.NewGuid(),
+                Title = "Monthly Teacher Meeting",
+                Content = "All teaching staff: meeting Friday 16:00 in the staff room. Agenda includes recital planning and updated attendance guidelines.",
                 Category = "General",
                 TargetRole = "Teacher",
                 CreatedByUserId = adminId
@@ -516,8 +515,17 @@ public static class DbInitializer
             new Announcement
             {
                 Id = Guid.NewGuid(),
-                Title = "Practice Room Booking",
-                Content = "Extra practice rooms available on weekends. Book at the front desk.",
+                Title = "Lesson Observation Week",
+                Content = "Peer observations run 9–13 June. Sign up for a slot on the staff board. Focus areas: warm-ups, feedback, and homework follow-up.",
+                Category = "General",
+                TargetRole = "Teacher",
+                CreatedByUserId = adminId
+            },
+            new Announcement
+            {
+                Id = Guid.NewGuid(),
+                Title = "Annual Recital Registration",
+                Content = "Student recital registration is open until 15 June. Confirm repertoire with your teacher and submit the form at the front desk.",
                 Category = "General",
                 TargetRole = "Student",
                 CreatedByUserId = adminId

@@ -53,3 +53,28 @@ export function splitAnnouncementsForAdmin(announcements: Announcement[]): Split
     general: announcements.filter((a) => getAnnouncementCategory(a) === 'General'),
   };
 }
+
+function announcementSortDate(announcement: Announcement): number {
+  if (getAnnouncementCategory(announcement) === 'Holiday' && announcement.holidayDate) {
+    return new Date(announcement.holidayDate).getTime();
+  }
+  return new Date(announcement.createdAt).getTime();
+}
+
+/** Single feed: holidays and notices together, newest / soonest dates first. */
+export function mergeAnnouncements(holidays: Announcement[], general: Announcement[]): Announcement[] {
+  return [...holidays, ...general].sort(
+    (a, b) => announcementSortDate(b) - announcementSortDate(a)
+  );
+}
+
+export function filterAnnouncementsBySearch(items: Announcement[], search: string): Announcement[] {
+  const q = search.trim().toLowerCase();
+  if (!q) return items;
+  return items.filter(
+    (a) =>
+      a.title.toLowerCase().includes(q) ||
+      a.content.toLowerCase().includes(q) ||
+      a.createdByName?.toLowerCase().includes(q)
+  );
+}

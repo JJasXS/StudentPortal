@@ -11,11 +11,16 @@ import { cn } from '@/utils/cn';
 export type SortDirection = 'asc' | 'desc';
 export type ColumnSortType = 'text' | 'number' | 'date';
 
+export type ColumnAlign = 'left' | 'center' | 'right';
+
 export interface Column<T> {
   key: string;
   header: string;
   render?: (item: T) => React.ReactNode;
   className?: string;
+  align?: ColumnAlign;
+  /** Fixed column width (e.g. `10rem`) — enables table-fixed layout when set on any column */
+  colWidth?: string;
   sortable?: boolean;
   sortType?: ColumnSortType;
   getSortValue?: (item: T) => string | number | null | undefined;
@@ -96,7 +101,22 @@ export function DataTable<T extends object>({
   embedded = false,
   centered = false,
 }: DataTableProps<T>) {
-  const alignClass = centered ? 'text-center' : 'text-left';
+  const defaultAlign: ColumnAlign = centered ? 'center' : 'left';
+
+  const columnAlignClass = (col: Column<T>) => {
+    const align = col.align ?? defaultAlign;
+    if (align === 'right') return 'text-right';
+    if (align === 'center') return 'text-center';
+    return 'text-left';
+  };
+
+  const sortButtonClass = (col: Column<T>) => {
+    const align = col.align ?? defaultAlign;
+    if (align === 'right') return 'ml-auto';
+    if (align === 'center') return 'mx-auto';
+    return undefined;
+  };
+
   const [sortKey, setSortKey] = useState<string | null>(null);
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
 
@@ -126,6 +146,8 @@ export function DataTable<T extends object>({
     }
   };
 
+  const useFixedLayout = columns.some((c) => c.colWidth);
+
   if (data.length === 0) {
     return (
       <div
@@ -141,7 +163,19 @@ export function DataTable<T extends object>({
 
   return (
     <div className={cn('overflow-x-auto', !embedded && 'rounded-lg border border-slate-200')}>
-      <table className="min-w-full divide-y divide-slate-200">
+      <table
+        className={cn(
+          'w-full divide-y divide-slate-200',
+          useFixedLayout ? 'table-fixed' : 'min-w-full'
+        )}
+      >
+        {useFixedLayout && (
+          <colgroup>
+            {columns.map((col) => (
+              <col key={col.key} style={col.colWidth ? { width: col.colWidth } : undefined} />
+            ))}
+          </colgroup>
+        )}
         <thead className="bg-slate-50">
           <tr>
             {columns.map((col) => {
@@ -155,7 +189,7 @@ export function DataTable<T extends object>({
                     key={col.key}
                     className={cn(
                       'px-4 py-3 text-xs font-semibold uppercase tracking-wider text-slate-600',
-                      alignClass,
+                      columnAlignClass(col),
                       col.className
                     )}
                   >
@@ -169,7 +203,7 @@ export function DataTable<T extends object>({
                   key={col.key}
                   className={cn(
                     'px-4 py-3 text-xs font-semibold uppercase tracking-wider text-slate-600',
-                    alignClass,
+                    columnAlignClass(col),
                     col.className
                   )}
                 >
@@ -181,7 +215,7 @@ export function DataTable<T extends object>({
                     className={cn(
                       'inline-flex items-center gap-1 rounded-md transition-colors hover:text-primary-700',
                       active && 'text-primary-700',
-                      centered && 'mx-auto'
+                      sortButtonClass(col)
                     )}
                   >
                     <span>{col.header}</span>
@@ -202,7 +236,11 @@ export function DataTable<T extends object>({
               {columns.map((col) => (
                 <td
                   key={col.key}
-                  className={cn('whitespace-nowrap px-4 py-3 text-sm text-slate-700', alignClass, col.className)}
+                  className={cn(
+                    'whitespace-nowrap px-4 py-3 text-sm text-slate-700',
+                    columnAlignClass(col),
+                    col.className
+                  )}
                 >
                   {col.render ? col.render(item) : String((item as Record<string, unknown>)[col.key] ?? '')}
                 </td>

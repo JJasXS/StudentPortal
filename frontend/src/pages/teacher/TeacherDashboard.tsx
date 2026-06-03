@@ -1,15 +1,23 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Calendar, ClipboardCheck, Lightbulb, NotebookPen } from 'lucide-react';
+import {
+  Calendar,
+  ClipboardCheck,
+  Lightbulb,
+  NotebookPen,
+  CalendarDays,
+} from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { PageHeader } from '@/components/PageHeader';
 import { StatCard } from '@/components/StatCard';
 import { TodayClassesList } from '@/components/TodayClassesList';
+import { TeacherQuickActions } from '@/components/teacher/TeacherQuickActions';
 import { TeacherStudentProgressSection } from '@/components/teacher/TeacherStudentProgressSection';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Modal } from '@/components/ui/Modal';
 import { Button } from '@/components/ui/Button';
 import { classesApi, classSessionsApi, lessonNotesApi } from '@/api/resources';
 import { mockClasses, mockClassSessions, mockLessonNotes } from '@/utils/mockData';
-import { buildTodaySchedule } from '@/utils/teacherSchedule';
+import { buildTodaySchedule, formatTodayHeading } from '@/utils/teacherSchedule';
 import type { ClassItem, ClassSession } from '@/types';
 
 export default function TeacherDashboard() {
@@ -44,11 +52,17 @@ export default function TeacherDashboard() {
     [classes, sessions]
   );
 
+  const todayLabel = formatTodayHeading();
+
   return (
-    <div>
+    <div className="space-y-6">
       <PageHeader
-        title="Teacher Dashboard"
-        description={`Welcome, ${user?.fullName}`}
+        title="Dashboard"
+        description={
+          user?.fullName
+            ? `Welcome back, ${user.fullName} · ${todayLabel}`
+            : todayLabel
+        }
         actions={
           <Button
             type="button"
@@ -62,37 +76,64 @@ export default function TeacherDashboard() {
         }
       />
 
-      <TodayClassesList items={todayClasses} loading={loading} />
-
-      <div className="mb-6 grid gap-4 sm:grid-cols-3">
-        <StatCard title="My Classes" value={classes.length} icon={Calendar} />
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <StatCard title="My classes" value={classes.length} icon={Calendar} />
+        <StatCard
+          title="Today"
+          value={todayClasses.length}
+          icon={CalendarDays}
+          description={todayClasses.length === 1 ? 'class today' : 'classes today'}
+        />
         <StatCard title="Sessions" value={sessions.length} icon={ClipboardCheck} />
-        <StatCard title="Lesson Notes" value={notesCount} icon={NotebookPen} />
+        <StatCard
+          title="Lesson notes"
+          value={notesCount}
+          icon={NotebookPen}
+          description="Recorded for your students"
+        />
       </div>
 
-      <TeacherStudentProgressSection teacherUserId={user?.id} lessonNotesCount={notesCount} />
+      <TeacherQuickActions />
+
+      <TodayClassesList items={todayClasses} loading={loading} />
+
+      <Card>
+        <CardHeader className="border-b border-slate-100">
+          <CardTitle className="text-lg">Student progress</CardTitle>
+          <p className="text-sm font-normal text-slate-500">
+            Analytics across your classes — attendance, skills, and roster
+          </p>
+        </CardHeader>
+        <CardContent className="pt-6">
+          <TeacherStudentProgressSection
+            teacherUserId={user?.id}
+            lessonNotesCount={notesCount}
+            embedded
+          />
+        </CardContent>
+      </Card>
 
       <Modal open={tipsOpen} onClose={() => setTipsOpen(false)} title="Quick tips" className="max-w-md">
         <ul className="space-y-3 text-sm text-slate-600">
           <li className="flex gap-3 rounded-lg bg-slate-50 p-3">
             <Calendar className="mt-0.5 h-5 w-5 shrink-0 text-primary-600" />
             <span>
-              <strong className="text-slate-900">My classes today</strong> — see what&apos;s on your
-              schedule for the current day, including times and rooms.
+              <strong className="text-slate-900">Today&apos;s schedule</strong> — your classes for
+              the day appear at the top with times and rooms.
             </span>
           </li>
           <li className="flex gap-3 rounded-lg bg-slate-50 p-3">
             <ClipboardCheck className="mt-0.5 h-5 w-5 shrink-0 text-primary-600" />
             <span>
-              <strong className="text-slate-900">View</strong> — open any class on today&apos;s schedule
-              to see time, room, topic, and enrollment.
+              <strong className="text-slate-900">Attendance</strong> — open a class from My Classes
+              to take attendance or share a check-in code.
             </span>
           </li>
           <li className="flex gap-3 rounded-lg bg-slate-50 p-3">
             <NotebookPen className="mt-0.5 h-5 w-5 shrink-0 text-primary-600" />
             <span>
-              <strong className="text-slate-900">Lesson notes</strong> — record progress and practice
-              homework for students to review.
+              <strong className="text-slate-900">Lesson notes</strong> — record homework and
+              progress so students and parents can review.
             </span>
           </li>
         </ul>

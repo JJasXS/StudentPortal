@@ -16,11 +16,14 @@ import type { TeacherProgressData } from '@/types/progress';
 interface TeacherStudentProgressSectionProps {
   teacherUserId?: string;
   lessonNotesCount?: number;
+  /** Hide top-level heading and summary stat row (e.g. on dashboard) */
+  embedded?: boolean;
 }
 
 export function TeacherStudentProgressSection({
   teacherUserId,
   lessonNotesCount,
+  embedded = false,
 }: TeacherStudentProgressSectionProps) {
   const [progress, setProgress] = useState<TeacherProgressData>(() =>
     getMockProgressForTeacher(teacherUserId)
@@ -67,32 +70,54 @@ export function TeacherStudentProgressSection({
     [progress.students]
   );
 
-  return (
-    <section className="mt-8">
-      <div className="mb-4">
-        <h2 className="text-lg font-semibold text-slate-900">Student progress</h2>
-        <p className="mt-0.5 text-sm text-slate-500">
-          Attendance trends, skill growth, and per-student overview
-        </p>
-      </div>
+  const content = (
+    <>
+      {!embedded && (
+        <>
+          <div className="mb-4">
+            <h2 className="text-lg font-semibold text-slate-900">Student progress</h2>
+            <p className="mt-0.5 text-sm text-slate-500">
+              Attendance trends, skill growth, and per-student overview
+            </p>
+          </div>
 
-      <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <StatCard title="Students" value={summary.studentCount} icon={Users} />
-        <StatCard
-          title="Avg attendance"
-          value={`${summary.avgAttendance}%`}
-          icon={ClipboardCheck}
-        />
-        <StatCard title="Avg skill score" value={`${summary.avgSkill}/100`} icon={TrendingUp} />
-        <StatCard
-          title="Lesson notes"
-          value={liveNotes || progress.students.length}
-          icon={BookOpen}
-          description="Recorded for your classes"
-        />
-      </div>
+          <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <StatCard title="Students" value={summary.studentCount} icon={Users} />
+            <StatCard
+              title="Avg attendance"
+              value={`${summary.avgAttendance}%`}
+              icon={ClipboardCheck}
+            />
+            <StatCard title="Avg skill score" value={`${summary.avgSkill}/100`} icon={TrendingUp} />
+            <StatCard
+              title="Lesson notes"
+              value={liveNotes || progress.students.length}
+              icon={BookOpen}
+              description="Recorded for your classes"
+            />
+          </div>
+        </>
+      )}
 
-      <div className="mb-6 grid gap-4 lg:grid-cols-2">
+      {embedded && (
+        <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <StatCard title="Students" value={summary.studentCount} icon={Users} />
+          <StatCard
+            title="Avg attendance"
+            value={`${summary.avgAttendance}%`}
+            icon={ClipboardCheck}
+          />
+          <StatCard title="Avg skill" value={`${summary.avgSkill}/100`} icon={TrendingUp} />
+          <StatCard
+            title="Improving"
+            value={summary.improving}
+            icon={BookOpen}
+            description={`of ${summary.studentCount} students`}
+          />
+        </div>
+      )}
+
+      <div className={embedded ? 'grid gap-4 lg:grid-cols-2' : 'mb-6 grid gap-4 lg:grid-cols-2'}>
         <Card>
           <CardHeader>
             <CardTitle className="text-base">Weekly attendance</CardTitle>
@@ -131,9 +156,9 @@ export function TeacherStudentProgressSection({
 
         <Card className="lg:col-span-3">
           <CardHeader>
-            <CardTitle className="text-base">Student progress grid</CardTitle>
+            <CardTitle className="text-base">Student roster</CardTitle>
             <p className="text-sm font-normal text-slate-500">
-              Hover any cell for attendance, sessions, skill, and notes
+              Hover cells for attendance, sessions, and skill details
             </p>
           </CardHeader>
           <CardContent className="p-0 sm:p-6 sm:pt-0">
@@ -141,6 +166,12 @@ export function TeacherStudentProgressSection({
           </CardContent>
         </Card>
       </div>
-    </section>
+    </>
   );
+
+  if (embedded) {
+    return <div>{content}</div>;
+  }
+
+  return <section className="mt-8">{content}</section>;
 }

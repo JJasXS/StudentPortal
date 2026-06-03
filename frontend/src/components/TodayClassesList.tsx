@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Calendar, Clock, Eye, MapPin, Users } from 'lucide-react';
+import { Calendar, Clock, ClipboardCheck, Eye, MapPin, Users } from 'lucide-react';
+import { teacherClassAttendanceUrl, teacherClassSessionsUrl } from '@/utils/attendanceLinks';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Modal } from '@/components/ui/Modal';
 import { Button } from '@/components/ui/Button';
@@ -70,12 +71,17 @@ function TodayClassDetailModal({
             </li>
           )}
         </ul>
-        <div className="flex justify-end gap-2 border-t border-slate-100 pt-4">
+        <div className="flex flex-wrap justify-end gap-2 border-t border-slate-100 pt-4">
           <Button type="button" variant="outline" onClick={onClose}>
             Close
           </Button>
-          <Link to="/teacher/classes">
-            <Button type="button">All my classes</Button>
+          <Link to={teacherClassSessionsUrl(item.classId)}>
+            <Button type="button" variant="outline">
+              Sessions
+            </Button>
+          </Link>
+          <Link to={teacherClassAttendanceUrl(item.classId)}>
+            <Button type="button">Attendance</Button>
           </Link>
         </div>
       </div>
@@ -88,10 +94,19 @@ export function TodayClassesList({ items, loading }: TodayClassesListProps) {
   const [viewItem, setViewItem] = useState<TodayClassItem | null>(null);
 
   return (
-    <Card className="mb-6">
+    <Card>
       <CardHeader className="border-b border-slate-100 pb-4">
-        <CardTitle className="text-lg">My classes today</CardTitle>
-        <p className="text-sm font-normal text-slate-500">{heading}</p>
+        <div className="flex flex-wrap items-start justify-between gap-2">
+          <div>
+            <CardTitle className="text-lg">Today&apos;s schedule</CardTitle>
+            <p className="text-sm font-normal text-slate-500">{heading}</p>
+          </div>
+          {!loading && items.length > 0 && (
+            <span className="rounded-full bg-primary-50 px-2.5 py-0.5 text-xs font-medium text-primary-700">
+              {items.length} class{items.length === 1 ? '' : 'es'}
+            </span>
+          )}
+        </div>
       </CardHeader>
       <CardContent className="p-0">
         {loading ? (
@@ -135,7 +150,6 @@ export function TodayClassesList({ items, loading }: TodayClassesListProps) {
                           Up next
                         </span>
                       )}
-                      <StatusBadge status={item.status} />
                     </div>
                     {item.courseName && (
                       <p className="mt-0.5 text-sm text-slate-500">{item.courseName}</p>
@@ -160,14 +174,28 @@ export function TodayClassesList({ items, loading }: TodayClassesListProps) {
                       )}
                     </div>
                   </div>
-                  <div className="flex shrink-0 gap-2">
+                  <div className="flex shrink-0 flex-wrap gap-2">
+                    <Link
+                      to={teacherClassAttendanceUrl(item.classId)}
+                      className="inline-flex h-8 items-center justify-center rounded-lg bg-primary-600 px-3 text-sm font-medium text-white hover:bg-primary-700"
+                    >
+                      <ClipboardCheck className="mr-1 h-4 w-4" />
+                      Attendance
+                    </Link>
+                    <Link
+                      to={teacherClassSessionsUrl(item.classId)}
+                      className="inline-flex h-8 items-center justify-center rounded-lg border border-slate-300 bg-white px-3 text-sm font-medium text-slate-900 hover:bg-slate-50"
+                    >
+                      Sessions
+                    </Link>
                     <button
                       type="button"
                       onClick={() => setViewItem(item)}
-                      className="inline-flex h-8 items-center justify-center rounded-lg border border-slate-300 bg-white px-3 text-sm font-medium text-slate-900 hover:bg-slate-50"
+                      className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-600 hover:bg-slate-50"
+                      aria-label={`Details for ${item.className}`}
+                      title="Details"
                     >
-                      <Eye className="mr-1 h-4 w-4" />
-                      View
+                      <Eye className="h-4 w-4" />
                     </button>
                   </div>
                 </li>

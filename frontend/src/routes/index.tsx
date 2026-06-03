@@ -36,6 +36,7 @@ import ChildClassesPage from '@/pages/parent/ChildClassesPage';
 import ChildAttendancePage from '@/pages/parent/ChildAttendancePage';
 import ParentLessonNotesPage from '@/pages/parent/ParentLessonNotesPage';
 import ParentAnnouncementsPage from '@/pages/parent/ParentAnnouncementsPage';
+import AnnouncementDetailPage from '@/pages/shared/AnnouncementDetailPage';
 import ParentInvoicesPage from '@/pages/parent/ParentInvoicesPage';
 import type { UserRole } from '@/types';
 
@@ -81,6 +82,10 @@ export default function AppRoutes() {
             <Route path="/admin/enrollments" element={<EnrollmentsManagement />} />
             <Route path="/admin/attendance" element={<AttendanceOverview />} />
             <Route path="/admin/announcements" element={<AnnouncementsPage />} />
+            <Route
+              path="/admin/announcements/:announcementId"
+              element={<AnnouncementDetailPage mode="admin" />}
+            />
             <Route path="/admin/invoices" element={<AdminInvoicesPage />} />
             <Route path="/admin/settings" element={<SettingsPage />} />
           </Route>
@@ -95,6 +100,10 @@ export default function AppRoutes() {
             <Route path="/teacher/attendance/:classId" element={<LegacyTeacherAttendanceRedirect />} />
             <Route path="/teacher/lesson-notes" element={<TeacherLessonNotesPage />} />
             <Route path="/teacher/announcements" element={<TeacherAnnouncementsPage />} />
+            <Route
+              path="/teacher/announcements/:announcementId"
+              element={<AnnouncementDetailPage mode="viewer" audience="Teacher" />}
+            />
           </Route>
 
           <Route element={<ProtectedRoute allowedRoles={['Student']} />}>
@@ -103,6 +112,10 @@ export default function AppRoutes() {
             <Route path="/student/attendance" element={<StudentAttendancePage />} />
             <Route path="/student/lesson-notes" element={<StudentLessonNotesPage />} />
             <Route path="/student/announcements" element={<StudentAnnouncementsPage />} />
+            <Route
+              path="/student/announcements/:announcementId"
+              element={<AnnouncementDetailPage mode="viewer" audience="Student" />}
+            />
           </Route>
 
           <Route element={<ProtectedRoute allowedRoles={['Parent']} />}>
@@ -112,6 +125,10 @@ export default function AppRoutes() {
             <Route path="/parent/attendance" element={<ChildAttendancePage />} />
             <Route path="/parent/lesson-notes" element={<ParentLessonNotesPage />} />
             <Route path="/parent/announcements" element={<ParentAnnouncementsPage />} />
+            <Route
+              path="/parent/announcements/:announcementId"
+              element={<AnnouncementDetailPage mode="viewer" audience="Parent" />}
+            />
             <Route path="/parent/invoices" element={<ParentInvoicesPage />} />
           </Route>
         </Route>
