@@ -27,6 +27,7 @@ import {
   mockEnrollments,
   mockInvoices,
 } from '@/utils/mockData';
+import { loadAllInvoices } from '@/utils/mockInvoiceStore';
 import {
   buildEnrollmentMonthlySeries,
   buildInvoiceMonthlySeries,
@@ -60,7 +61,8 @@ export default function AdminDashboard() {
         setTeachers(t);
         setClasses(c);
         setEnrollments(useMockCharts || e.length < mockEnrollments.length ? mockEnrollments : e);
-        setInvoices(useMockCharts || inv.length < mockInvoices.length ? mockInvoices : inv);
+        const mergedInv = loadAllInvoices();
+        setInvoices(useMockCharts || inv.length < mockInvoices.length ? mergedInv : mergedInv);
       })
       .finally(() => setLoading(false));
   }, []);
@@ -140,8 +142,12 @@ export default function AdminDashboard() {
       )}
 
       <p className="mt-4 text-center text-sm text-slate-500">
+        <Link to="/admin/reports" className="font-medium text-primary-600 hover:text-primary-700">
+          Full reports &amp; exports →
+        </Link>
+        <span className="mx-2 text-slate-300">·</span>
         <Link to="/admin/invoices" className="font-medium text-primary-600 hover:text-primary-700">
-          View all invoices →
+          Manage invoices →
         </Link>
       </p>
     </div>

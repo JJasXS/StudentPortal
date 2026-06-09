@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Calendar, Filter, Pencil, X } from 'lucide-react';
+import { useAuth } from '@/context/AuthContext';
 import { PageHeader } from '@/components/PageHeader';
 import { SearchBox } from '@/components/SearchBox';
+import { TeacherSpecializationsTab } from '@/components/admin/TeacherSpecializationsTab';
 import { SpecializationFilterModal } from '@/components/SpecializationFilterModal';
 import { TeacherSpecializationCell } from '@/components/TeacherSpecializationCell';
 import { TeacherEmploymentTypeCell } from '@/components/TeacherEmploymentTypeCell';
@@ -23,11 +25,15 @@ import {
 import {
   collectSpecializations,
   parseSpecializations,
+  removeCatalogSpecialization,
   teacherMatchesSpecializations,
 } from '@/utils/specializations';
 import { cn } from '@/utils/cn';
+import { logAdminAction } from '@/utils/auditLog';
+import { AUDIT_ACTIONS } from '@/types/auditLog';
 import type { TeacherProfile } from '@/types';
 
+const PAGE_TABS = ['Staff', 'Specializations'] as const;
 const EMPLOYMENT_TABS = ['All', ...EMPLOYMENT_TYPES.map((t) => EMPLOYMENT_TYPE_LABELS[t])] as const;
 
 function createdDateKey(value?: string) {
@@ -36,11 +42,13 @@ function createdDateKey(value?: string) {
 }
 
 export default function TeachersManagement() {
+  const { user } = useAuth();
   const [teachers, setTeachers] = useState<TeacherProfile[]>([]);
   const [nameFilter, setNameFilter] = useState('');
   const [dateFilter, setDateFilter] = useState('');
   const [specializationFilter, setSpecializationFilter] = useState<string[]>([]);
   const [specModalOpen, setSpecModalOpen] = useState(false);
+  const [pageTab, setPageTab] = useState<(typeof PAGE_TABS)[number]>('Staff');
   const [typeTab, setTypeTab] = useState('All');
   const [editMode, setEditMode] = useState(false);
   const [savingId, setSavingId] = useState<string | null>(null);
@@ -129,11 +137,25 @@ export default function TeachersManagement() {
           ? { ...teacher, specialization }
           : await teachersApi.update(teacher.id, { specialization });
       setTeachers((list) => list.map((t) => (t.id === teacher.id ? { ...t, ...updated } : t)));
+      logAdminAction(user, {
+        action: AUDIT_ACTIONS.teacherSpecializationUpdated,
+        entityType: 'Teacher',
+        entityId: teacher.id,
+        entityLabel: teacher.fullName,
+        details: specialization,
+      });
     } catch {
       setTeachers((list) => list.map((t) => (t.id === teacher.id ? { ...t, specialization } : t)));
       setError('Could not save specializations — change applied locally.');
     } finally {
       setSavingId(null);
+    }
+  };
+
+  const handleRemoveSpecialization = async (spec: string) => {
+    const affected = removeCatalogSpecialization(spec, teachers);
+    for (const { teacher, specialization } of affected) {
+      await handleSpecializationSave(teacher, specialization);
     }
   };
 
@@ -148,6 +170,13 @@ export default function TeachersManagement() {
           ? { ...teacher, hourlyRate }
           : await teachersApi.update(teacher.id, { hourlyRate });
       setTeachers((list) => list.map((t) => (t.id === teacher.id ? { ...t, ...updated } : t)));
+      logAdminAction(user, {
+        action: AUDIT_ACTIONS.teacherRateUpdated,
+        entityType: 'Teacher',
+        entityId: teacher.id,
+        entityLabel: teacher.fullName,
+        details: `$${hourlyRate}/hr`,
+      });
     } catch {
       setTeachers((list) => list.map((t) => (t.id === teacher.id ? { ...t, hourlyRate } : t)));
       setError('Could not save rate — change applied locally.');
@@ -167,6 +196,13 @@ export default function TeachersManagement() {
           ? { ...teacher, employmentType }
           : await teachersApi.updateEmploymentType(teacher.id, employmentType);
       setTeachers((list) => list.map((t) => (t.id === teacher.id ? { ...t, ...updated } : t)));
+      logAdminAction(user, {
+        action: AUDIT_ACTIONS.teacherUpdated,
+        entityType: 'Teacher',
+        entityId: teacher.id,
+        entityLabel: teacher.fullName,
+        details: `Employment: ${EMPLOYMENT_TYPE_LABELS[employmentType]}`,
+      });
     } catch {
       setTeachers((list) => list.map((t) => (t.id === teacher.id ? { ...t, employmentType } : t)));
       setError('Could not save to server — change applied locally. Restart the backend to persist.');
@@ -179,10 +215,36 @@ export default function TeachersManagement() {
     <div>
       <PageHeader
         title="Staff Management"
-        description="Manage teachers and set employment type: full time, part time, contract, or substitute"
+        description={
+          pageTab === 'Staff'
+            ? 'Manage teachers and set employment type: full time, part time, contract, or substitute'
+            : 'Add specializations and assign them to teachers'
+        }
       />
 
       <Card>
+        <SlidingTabs
+          tabs={PAGE_TABS}
+          value={pageTab}
+          onChange={(tab) => setPageTab(tab as (typeof PAGE_TABS)[number])}
+          counts={{
+            Staff: teachers.length,
+            Specializations: specializationOptions.length,
+          }}
+        />
+
+        {error && (
+          <p className="border-b border-slate-200 px-4 py-2 text-sm text-red-600">{error}</p>
+        )}
+
+        {pageTab === 'Specializations' ? (
+          <TeacherSpecializationsTab
+            teachers={teachers}
+            savingId={savingId}
+            onSave={handleSpecializationSave}
+            onRemoveSpecialization={handleRemoveSpecialization}
+          />
+        ) : (
         <CardContent className="p-0">
           <div className="flex flex-col gap-3 border-b border-slate-200 p-4 sm:flex-row sm:items-center">
             <SearchBox
@@ -225,8 +287,8 @@ export default function TeachersManagement() {
               type="button"
               onClick={() => setEditMode((on) => !on)}
               aria-pressed={editMode}
-              aria-label={editMode ? 'Exit edit mode' : 'Edit specialization, employment, and rate'}
-              title={editMode ? 'Exit edit mode' : 'Edit staff fields'}
+              aria-label={editMode ? 'Exit edit mode' : 'Edit employment type and hourly rate'}
+              title={editMode ? 'Exit edit mode' : 'Edit employment and rate'}
               className={cn(
                 'inline-flex shrink-0 items-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-medium transition-colors',
                 editMode
@@ -250,8 +312,6 @@ export default function TeachersManagement() {
               </Button>
             )}
           </div>
-
-          {error && <p className="border-b border-slate-200 px-4 py-2 text-sm text-red-600">{error}</p>}
 
           <div className="overflow-hidden">
             <SlidingTabs
@@ -284,9 +344,8 @@ export default function TeachersManagement() {
                     <TeacherSpecializationCell
                       teacher={t}
                       options={specializationOptions}
-                      editable={editMode}
-                      saving={savingId === t.id}
-                      onSave={handleSpecializationSave}
+                      editable={false}
+                      onSave={() => {}}
                     />
                   ),
                 },
@@ -325,6 +384,7 @@ export default function TeachersManagement() {
             />
           </div>
         </CardContent>
+        )}
       </Card>
 
       <SpecializationFilterModal

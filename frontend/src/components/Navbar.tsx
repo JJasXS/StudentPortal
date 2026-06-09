@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom';
-import { Bell, Menu, User } from 'lucide-react';
+import { Menu, User } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
+import { NotificationBell } from '@/components/NotificationBell';
 import { Button } from '@/components/ui/Button';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 
@@ -24,9 +25,7 @@ export default function Navbar({ onMenuClick }: NavbarProps) {
       </div>
       <div className="flex items-center gap-2">
         {user?.role && <StatusBadge status={user.role} />}
-        <Button variant="ghost" size="sm" className="hidden sm:inline-flex">
-          <Bell className="h-4 w-4" />
-        </Button>
+        <NotificationBell />
         <Link to="/profile">
           <Button variant="outline" size="sm">
             <User className="mr-1 h-4 w-4" />

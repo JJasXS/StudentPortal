@@ -35,7 +35,11 @@ export function SlidingTabs({ tabs, value, onChange, counts, className, trailing
   return (
     <div className={cn('w-full border-b border-slate-200 bg-white', className)}>
       <div className="flex items-stretch">
-        <div ref={containerRef} className="relative flex min-w-0 flex-1" role="tablist">
+        <div
+          ref={containerRef}
+          className="relative flex min-w-0 flex-1 overflow-x-auto"
+          role="tablist"
+        >
           <div
             aria-hidden
             className="pointer-events-none absolute bottom-0 h-0.5 rounded-full bg-primary-600 transition-[left,width] duration-300 ease-out"
@@ -56,7 +60,7 @@ export function SlidingTabs({ tabs, value, onChange, counts, className, trailing
                 aria-selected={active}
                 onClick={() => onChange(tab)}
                 className={cn(
-                  'relative flex-1 whitespace-nowrap px-2 pb-3 pt-3 text-center text-sm font-medium transition-colors',
+                  'relative shrink-0 whitespace-nowrap px-4 pb-3 pt-3 text-center text-sm font-medium transition-colors',
                   active
                     ? 'text-primary-600 hover:text-primary-700'
                     : 'text-slate-500 hover:text-slate-700'

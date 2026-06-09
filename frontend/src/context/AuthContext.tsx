@@ -3,6 +3,7 @@ import { authApi } from '@/api/auth';
 import type { User } from '@/types';
 import { TOKEN_KEY, USER_KEY } from '@/utils/constants';
 import { demoCredentials, mockUsers } from '@/utils/mockData';
+import { getDemoPassword } from '@/utils/demoPasswordOverrides';
 
 interface AuthContextType {
   user: User | null;
@@ -52,8 +53,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    const demo = demoCredentials.find((c) => c.email === email && c.password === password);
-    if (!demo) throw new Error('Invalid email or password');
+    const demo = demoCredentials.find((c) => c.email === email);
+    if (!demo || getDemoPassword(email, demo.password) !== password) {
+      throw new Error('Invalid email or password');
+    }
     const found = mockUsers.find((u) => u.email === email);
     if (!found) throw new Error('Invalid email or password');
     localStorage.setItem(TOKEN_KEY, 'mock-token');

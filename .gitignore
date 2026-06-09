@@ -9,10 +9,10 @@ backend/**/*.db
 backend/**/*.db-shm
 backend/**/*.db-wal
 
-# Environment
+# Environment (single file at repo root)
 .env
 .env.local
-frontend/.env.local
+backend/**/.env
 
 # IDE
 .vs/

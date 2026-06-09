@@ -28,3 +28,8 @@ export function cardLast4FromNumber(cardNumber: string) {
   const digits = cardNumber.replace(/\D/g, '');
   return digits.slice(-4);
 }
+
+export function isValidCvv(cvv: string) {
+  const digits = cvv.replace(/\D/g, '');
+  return digits.length >= 3 && digits.length <= 4;
+}

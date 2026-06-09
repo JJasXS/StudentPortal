@@ -77,6 +77,52 @@ public class AuthService
         return MapUser(user);
     }
 
+    public async Task<string?> RequestPasswordResetAsync(ForgotPasswordRequest request)
+    {
+        var email = request.Email.Trim().ToLowerInvariant();
+        var user = await _context.Users.FirstOrDefaultAsync(u => u.Email.ToLower() == email && u.IsActive);
+        if (user == null) return null;
+
+        var existing = await _context.PasswordResets.Where(r => r.UserId == user.Id).ToListAsync();
+        if (existing.Count > 0)
+            _context.PasswordResets.RemoveRange(existing);
+
+        var code = Random.Shared.Next(100000, 999999).ToString();
+        _context.PasswordResets.Add(new PasswordReset
+        {
+            Id = Guid.NewGuid(),
+            UserId = user.Id,
+            Token = code,
+            ExpiresAt = DateTime.UtcNow.AddHours(1)
+        });
+        await _context.SaveChangesAsync();
+        return code;
+    }
+
+    public async Task<bool> ResetPasswordAsync(ResetPasswordRequest request)
+    {
+        var email = request.Email.Trim().ToLowerInvariant();
+        var user = await _context.Users.FirstOrDefaultAsync(u => u.Email.ToLower() == email && u.IsActive);
+        if (user == null) return false;
+
+        var reset = await _context.PasswordResets
+            .Where(r => r.UserId == user.Id && r.Token == request.ResetCode.Trim())
+            .OrderByDescending(r => r.CreatedAt)
+            .FirstOrDefaultAsync();
+
+        if (reset == null || reset.ExpiresAt < DateTime.UtcNow)
+            return false;
+
+        if (string.IsNullOrWhiteSpace(request.NewPassword) || request.NewPassword.Length < 6)
+            return false;
+
+        user.PasswordHash = PasswordHelper.Hash(request.NewPassword);
+        user.UpdatedAt = DateTime.UtcNow;
+        _context.PasswordResets.Remove(reset);
+        await _context.SaveChangesAsync();
+        return true;
+    }
+
     public static UserDto MapUser(User user) =>
         new(user.Id, user.FullName, user.Email, user.PhoneNumber, user.Role, user.IsActive, user.CreatedAt);
 }
@@ -145,7 +191,12 @@ public class UserService
 public class StudentService
 {
     private readonly AppDbContext _context;
-    public StudentService(AppDbContext context) => _context = context;
+    private readonly AuditLogService _audit;
+    public StudentService(AppDbContext context, AuditLogService audit)
+    {
+        _context = context;
+        _audit = audit;
+    }
 
     public async Task<List<StudentDto>> GetAllAsync() =>
         await _context.StudentProfiles.Include(s => s.User)
@@ -192,6 +243,7 @@ public class StudentService
         _context.StudentProfiles.Add(profile);
         await _context.SaveChangesAsync();
         profile.User = user;
+        await _audit.LogAsync("student.created", "Student", profile.Id.ToString(), user.FullName);
         return Map(profile);
     }
 
@@ -213,6 +265,7 @@ public class StudentService
         profile.UpdatedAt = DateTime.UtcNow;
         profile.User.UpdatedAt = DateTime.UtcNow;
         await _context.SaveChangesAsync();
+        await _audit.LogAsync("student.updated", "Student", profile.Id.ToString(), profile.User.FullName);
         return Map(profile);
     }
 
@@ -222,6 +275,7 @@ public class StudentService
         if (profile == null) return false;
         profile.User.IsActive = false;
         await _context.SaveChangesAsync();
+        await _audit.LogAsync("student.deactivated", "Student", profile.Id.ToString(), profile.User.FullName);
         return true;
     }
 
@@ -233,7 +287,12 @@ public class StudentService
 public class ParentService
 {
     private readonly AppDbContext _context;
-    public ParentService(AppDbContext context) => _context = context;
+    private readonly AuditLogService _audit;
+    public ParentService(AppDbContext context, AuditLogService audit)
+    {
+        _context = context;
+        _audit = audit;
+    }
 
     public async Task<List<ParentDto>> GetAllAsync()
     {
@@ -291,6 +350,7 @@ public class ParentService
 
         await _context.SaveChangesAsync();
         profile.User = user;
+        await _audit.LogAsync("parent.created", "Parent", profile.Id.ToString(), user.FullName);
         return Map(profile, request.StudentUserIds ?? []);
     }
 
@@ -308,6 +368,7 @@ public class ParentService
         profile.Address = request.Address;
         profile.UpdatedAt = DateTime.UtcNow;
         await _context.SaveChangesAsync();
+        await _audit.LogAsync("parent.updated", "Parent", profile.Id.ToString(), profile.User.FullName);
 
         var children = await _context.ParentStudents.Where(l => l.ParentUserId == profile.UserId).Select(l => l.StudentUserId).ToListAsync();
         return Map(profile, children);
@@ -319,6 +380,7 @@ public class ParentService
         if (profile == null) return false;
         profile.User.IsActive = false;
         await _context.SaveChangesAsync();
+        await _audit.LogAsync("parent.deactivated", "Parent", profile.Id.ToString(), profile.User.FullName);
         return true;
     }
 
@@ -329,7 +391,12 @@ public class ParentService
 public class TeacherService
 {
     private readonly AppDbContext _context;
-    public TeacherService(AppDbContext context) => _context = context;
+    private readonly AuditLogService _audit;
+    public TeacherService(AppDbContext context, AuditLogService audit)
+    {
+        _context = context;
+        _audit = audit;
+    }
 
     public async Task<List<TeacherDto>> GetAllAsync() =>
         await _context.TeacherProfiles.Include(t => t.User).Select(t => Map(t)).ToListAsync();
@@ -368,6 +435,7 @@ public class TeacherService
         _context.TeacherProfiles.Add(profile);
         await _context.SaveChangesAsync();
         profile.User = user;
+        await _audit.LogAsync("teacher.created", "Teacher", profile.Id.ToString(), user.FullName);
         return Map(profile);
     }
 
@@ -388,6 +456,7 @@ public class TeacherService
         profile.UpdatedAt = DateTime.UtcNow;
         profile.User.UpdatedAt = DateTime.UtcNow;
         await _context.SaveChangesAsync();
+        await _audit.LogAsync("teacher.updated", "Teacher", profile.Id.ToString(), profile.User.FullName);
         return Map(profile);
     }
 
@@ -399,6 +468,7 @@ public class TeacherService
         profile.EmploymentType = NormalizeEmploymentType(employmentType);
         profile.UpdatedAt = DateTime.UtcNow;
         await _context.SaveChangesAsync();
+        await _audit.LogAsync("teacher.employment_updated", "Teacher", profile.Id.ToString(), profile.User.FullName, employmentType);
         return Map(profile);
     }
 
@@ -408,6 +478,7 @@ public class TeacherService
         if (profile == null) return false;
         profile.User.IsActive = false;
         await _context.SaveChangesAsync();
+        await _audit.LogAsync("teacher.deactivated", "Teacher", profile.Id.ToString(), profile.User.FullName);
         return true;
     }
 
@@ -428,7 +499,12 @@ public class TeacherService
 public class CourseService
 {
     private readonly AppDbContext _context;
-    public CourseService(AppDbContext context) => _context = context;
+    private readonly AuditLogService _audit;
+    public CourseService(AppDbContext context, AuditLogService audit)
+    {
+        _context = context;
+        _audit = audit;
+    }
 
     public async Task<List<CourseDto>> GetAllAsync() =>
         await _context.Courses.Select(c => Map(c)).ToListAsync();
@@ -453,6 +529,7 @@ public class CourseService
         };
         _context.Courses.Add(course);
         await _context.SaveChangesAsync();
+        await _audit.LogAsync("course.created", "Course", course.Id.ToString(), course.CourseName);
         return Map(course);
     }
 
@@ -468,6 +545,7 @@ public class CourseService
         course.IsActive = dto.IsActive;
         course.UpdatedAt = DateTime.UtcNow;
         await _context.SaveChangesAsync();
+        await _audit.LogAsync("course.updated", "Course", course.Id.ToString(), course.CourseName);
         return Map(course);
     }
 
@@ -478,6 +556,7 @@ public class CourseService
         course.IsActive = false;
         course.UpdatedAt = DateTime.UtcNow;
         await _context.SaveChangesAsync();
+        await _audit.LogAsync("course.deactivated", "Course", course.Id.ToString(), course.CourseName);
         return true;
     }
 
@@ -488,7 +567,14 @@ public class CourseService
 public class ClassService
 {
     private readonly AppDbContext _context;
-    public ClassService(AppDbContext context) => _context = context;
+    private readonly AuditLogService _audit;
+    private readonly ClassSessionService _sessions;
+    public ClassService(AppDbContext context, AuditLogService audit, ClassSessionService sessions)
+    {
+        _context = context;
+        _audit = audit;
+        _sessions = sessions;
+    }
 
     public async Task<List<ClassDto>> GetAllAsync() =>
         await _context.Classes
@@ -521,6 +607,11 @@ public class ClassService
         };
         _context.Classes.Add(cls);
         await _context.SaveChangesAsync();
+        await _audit.LogAsync("class.created", "Class", cls.Id.ToString(), cls.ClassName);
+
+        var from = DateTime.UtcNow.Date;
+        await _sessions.GenerateAsync(new GenerateSessionsRequest(cls.Id, from.ToString("yyyy-MM-dd"), from.AddDays(56).ToString("yyyy-MM-dd")));
+
         return (await GetByIdAsync(cls.Id))!;
     }
 
@@ -539,6 +630,7 @@ public class ClassService
         cls.IsActive = dto.IsActive;
         cls.UpdatedAt = DateTime.UtcNow;
         await _context.SaveChangesAsync();
+        await _audit.LogAsync("class.updated", "Class", cls.Id.ToString(), cls.ClassName);
         return await GetByIdAsync(id);
     }
 
@@ -549,6 +641,7 @@ public class ClassService
         cls.IsActive = false;
         cls.UpdatedAt = DateTime.UtcNow;
         await _context.SaveChangesAsync();
+        await _audit.LogAsync("class.deactivated", "Class", cls.Id.ToString(), cls.ClassName);
         return true;
     }
 
@@ -561,7 +654,12 @@ public class ClassService
 public class EnrollmentService
 {
     private readonly AppDbContext _context;
-    public EnrollmentService(AppDbContext context) => _context = context;
+    private readonly AuditLogService _audit;
+    public EnrollmentService(AppDbContext context, AuditLogService audit)
+    {
+        _context = context;
+        _audit = audit;
+    }
 
     public async Task<List<EnrollmentDto>> GetAllAsync() =>
         await _context.Enrollments
@@ -581,7 +679,9 @@ public class EnrollmentService
         };
         _context.Enrollments.Add(enrollment);
         await _context.SaveChangesAsync();
-        return (await GetAllAsync()).First(e => e.Id == enrollment.Id);
+        var created = (await GetAllAsync()).First(e => e.Id == enrollment.Id);
+        await _audit.LogAsync("enrollment.created", "Enrollment", enrollment.Id.ToString(), created.StudentName);
+        return created;
     }
 
     public async Task<EnrollmentDto?> UpdateAsync(Guid id, EnrollmentDto dto)
@@ -593,16 +693,18 @@ public class EnrollmentService
         await _context.SaveChangesAsync();
         var updated = await _context.Enrollments.Include(e => e.StudentUser).Include(e => e.Class)
             .FirstAsync(e => e.Id == id);
+        await _audit.LogAsync("enrollment.updated", "Enrollment", enrollment.Id.ToString(), updated.StudentUser.FullName, dto.Status);
         return Map(updated);
     }
 
     public async Task<bool> DeleteAsync(Guid id)
     {
-        var enrollment = await _context.Enrollments.FindAsync(id);
+        var enrollment = await _context.Enrollments.Include(e => e.StudentUser).FirstOrDefaultAsync(e => e.Id == id);
         if (enrollment == null) return false;
         enrollment.Status = "Cancelled";
         enrollment.UpdatedAt = DateTime.UtcNow;
         await _context.SaveChangesAsync();
+        await _audit.LogAsync("enrollment.cancelled", "Enrollment", enrollment.Id.ToString(), enrollment.StudentUser.FullName);
         return true;
     }
 
@@ -613,7 +715,12 @@ public class EnrollmentService
 public class ClassSessionService
 {
     private readonly AppDbContext _context;
-    public ClassSessionService(AppDbContext context) => _context = context;
+    private readonly AuditLogService _audit;
+    public ClassSessionService(AppDbContext context, AuditLogService audit)
+    {
+        _context = context;
+        _audit = audit;
+    }
 
     public async Task<List<ClassSessionDto>> GetAllAsync() =>
         await _context.ClassSessions.Include(s => s.Class).Select(s => Map(s)).ToListAsync();
@@ -639,6 +746,7 @@ public class ClassSessionService
         };
         _context.ClassSessions.Add(session);
         await _context.SaveChangesAsync();
+        await _audit.LogAsync("session.created", "ClassSession", session.Id.ToString(), session.Topic ?? "Session");
         return (await GetByIdAsync(session.Id))!;
     }
 
@@ -667,6 +775,120 @@ public class ClassSessionService
         return true;
     }
 
+    public async Task<ClassSessionDto> GetOrCreateTodayAsync(Guid classId)
+    {
+        var today = DateTime.UtcNow.Date;
+        var existing = await _context.ClassSessions
+            .Include(s => s.Class)
+            .FirstOrDefaultAsync(s => s.ClassId == classId && s.SessionDate.Date == today);
+        if (existing != null) return Map(existing);
+
+        var cls = await _context.Classes.FindAsync(classId)
+            ?? throw new InvalidOperationException("Class not found");
+
+        if (!MatchesDayOfWeek(cls.DayOfWeek, today))
+            throw new InvalidOperationException("Today is not a scheduled day for this class.");
+
+        var session = new ClassSession
+        {
+            Id = Guid.NewGuid(),
+            ClassId = classId,
+            SessionDate = today,
+            StartTime = cls.StartTime,
+            EndTime = cls.EndTime,
+            Status = "Scheduled"
+        };
+        _context.ClassSessions.Add(session);
+        await _context.SaveChangesAsync();
+        await _audit.LogAsync("session.auto_created", "ClassSession", session.Id.ToString(), cls.ClassName, "Today");
+        return (await GetByIdAsync(session.Id))!;
+    }
+
+    public async Task<GenerateSessionsResultDto> GenerateAsync(GenerateSessionsRequest request)
+    {
+        var from = DateTime.Parse(request.FromDate).Date;
+        var to = DateTime.Parse(request.ToDate).Date;
+        if (to < from) throw new ArgumentException("ToDate must be on or after FromDate.");
+
+        var holidayDates = (await _context.Announcements
+            .Where(a => a.HolidayDate != null)
+            .Select(a => a.HolidayDate!.Value.Date)
+            .ToListAsync()).ToHashSet();
+
+        var classesQuery = _context.Classes.Where(c => c.IsActive);
+        if (request.ClassId.HasValue)
+            classesQuery = classesQuery.Where(c => c.Id == request.ClassId.Value);
+        var classes = await classesQuery.ToListAsync();
+
+        var existingKeys = (await _context.ClassSessions
+            .Where(s => s.SessionDate >= from && s.SessionDate <= to)
+            .Select(s => new { s.ClassId, Date = s.SessionDate.Date })
+            .ToListAsync())
+            .Select(x => (x.ClassId, x.Date))
+            .ToHashSet();
+
+        var createdSessions = new List<ClassSession>();
+        var skipped = 0;
+
+        for (var date = from; date <= to; date = date.AddDays(1))
+        {
+            if (holidayDates.Contains(date))
+            {
+                skipped++;
+                continue;
+            }
+
+            foreach (var cls in classes.Where(c => MatchesDayOfWeek(c.DayOfWeek, date)))
+            {
+                if (existingKeys.Contains((cls.Id, date)))
+                {
+                    skipped++;
+                    continue;
+                }
+
+                var session = new ClassSession
+                {
+                    Id = Guid.NewGuid(),
+                    ClassId = cls.Id,
+                    SessionDate = date,
+                    StartTime = cls.StartTime,
+                    EndTime = cls.EndTime,
+                    Status = "Scheduled"
+                };
+                createdSessions.Add(session);
+                existingKeys.Add((cls.Id, date));
+            }
+        }
+
+        if (createdSessions.Count > 0)
+        {
+            _context.ClassSessions.AddRange(createdSessions);
+            await _context.SaveChangesAsync();
+            await _audit.LogAsync(
+                "session.bulk_generated",
+                "ClassSession",
+                request.ClassId?.ToString(),
+                createdSessions.Count.ToString(),
+                $"{from:yyyy-MM-dd} to {to:yyyy-MM-dd}");
+        }
+
+        var sessionDtos = new List<ClassSessionDto>();
+        foreach (var s in createdSessions)
+        {
+            var loaded = await _context.ClassSessions.Include(x => x.Class).FirstAsync(x => x.Id == s.Id);
+            sessionDtos.Add(Map(loaded));
+        }
+
+        return new GenerateSessionsResultDto(createdSessions.Count, skipped, sessionDtos);
+    }
+
+    private static bool MatchesDayOfWeek(string dayOfWeek, DateTime date)
+    {
+        var normalized = dayOfWeek.Trim();
+        return string.Equals(date.ToString("dddd"), normalized, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(date.ToString("ddd"), normalized, StringComparison.OrdinalIgnoreCase);
+    }
+
     private static ClassSessionDto Map(ClassSession s) =>
         new(s.Id, s.ClassId, s.Class.ClassName, s.SessionDate,
             TimeHelper.FormatTime(s.StartTime), TimeHelper.FormatTime(s.EndTime),
@@ -676,7 +898,12 @@ public class ClassSessionService
 public class AttendanceService
 {
     private readonly AppDbContext _context;
-    public AttendanceService(AppDbContext context) => _context = context;
+    private readonly NotificationService _notifications;
+    public AttendanceService(AppDbContext context, NotificationService notifications)
+    {
+        _context = context;
+        _notifications = notifications;
+    }
 
     public async Task<List<AttendanceDto>> GetAllAsync() =>
         await _context.Attendances
@@ -703,6 +930,7 @@ public class AttendanceService
         };
         _context.Attendances.Add(attendance);
         await _context.SaveChangesAsync();
+        await NotifyIfAbsentAsync(attendance);
         return (await GetAllAsync()).First(a => a.Id == attendance.Id);
     }
 
@@ -714,7 +942,27 @@ public class AttendanceService
         attendance.Remarks = dto.Remarks;
         attendance.UpdatedAt = DateTime.UtcNow;
         await _context.SaveChangesAsync();
+        await NotifyIfAbsentAsync(attendance);
         return (await GetAllAsync()).FirstOrDefault(a => a.Id == id);
+    }
+
+    private async Task NotifyIfAbsentAsync(Attendance attendance)
+    {
+        if (attendance.Status is not ("Absent" or "Late")) return;
+
+        var session = await _context.ClassSessions
+            .Include(s => s.Class)
+            .FirstOrDefaultAsync(s => s.Id == attendance.ClassSessionId);
+        if (session == null) return;
+
+        var student = await _context.Users.FindAsync(attendance.StudentUserId);
+        var label = attendance.Status == "Late" ? "Late to class" : "Absent from class";
+        await _notifications.NotifyParentsOfStudentAsync(
+            attendance.StudentUserId,
+            label,
+            $"{student?.FullName ?? "Your child"} was marked {attendance.Status.ToLower()} for {session.Class.ClassName} on {session.SessionDate:dd MMM yyyy}.",
+            "Attendance",
+            "/parent/attendance");
     }
 
     private static AttendanceDto Map(Attendance a) =>
@@ -843,7 +1091,12 @@ public class AttendanceService
 public class LessonNoteService
 {
     private readonly AppDbContext _context;
-    public LessonNoteService(AppDbContext context) => _context = context;
+    private readonly NotificationService _notifications;
+    public LessonNoteService(AppDbContext context, NotificationService notifications)
+    {
+        _context = context;
+        _notifications = notifications;
+    }
 
     public async Task<List<LessonNoteDto>> GetAllAsync() =>
         await _context.LessonNotes
@@ -874,7 +1127,14 @@ public class LessonNoteService
         };
         _context.LessonNotes.Add(note);
         await _context.SaveChangesAsync();
-        return (await GetAllAsync()).First(n => n.Id == note.Id);
+        var created = (await GetAllAsync()).First(n => n.Id == note.Id);
+        await _notifications.NotifyParentsOfStudentAsync(
+            note.StudentUserId,
+            "New lesson note",
+            created.NoteTitle,
+            "LessonNote",
+            "/parent/lesson-notes");
+        return created;
     }
 
     public async Task<LessonNoteDto?> UpdateAsync(Guid id, LessonNoteDto dto)
@@ -906,7 +1166,14 @@ public class LessonNoteService
 public class AnnouncementService
 {
     private readonly AppDbContext _context;
-    public AnnouncementService(AppDbContext context) => _context = context;
+    private readonly AuditLogService _audit;
+    private readonly NotificationService _notifications;
+    public AnnouncementService(AppDbContext context, AuditLogService audit, NotificationService notifications)
+    {
+        _context = context;
+        _audit = audit;
+        _notifications = notifications;
+    }
 
     public async Task<List<AnnouncementDto>> GetAllAsync() =>
         await _context.Announcements.Include(a => a.CreatedByUser).Select(a => Map(a)).ToListAsync();
@@ -925,7 +1192,10 @@ public class AnnouncementService
         };
         _context.Announcements.Add(announcement);
         await _context.SaveChangesAsync();
-        return (await GetAllAsync()).First(a => a.Id == announcement.Id);
+        var created = (await GetAllAsync()).First(a => a.Id == announcement.Id);
+        await _audit.LogAsync("announcement.created", "Announcement", announcement.Id.ToString(), announcement.Title);
+        await _notifications.NotifyAnnouncementAsync(announcement);
+        return created;
     }
 
     public async Task<AnnouncementDto?> UpdateAsync(Guid id, AnnouncementDto dto)
@@ -939,15 +1209,20 @@ public class AnnouncementService
         announcement.TargetRole = dto.TargetRole;
         announcement.UpdatedAt = DateTime.UtcNow;
         await _context.SaveChangesAsync();
-        return (await GetAllAsync()).FirstOrDefault(a => a.Id == id);
+        var updated = (await GetAllAsync()).FirstOrDefault(a => a.Id == id);
+        if (updated != null)
+            await _audit.LogAsync("announcement.updated", "Announcement", announcement.Id.ToString(), announcement.Title);
+        return updated;
     }
 
     public async Task<bool> DeleteAsync(Guid id)
     {
         var announcement = await _context.Announcements.FindAsync(id);
         if (announcement == null) return false;
+        var title = announcement.Title;
         _context.Announcements.Remove(announcement);
         await _context.SaveChangesAsync();
+        await _audit.LogAsync("announcement.deleted", "Announcement", id.ToString(), title);
         return true;
     }
 
@@ -958,7 +1233,20 @@ public class AnnouncementService
 public class InvoiceService
 {
     private readonly AppDbContext _context;
-    public InvoiceService(AppDbContext context) => _context = context;
+    private readonly AuditLogService _audit;
+    private readonly NotificationService _notifications;
+    private readonly BillplzService _billplz;
+    public InvoiceService(
+        AppDbContext context,
+        AuditLogService audit,
+        NotificationService notifications,
+        BillplzService billplz)
+    {
+        _context = context;
+        _audit = audit;
+        _notifications = notifications;
+        _billplz = billplz;
+    }
 
     public async Task<List<InvoiceDto>> GetAllAsync() =>
         await _context.Invoices
@@ -972,7 +1260,275 @@ public class InvoiceService
         return i == null ? null : Map(i);
     }
 
+    public async Task<InvoiceDto?> UpdateStatusAsync(Guid id, string status)
+    {
+        var invoice = await _context.Invoices
+            .Include(i => i.StudentUser)
+            .Include(i => i.ParentUser)
+            .FirstOrDefaultAsync(i => i.Id == id);
+        if (invoice == null) return null;
+
+        invoice.Status = status;
+        invoice.UpdatedAt = DateTime.UtcNow;
+        await _context.SaveChangesAsync();
+        await _audit.LogAsync("invoice.status_changed", "Invoice", invoice.Id.ToString(), invoice.InvoiceNo, $"Status: {status}");
+        return Map(invoice);
+    }
+
+    public async Task<BillplzPayResponse?> CreateBillplzPaymentAsync(
+        Guid id,
+        Guid parentUserId,
+        string? fpxBankCode,
+        string payerEmail,
+        string payerName,
+        string? payerMobile)
+    {
+        if (!_billplz.IsConfigured)
+            throw new InvalidOperationException(
+                "Billplz is not configured. Set Billplz__ApiKey and Billplz__CollectionId in .env and restart the backend.");
+
+        var invoice = await LoadPayableInvoiceAsync(id, parentUserId);
+        if (invoice == null) return null;
+
+        var amountSen = (int)Math.Round(invoice.Amount * 100m, MidpointRounding.AwayFromZero);
+        if (amountSen < 100)
+            throw new InvalidOperationException("Invoice amount must be at least RM 1.00 for online payment.");
+
+        var description = $"{invoice.InvoiceNo} — {invoice.CourseName ?? "Tuition"}";
+        var bill = await _billplz.CreateBillAsync(
+            payerEmail,
+            payerName,
+            description,
+            amountSen,
+            invoice.Id.ToString(),
+            fpxBankCode,
+            payerMobile);
+
+        invoice.BillplzBillId = bill.Id;
+        invoice.UpdatedAt = DateTime.UtcNow;
+        await _context.SaveChangesAsync();
+
+        return new BillplzPayResponse(bill.Id, bill.Url, invoice.Id.ToString());
+    }
+
+    public async Task<bool> CompleteBillplzPaymentAsync(string billId, bool paid)
+    {
+        var invoice = await _context.Invoices
+            .Include(i => i.StudentUser)
+            .Include(i => i.ParentUser)
+            .FirstOrDefaultAsync(i => i.BillplzBillId == billId);
+        if (invoice == null) return false;
+
+        if (!paid || invoice.Status == "Paid")
+            return invoice.Status == "Paid";
+
+        await MarkPaidAsync(invoice, "Paid via Billplz FPX");
+        return true;
+    }
+
+    private async Task<Invoice?> LoadPayableInvoiceAsync(Guid id, Guid parentUserId) =>
+        await _context.Invoices
+            .Include(i => i.StudentUser)
+            .Include(i => i.ParentUser)
+            .FirstOrDefaultAsync(i =>
+                i.Id == id && i.ParentUserId == parentUserId && i.Status == "Unpaid");
+
+    private async Task<InvoiceDto> MarkPaidAsync(Invoice invoice, string auditDetails)
+    {
+        invoice.Status = "Paid";
+        invoice.PaidAt = DateTime.UtcNow;
+        invoice.UpdatedAt = DateTime.UtcNow;
+        await _context.SaveChangesAsync();
+        await _audit.LogAsync("invoice.paid", "Invoice", invoice.Id.ToString(), invoice.InvoiceNo, auditDetails);
+
+        if (invoice.ParentUserId.HasValue)
+        {
+            await _notifications.CreateAsync(
+                invoice.ParentUserId.Value,
+                "Payment received",
+                $"{invoice.InvoiceNo} has been paid.",
+                "Invoice",
+                "/parent/invoices");
+        }
+
+        return Map(invoice);
+    }
+
+    public async Task<InvoiceDto?> CreateAsync(CreateInvoiceRequest request)
+    {
+        var student = await _context.Users.FindAsync(request.StudentUserId);
+        if (student == null) return null;
+
+        var parentLink = await _context.ParentStudents
+            .FirstOrDefaultAsync(l => l.StudentUserId == request.StudentUserId);
+        var settings = await GetCentreSettingsAsync();
+        var year = DateTime.UtcNow.Year;
+        var invoiceNo = await NextInvoiceNoAsync(settings.InvoicePrefix, year);
+
+        var invoice = new Invoice
+        {
+            Id = Guid.NewGuid(),
+            StudentUserId = request.StudentUserId,
+            ParentUserId = parentLink?.ParentUserId,
+            InvoiceNo = invoiceNo,
+            CourseName = request.CourseName,
+            ClassName = request.ClassName,
+            Amount = request.Amount,
+            BillingPeriod = request.BillingPeriod,
+            Status = request.SendNow ? "Unpaid" : "Draft",
+            DueDate = DateTime.Parse(request.DueDate),
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        };
+        _context.Invoices.Add(invoice);
+        await _context.SaveChangesAsync();
+        await _audit.LogAsync(
+            request.SendNow ? "invoice.sent" : "invoice.created",
+            "Invoice",
+            invoice.Id.ToString(),
+            invoice.InvoiceNo,
+            $"Amount: {invoice.Amount}");
+
+        if (request.SendNow && invoice.ParentUserId.HasValue)
+        {
+            await _notifications.CreateAsync(
+                invoice.ParentUserId.Value,
+                "New invoice",
+                $"{invoice.InvoiceNo} — RM {invoice.Amount:N2} due {invoice.DueDate:dd MMM yyyy}",
+                "Invoice",
+                "/parent/invoices");
+        }
+
+        return await GetByIdAsync(invoice.Id);
+    }
+
+    public async Task<InvoiceDto?> UpdateAsync(Guid id, UpdateInvoiceRequest request)
+    {
+        var invoice = await _context.Invoices
+            .Include(i => i.StudentUser)
+            .Include(i => i.ParentUser)
+            .FirstOrDefaultAsync(i => i.Id == id);
+        if (invoice == null) return null;
+
+        var editingDetails = request.Amount.HasValue || request.DueDate != null || request.BillingPeriod != null;
+        if (editingDetails && invoice.Status != "Draft") return null;
+
+        if (request.Amount.HasValue) invoice.Amount = request.Amount.Value;
+        if (request.DueDate != null) invoice.DueDate = DateTime.Parse(request.DueDate);
+        if (request.BillingPeriod != null) invoice.BillingPeriod = request.BillingPeriod;
+        if (request.Status != null)
+        {
+            invoice.Status = request.Status;
+            if (request.Status == "Paid" && invoice.PaidAt == null)
+                invoice.PaidAt = DateTime.UtcNow;
+        }
+        invoice.UpdatedAt = DateTime.UtcNow;
+        await _context.SaveChangesAsync();
+        var action = request.Status == "Cancelled" ? "invoice.cancelled"
+            : request.Status != null ? "invoice.status_changed"
+            : "invoice.updated";
+        await _audit.LogAsync(action, "Invoice", invoice.Id.ToString(), invoice.InvoiceNo,
+            request.Status != null ? $"Status: {request.Status}" : null);
+        return Map(invoice);
+    }
+
+    private async Task<string> NextInvoiceNoAsync(string prefix, int year)
+    {
+        var pattern = $"{prefix.TrimEnd('-')}-{year}-";
+        var existing = await _context.Invoices
+            .Where(i => i.InvoiceNo.StartsWith(pattern))
+            .Select(i => i.InvoiceNo)
+            .ToListAsync();
+        var max = existing
+            .Select(n => int.TryParse(n[pattern.Length..], out var num) ? num : 0)
+            .DefaultIfEmpty(0)
+            .Max();
+        return $"{pattern}{max + 1:D3}";
+    }
+
+    private async Task<CentreSettings> GetCentreSettingsAsync()
+    {
+        var id = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
+        var settings = await _context.CentreSettings.FindAsync(id);
+        return settings ?? new CentreSettings { InvoicePrefix = "INV" };
+    }
+
     private static InvoiceDto Map(Invoice i) =>
         new(i.Id, i.StudentUserId, i.StudentUser.FullName, i.ParentUserId, i.ParentUser?.FullName,
-            i.InvoiceNo, i.Amount, i.Status, i.DueDate, i.CreatedAt);
+            i.InvoiceNo, i.CourseName, i.ClassName, i.Amount, i.Status, i.BillingPeriod,
+            i.DueDate, i.CreatedAt, i.PaidAt);
+}
+
+public class CentreSettingsService
+{
+    private static readonly Guid SettingsId = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
+    private readonly AppDbContext _context;
+    private readonly AuditLogService _audit;
+
+    public CentreSettingsService(AppDbContext context, AuditLogService audit)
+    {
+        _context = context;
+        _audit = audit;
+    }
+
+    public async Task<CentreSettingsDto> GetAsync()
+    {
+        var settings = await _context.CentreSettings.FindAsync(SettingsId);
+        if (settings == null)
+        {
+            settings = new CentreSettings
+            {
+                Id = SettingsId,
+                CentreName = "Music Tuition Portal (Demo)",
+                Timezone = "Asia/Kuala_Lumpur",
+                Currency = "MYR",
+                DefaultMonthlyFee = 300m,
+                PaymentInstructions = "Pay online via the parent portal or bank transfer to the centre account.",
+                Address = "12 Jalan Melati, 50450 Kuala Lumpur",
+                Phone = "+60 3-1234 5678",
+                Email = "billing@harmonymusic.demo",
+                BankName = "Maybank",
+                BankAccountNo = "5123 4567 8901",
+                InvoicePrefix = "INV"
+            };
+            _context.CentreSettings.Add(settings);
+            await _context.SaveChangesAsync();
+        }
+
+        return Map(settings);
+    }
+
+    public async Task<CentreSettingsDto> UpdateAsync(UpdateCentreSettingsRequest request)
+    {
+        var settings = await _context.CentreSettings.FindAsync(SettingsId);
+        if (settings == null)
+        {
+            settings = new CentreSettings { Id = SettingsId };
+            _context.CentreSettings.Add(settings);
+        }
+
+        settings.CentreName = request.CentreName.Trim();
+        settings.Timezone = request.Timezone.Trim();
+        settings.Currency = request.Currency.Trim();
+        settings.DefaultMonthlyFee = request.DefaultMonthlyFee;
+        settings.PaymentInstructions = request.PaymentInstructions?.Trim();
+        settings.Address = request.Address?.Trim();
+        settings.Phone = request.Phone?.Trim();
+        settings.Email = request.Email?.Trim();
+        settings.BankName = request.BankName?.Trim();
+        settings.BankAccountNo = request.BankAccountNo?.Trim();
+        settings.InvoicePrefix = string.IsNullOrWhiteSpace(request.InvoicePrefix)
+            ? "INV"
+            : request.InvoicePrefix.Trim().ToUpperInvariant();
+        settings.LogoDataUrl = request.LogoDataUrl;
+        settings.UpdatedAt = DateTime.UtcNow;
+        await _context.SaveChangesAsync();
+        await _audit.LogAsync("settings.updated", "Settings", SettingsId.ToString(), settings.CentreName);
+        return Map(settings);
+    }
+
+    private static CentreSettingsDto Map(CentreSettings s) =>
+        new(s.CentreName, s.Timezone, s.Currency, s.DefaultMonthlyFee, s.PaymentInstructions,
+            s.Address, s.Phone, s.Email, s.BankName, s.BankAccountNo,
+            s.InvoicePrefix, s.LogoDataUrl);
 }

@@ -16,7 +16,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Modal } from '@/components/ui/Modal';
 import { Button } from '@/components/ui/Button';
 import { classesApi, classSessionsApi, lessonNotesApi } from '@/api/resources';
-import { mockClasses, mockClassSessions, mockLessonNotes } from '@/utils/mockData';
+import { mockClassSessions, mockLessonNotes } from '@/utils/mockData';
+import { mergeTeacherClasses, mockTeacherUserId } from '@/utils/teacherClasses';
 import { buildTodaySchedule, formatTodayHeading } from '@/utils/teacherSchedule';
 import type { ClassItem, ClassSession } from '@/types';
 
@@ -33,16 +34,25 @@ export default function TeacherDashboard() {
 
     setLoading(true);
     Promise.all([
-      classesApi.getAll().catch(() => mockClasses),
+      classesApi.getAll().catch(() => []),
       classSessionsApi.getAll().catch(() => mockClassSessions),
       lessonNotesApi.getAll().catch(() => mockLessonNotes),
     ])
       .then(([allClasses, allSessions, notes]) => {
-        const myClasses = allClasses.filter((c) => c.teacherUserId === user.id);
+        const myClasses = mergeTeacherClasses(allClasses, user);
         const myClassIds = new Set(myClasses.map((c) => c.id));
+        const teacherKey = mockTeacherUserId(user);
         setClasses(myClasses);
         setSessions(allSessions.filter((s) => myClassIds.has(s.classId)));
-        setNotesCount(notes.filter((n) => n.teacherUserId === user.id).length);
+        setNotesCount(
+          notes.filter((n) => n.teacherUserId === user.id || n.teacherUserId === teacherKey).length
+        );
+      })
+      .catch(() => {
+        const myClasses = mergeTeacherClasses([], user);
+        const myClassIds = new Set(myClasses.map((c) => c.id));
+        setClasses(myClasses);
+        setSessions(mockClassSessions.filter((s) => myClassIds.has(s.classId)));
       })
       .finally(() => setLoading(false));
   }, [user?.id]);

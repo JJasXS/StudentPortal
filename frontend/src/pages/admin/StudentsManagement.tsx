@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Calendar, Pencil, X } from 'lucide-react';
+import { useAuth } from '@/context/AuthContext';
 import { PageHeader } from '@/components/PageHeader';
 import { SearchBox } from '@/components/SearchBox';
 import { StudentFormModal } from '@/components/StudentFormModal';
@@ -15,6 +16,8 @@ import { activeRecordStatus, filterByStatus, getStatusCounts } from '@/utils/sta
 import { formatDateDDMMYYYY } from '@/utils/dateFormat';
 import { formatGender } from '@/utils/gender';
 import { formToStudentPayload, type StudentFormValues } from '@/utils/studentForm';
+import { logAdminAction } from '@/utils/auditLog';
+import { AUDIT_ACTIONS } from '@/types/auditLog';
 import type { StudentProfile } from '@/types';
 
 const STATUS_TABS = ['All', ...ACTIVE_STATUSES] as const;
@@ -25,6 +28,7 @@ function dateOfBirthKey(value?: string) {
 }
 
 export default function StudentsManagement() {
+  const { user } = useAuth();
   const [students, setStudents] = useState<StudentProfile[]>([]);
   const [nameFilter, setNameFilter] = useState('');
   const [dateFilter, setDateFilter] = useState('');
@@ -101,6 +105,12 @@ export default function StudentsManagement() {
           : await studentsApi.update(editing.id, payload);
       setStudents((list) => list.map((s) => (s.id === editing.id ? { ...s, ...updated } : s)));
       setEditing(null);
+      logAdminAction(user, {
+        action: AUDIT_ACTIONS.studentUpdated,
+        entityType: 'Student',
+        entityId: editing.id,
+        entityLabel: payload.fullName,
+      });
     } catch {
       setStudents((list) =>
         list.map((s) =>

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Calendar, Pencil, Users, X } from 'lucide-react';
+import { useAuth } from '@/context/AuthContext';
 import { PageHeader } from '@/components/PageHeader';
 import { SearchBox } from '@/components/SearchBox';
 import { ParentFormModal } from '@/components/ParentFormModal';
@@ -15,6 +16,8 @@ import { ACTIVE_STATUSES } from '@/utils/constants';
 import { activeRecordStatus, filterByStatus, getStatusCounts } from '@/utils/statusFilter';
 import { formatDateDDMMYYYY } from '@/utils/dateFormat';
 import { formToParentPayload, type ParentFormValues } from '@/utils/parentForm';
+import { logAdminAction } from '@/utils/auditLog';
+import { AUDIT_ACTIONS } from '@/types/auditLog';
 import type { ParentProfile, StudentProfile } from '@/types';
 
 const STATUS_TABS = ['All', ...ACTIVE_STATUSES] as const;
@@ -25,6 +28,7 @@ function createdDateKey(value?: string) {
 }
 
 export default function ParentsManagement() {
+  const { user } = useAuth();
   const [parents, setParents] = useState<ParentProfile[]>([]);
   const [students, setStudents] = useState<StudentProfile[]>([]);
   const [nameFilter, setNameFilter] = useState('');
@@ -121,6 +125,12 @@ export default function ParentsManagement() {
           : await parentsApi.update(editing.id, payload);
       setParents((list) => list.map((p) => (p.id === editing.id ? { ...p, ...updated } : p)));
       setEditing(null);
+      logAdminAction(user, {
+        action: AUDIT_ACTIONS.parentUpdated,
+        entityType: 'Parent',
+        entityId: editing.id,
+        entityLabel: payload.fullName,
+      });
     } catch {
       setParents((list) =>
         list.map((p) =>

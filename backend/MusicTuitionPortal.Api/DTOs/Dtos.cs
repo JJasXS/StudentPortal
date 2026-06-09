@@ -2,6 +2,8 @@ namespace MusicTuitionPortal.Api.DTOs;
 
 public record UserDto(Guid Id, string FullName, string Email, string? PhoneNumber, string Role, bool IsActive, DateTime CreatedAt);
 public record LoginRequest(string Email, string Password);
+public record ForgotPasswordRequest(string Email);
+public record ResetPasswordRequest(string Email, string ResetCode, string NewPassword);
 public record RegisterRequest(string FullName, string Email, string Password, string Role, string? PhoneNumber);
 public record UpdateProfileRequest(string FullName, string Email, string? PhoneNumber, string? Password);
 public record LoginResponse(string Token, UserDto User);
@@ -71,4 +73,43 @@ public record AnnouncementDto(
 
 public record InvoiceDto(
     Guid Id, Guid StudentUserId, string? StudentName, Guid? ParentUserId, string? ParentName,
-    string InvoiceNo, decimal Amount, string Status, DateTime DueDate, DateTime CreatedAt);
+    string InvoiceNo, string? CourseName, string? ClassName,
+    decimal Amount, string Status, string? BillingPeriod, DateTime DueDate, DateTime CreatedAt, DateTime? PaidAt);
+
+public record UpdateInvoiceStatusRequest(string Status);
+
+public record BillplzPayRequest(string? FpxBankCode);
+
+public record BillplzPayResponse(string BillId, string PaymentUrl, string InvoiceId);
+
+public record CreateInvoiceRequest(
+    Guid StudentUserId, string? CourseName, string? ClassName,
+    decimal Amount, string DueDate, string? BillingPeriod, bool SendNow);
+
+public record UpdateInvoiceRequest(
+    decimal? Amount, string? DueDate, string? BillingPeriod, string? Status);
+
+public record CentreSettingsDto(
+    string CentreName, string Timezone, string Currency, decimal DefaultMonthlyFee, string? PaymentInstructions,
+    string? Address, string? Phone, string? Email, string? BankName, string? BankAccountNo,
+    string InvoicePrefix, string? LogoDataUrl);
+
+public record UpdateCentreSettingsRequest(
+    string CentreName, string Timezone, string Currency, decimal DefaultMonthlyFee, string? PaymentInstructions,
+    string? Address, string? Phone, string? Email, string? BankName, string? BankAccountNo,
+    string InvoicePrefix, string? LogoDataUrl);
+
+public record AuditLogDto(
+    Guid Id, Guid? ActorUserId, string? ActorName, string? ActorRole,
+    string Action, string EntityType, string? EntityId, string? EntityLabel, string? Details, DateTime CreatedAt);
+
+public record CreateAuditLogRequest(
+    string Action, string EntityType, string? EntityId, string? EntityLabel, string? Details);
+
+public record GenerateSessionsRequest(Guid? ClassId, string FromDate, string ToDate);
+
+public record GenerateSessionsResultDto(int CreatedCount, int SkippedCount, List<ClassSessionDto> Sessions);
+
+public record NotificationDto(
+    Guid Id, Guid UserId, string Title, string Message, string Category,
+    string? LinkPath, bool IsRead, DateTime CreatedAt);

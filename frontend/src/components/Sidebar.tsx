@@ -6,13 +6,18 @@ import {
   GraduationCap,
   BookOpen,
   Calendar,
+  CalendarDays,
   Megaphone,
   FileText,
   Settings,
   Music,
   ClipboardCheck,
+  BarChart3,
+  History,
   NotebookPen,
   Baby,
+  Bell,
+  TrendingUp,
   LogOut,
   X,
 } from 'lucide-react';
@@ -32,13 +37,18 @@ const adminNav: NavItem[] = [
   { label: 'Parents', path: '/admin/parents', icon: Users },
   { label: 'Staff Management', path: '/admin/teachers', icon: UserCircle },
   { label: 'Courses', path: '/admin/courses', icon: BookOpen },
+  { label: 'Calendar', path: '/admin/calendar', icon: CalendarDays },
   { label: 'Announcements', path: '/admin/announcements', icon: Megaphone },
   { label: 'Invoices', path: '/admin/invoices', icon: FileText },
+  { label: 'Reports', path: '/admin/reports', icon: BarChart3 },
+  { label: 'Audit log', path: '/admin/audit-log', icon: History },
+  { label: 'Attendance', path: '/admin/attendance', icon: ClipboardCheck },
   { label: 'Settings', path: '/admin/settings', icon: Settings },
 ];
 
 const teacherNav: NavItem[] = [
   { label: 'Dashboard', path: '/teacher/dashboard', icon: LayoutDashboard },
+  { label: 'Calendar', path: '/teacher/calendar', icon: CalendarDays },
   { label: 'My Classes', path: '/teacher/classes', icon: Calendar },
   { label: 'Lesson Notes', path: '/teacher/lesson-notes', icon: NotebookPen },
   { label: 'Announcements', path: '/teacher/announcements', icon: Megaphone },
@@ -55,11 +65,13 @@ const studentNav: NavItem[] = [
 const parentNav: NavItem[] = [
   { label: 'Dashboard', path: '/parent/dashboard', icon: LayoutDashboard },
   { label: 'My Children', path: '/parent/children', icon: Baby },
+  { label: 'Progress', path: '/parent/progress', icon: TrendingUp },
+  { label: 'Notifications', path: '/parent/notifications', icon: Bell },
   { label: 'Child Classes', path: '/parent/classes', icon: Calendar },
   { label: 'Child Attendance', path: '/parent/attendance', icon: ClipboardCheck },
   { label: 'Lesson Notes', path: '/parent/lesson-notes', icon: NotebookPen },
   { label: 'Announcements', path: '/parent/announcements', icon: Megaphone },
-  { label: 'Invoices', path: '/parent/invoices', icon: FileText },
+  { label: 'Billing', path: '/parent/invoices', icon: FileText },
 ];
 
 export const navByRole: Record<UserRole, NavItem[]> = {

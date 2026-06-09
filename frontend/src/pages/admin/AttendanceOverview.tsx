@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Calendar, X } from 'lucide-react';
+import { Calendar, Download, FileSpreadsheet, X } from 'lucide-react';
 import { PageHeader } from '@/components/PageHeader';
 import { SearchBox } from '@/components/SearchBox';
 import { DataTable } from '@/components/ui/DataTable';
@@ -12,6 +12,7 @@ import { mockAttendance } from '@/utils/mockData';
 import { ATTENDANCE_STATUSES } from '@/utils/constants';
 import { filterByStatus, getStatusCounts } from '@/utils/statusFilter';
 import { formatDateDDMMYYYY } from '@/utils/dateFormat';
+import { exportAttendanceCsv, exportAttendancePdf } from '@/utils/attendanceExport';
 import type { Attendance } from '@/types';
 
 const STATUS_TABS = ['All', ...ATTENDANCE_STATUSES] as const;
@@ -64,6 +65,28 @@ export default function AttendanceOverview() {
       <PageHeader
         title="Attendance Overview"
         description="Filter by student name, date, and attendance status"
+        actions={
+          <>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => exportAttendanceCsv(filtered)}
+            >
+              <FileSpreadsheet className="mr-1.5 h-4 w-4" />
+              Export CSV
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => exportAttendancePdf(filtered)}
+            >
+              <Download className="mr-1.5 h-4 w-4" />
+              Export PDF
+            </Button>
+          </>
+        }
       />
 
       <Card>

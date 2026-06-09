@@ -18,6 +18,11 @@ builder.Services.AddControllers()
 var jwtSettings = builder.Configuration.GetSection("Jwt").Get<JwtSettings>() ?? new JwtSettings();
 builder.Services.AddSingleton(jwtSettings);
 
+var billplzSettings = builder.Configuration.GetSection("Billplz").Get<BillplzSettings>() ?? new BillplzSettings();
+builder.Services.AddSingleton(billplzSettings);
+builder.Services.AddHttpClient("Billplz");
+builder.Services.AddScoped<BillplzService>();
+
 builder.Services.AddDbContext<AppDbContext>(options =>
 {
     var provider = builder.Configuration["DatabaseProvider"] ?? "Postgres";
@@ -44,6 +49,9 @@ builder.Services.AddScoped<AttendanceService>();
 builder.Services.AddScoped<LessonNoteService>();
 builder.Services.AddScoped<AnnouncementService>();
 builder.Services.AddScoped<InvoiceService>();
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddScoped<NotificationService>();
+builder.Services.AddScoped<AuditLogService>();
 
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
@@ -86,17 +94,29 @@ builder.Services.AddSwaggerGen(c =>
     });
 });
 
+var corsOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>()
+    ?? builder.Configuration["Cors:AllowedOrigins"]?.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+    ?? ["http://localhost:5173", "http://127.0.0.1:5173"];
+
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("Frontend", policy =>
     {
-        policy.WithOrigins("http://localhost:5173", "http://127.0.0.1:5173")
+        policy.WithOrigins(corsOrigins)
             .AllowAnyHeader()
             .AllowAnyMethod();
     });
 });
 
 var app = builder.Build();
+
+var billplz = app.Services.GetRequiredService<BillplzSettings>();
+var startupLog = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("Startup.Billplz");
+if (billplz.IsConfigured)
+    startupLog.LogInformation("Billplz FPX payments enabled ({Mode}).", billplz.Sandbox ? "sandbox" : "live");
+else
+    startupLog.LogWarning(
+        "Billplz not configured — parent online pay disabled. Set Billplz__ApiKey and Billplz__CollectionId in .env.");
 
 try
 {

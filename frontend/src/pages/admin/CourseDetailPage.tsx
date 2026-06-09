@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { ClipboardCheck, Eye, Plus } from 'lucide-react';
+import { useAuth } from '@/context/AuthContext';
 import { PageHeader } from '@/components/PageHeader';
 import { ClassAttendanceModal } from '@/components/ClassAttendanceModal';
 import { ClassFormModal } from '@/components/ClassFormModal';
@@ -11,11 +12,14 @@ import { SlidingTabs } from '@/components/ui/SlidingTabs';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { Card, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
-import { coursesApi, classesApi, teachersApi } from '@/api/resources';
+import { coursesApi, classesApi, classSessionsApi, teachersApi } from '@/api/resources';
 import { mockCourses, mockClasses, mockTeachers } from '@/utils/mockData';
+import { generateMockSessions } from '@/utils/mockSessionStore';
 import { formToCreatePayload, type ClassFormValues } from '@/utils/classForm';
 import { ACTIVE_STATUSES } from '@/utils/constants';
 import { activeRecordStatus, filterByStatus, getStatusCounts } from '@/utils/statusFilter';
+import { logAdminAction } from '@/utils/auditLog';
+import { AUDIT_ACTIONS } from '@/types/auditLog';
 import type { ClassItem, Course, TeacherProfile } from '@/types';
 
 const MAIN_TABS = ['Overview', 'Classes'] as const;
@@ -33,6 +37,7 @@ function DetailRow({ label, children }: { label: string; children: React.ReactNo
 }
 
 export default function CourseDetailPage() {
+  const { user } = useAuth();
   const { courseId } = useParams<{ courseId: string }>();
   const [searchParams, setSearchParams] = useSearchParams();
   const tabParam = searchParams.get('tab');
@@ -82,37 +87,53 @@ export default function CourseDetailPage() {
     const teacher = teachers.find((t) => t.userId === values.teacherUserId);
 
     try {
+      let newClass: ClassItem;
       if (!isMock) {
         const created = await classesApi.create(payload);
-        setClasses((list) => [
-          ...list,
-          {
-            ...created,
-            courseName: course.courseName,
-            teacherName: created.teacherName ?? teacher?.fullName,
-          },
-        ]);
+        newClass = {
+          ...created,
+          courseName: course.courseName,
+          teacherName: created.teacherName ?? teacher?.fullName,
+        };
+        setClasses((list) => [...list, newClass]);
+        logAdminAction(user, {
+          action: AUDIT_ACTIONS.classCreated,
+          entityType: 'Class',
+          entityId: created.id,
+          entityLabel: payload.className,
+        });
       } else {
-        setClasses((list) => [
-          ...list,
-          {
-            id: crypto.randomUUID(),
-            courseId,
-            courseName: course.courseName,
-            teacherUserId: values.teacherUserId,
-            teacherName: teacher?.fullName,
-            className: payload.className,
-            dayOfWeek: payload.dayOfWeek,
-            startTime: payload.startTime,
-            endTime: payload.endTime,
-            maxStudents: payload.maxStudents,
-            enrolledCount: 0,
-            location: payload.location,
-            isActive: payload.isActive,
-          },
-        ]);
+        newClass = {
+          id: crypto.randomUUID(),
+          courseId,
+          courseName: course.courseName,
+          teacherUserId: values.teacherUserId,
+          teacherName: teacher?.fullName,
+          className: payload.className,
+          dayOfWeek: payload.dayOfWeek,
+          startTime: payload.startTime,
+          endTime: payload.endTime,
+          maxStudents: payload.maxStudents,
+          enrolledCount: 0,
+          location: payload.location,
+          isActive: payload.isActive,
+        };
+        setClasses((list) => [...list, newClass]);
+        logAdminAction(user, {
+          action: AUDIT_ACTIONS.classCreated,
+          entityType: 'Class',
+          entityId: newClass.id,
+          entityLabel: payload.className,
+        });
       }
       setClassFormOpen(false);
+      const from = new Date().toISOString().slice(0, 10);
+      const to = new Date(Date.now() + 56 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+      if (isMock) {
+        generateMockSessions([newClass], from, to, newClass.id);
+      } else {
+        classSessionsApi.generate({ classId: newClass.id, fromDate: from, toDate: to }).catch(() => {});
+      }
     } catch {
       setClasses((list) => [
         ...list,

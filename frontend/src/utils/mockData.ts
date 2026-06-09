@@ -430,21 +430,42 @@ export const mockClasses: ClassItem[] = [
   { id: 'cl1', courseId: 'c1', courseName: 'Piano Beginner', teacherUserId: '2', teacherName: 'Sarah Chen', className: 'Piano Mon AM', dayOfWeek: 'Monday', startTime: '10:00', endTime: '11:00', maxStudents: 16, enrolledCount: 14, location: 'Room A', isActive: true },
   { id: 'cl2', courseId: 'c2', courseName: 'Guitar Beginner', teacherUserId: '3', teacherName: 'David Wong', className: 'Guitar Wed PM', dayOfWeek: 'Wednesday', startTime: '15:00', endTime: '16:00', maxStudents: 10, enrolledCount: 8, location: 'Room B', isActive: true },
   { id: 'cl3', courseId: 'c1', courseName: 'Piano Beginner', teacherUserId: '2', teacherName: 'Sarah Chen', className: 'Piano Sat AM', dayOfWeek: 'Saturday', startTime: '09:00', endTime: '10:00', maxStudents: 10, enrolledCount: 7, location: 'Room A', isActive: true },
+  { id: 'cl4', courseId: 'c1', courseName: 'Piano Beginner', teacherUserId: '2', teacherName: 'Sarah Chen', className: 'Piano Wed PM', dayOfWeek: 'Wednesday', startTime: '14:00', endTime: '15:00', maxStudents: 12, enrolledCount: 11, location: 'Room A', isActive: true },
+  { id: 'cl5', courseId: 'c1', courseName: 'Piano Beginner', teacherUserId: '2', teacherName: 'Sarah Chen', className: 'Piano Thu AM', dayOfWeek: 'Thursday', startTime: '10:30', endTime: '11:30', maxStudents: 12, enrolledCount: 9, location: 'Room C', isActive: true },
+  { id: 'cl6', courseId: 'c6', courseName: 'Piano Grade 5', teacherUserId: '2', teacherName: 'Sarah Chen', className: 'Piano Grade 5 Tue', dayOfWeek: 'Tuesday', startTime: '17:00', endTime: '18:00', maxStudents: 8, enrolledCount: 6, location: 'Room A', isActive: true },
+  { id: 'cl7', courseId: 'c8', courseName: 'Music Theory', teacherUserId: '2', teacherName: 'Sarah Chen', className: 'Theory Fri PM', dayOfWeek: 'Friday', startTime: '16:00', endTime: '16:45', maxStudents: 14, enrolledCount: 12, location: 'Room D', isActive: true },
+  { id: 'cl8', courseId: 'c4', courseName: 'Vocal Basic', teacherUserId: '2', teacherName: 'Sarah Chen', className: 'Vocal Tue AM', dayOfWeek: 'Tuesday', startTime: '09:00', endTime: '09:45', maxStudents: 10, enrolledCount: 8, location: 'Studio 2', isActive: true },
+  { id: 'cl9', courseId: 'c1', courseName: 'Piano Beginner', teacherUserId: '2', teacherName: 'Sarah Chen', className: 'Piano Sun PM', dayOfWeek: 'Sunday', startTime: '15:00', endTime: '16:00', maxStudents: 8, enrolledCount: 5, location: 'Room A', isActive: true },
+  { id: 'cl10', courseId: 'c2', courseName: 'Guitar Beginner', teacherUserId: '3', teacherName: 'David Wong', className: 'Guitar Sat AM', dayOfWeek: 'Saturday', startTime: '11:00', endTime: '12:00', maxStudents: 8, enrolledCount: 6, location: 'Room B', isActive: true },
 ];
 
 export const mockEnrollments: Enrollment[] = dashboardSeedEnrollments;
 
 export const mockClassSessions: ClassSession[] = [
-  { id: 'cs1', classId: 'cl1', className: 'Piano Mon AM', sessionDate: '2025-05-26', startTime: '10:00', endTime: '11:00', topic: 'Scales and Hand Position', status: 'Scheduled' },
-  { id: 'cs2', classId: 'cl1', className: 'Piano Mon AM', sessionDate: '2025-05-19', startTime: '10:00', endTime: '11:00', topic: 'Introduction to C Major', notes: 'Good progress overall', status: 'Completed' },
+  { id: 'cs1', classId: 'cl1', className: 'Piano Mon AM', sessionDate: '2026-06-09', startTime: '10:00', endTime: '11:00', topic: 'Scales and Hand Position', status: 'Scheduled' },
+  { id: 'cs2', classId: 'cl1', className: 'Piano Mon AM', sessionDate: '2026-06-02', startTime: '10:00', endTime: '11:00', topic: 'Introduction to C Major', notes: 'Good progress overall', status: 'Completed' },
+  { id: 'cs11', classId: 'cl1', className: 'Piano Mon AM', sessionDate: '2026-05-26', startTime: '10:00', endTime: '11:00', topic: 'G Major and D Minor Scales', notes: 'Strong rhythm from most students', status: 'Completed' },
+  { id: 'cs12', classId: 'cl1', className: 'Piano Mon AM', sessionDate: '2026-05-19', startTime: '10:00', endTime: '11:00', topic: 'Sight Reading — Week 3', status: 'Completed' },
+  { id: 'cs13', classId: 'cl1', className: 'Piano Mon AM', sessionDate: '2026-05-12', startTime: '10:00', endTime: '11:00', topic: 'Finger Strength and Independence', status: 'Completed' },
+  { id: 'cs14', classId: 'cl1', className: 'Piano Mon AM', sessionDate: '2026-05-05', startTime: '10:00', endTime: '11:00', topic: 'Public Holiday — No Class', status: 'Cancelled' },
+  { id: 'cs15', classId: 'cl1', className: 'Piano Mon AM', sessionDate: '2026-04-28', startTime: '10:00', endTime: '11:00', topic: 'Pedalling Introduction', status: 'Completed' },
+  { id: 'cs16', classId: 'cl1', className: 'Piano Mon AM', sessionDate: '2026-04-21', startTime: '10:00', endTime: '11:00', topic: 'Dynamics and Expression', notes: 'Rescheduled from 14 Apr', status: 'Rescheduled' },
+  { id: 'cs17', classId: 'cl1', className: 'Piano Mon AM', sessionDate: '2026-06-16', startTime: '10:00', endTime: '11:00', topic: 'Two-Part Invention — Preparation', status: 'Scheduled' },
   { id: 'cs3', classId: 'cl2', className: 'Guitar Wed PM', sessionDate: '2025-05-28', startTime: '15:00', endTime: '16:00', topic: 'Basic Chords', status: 'Scheduled' },
+  { id: 'cs4', classId: 'cl3', className: 'Piano Sat AM', sessionDate: '2025-05-24', startTime: '09:00', endTime: '10:00', topic: 'Rhythm and Tempo', status: 'Scheduled' },
+  { id: 'cs5', classId: 'cl4', className: 'Piano Wed PM', sessionDate: '2025-05-28', startTime: '14:00', endTime: '15:00', topic: 'Left Hand Patterns', status: 'Scheduled' },
+  { id: 'cs6', classId: 'cl5', className: 'Piano Thu AM', sessionDate: '2025-05-29', startTime: '10:30', endTime: '11:30', topic: 'Sight Reading Basics', status: 'Scheduled' },
+  { id: 'cs7', classId: 'cl6', className: 'Piano Grade 5 Tue', sessionDate: '2025-05-27', startTime: '17:00', endTime: '18:00', topic: 'Exam Piece Run-through', status: 'Scheduled' },
+  { id: 'cs8', classId: 'cl7', className: 'Theory Fri PM', sessionDate: '2025-05-30', startTime: '16:00', endTime: '16:45', topic: 'Key Signatures', status: 'Scheduled' },
+  { id: 'cs9', classId: 'cl8', className: 'Vocal Tue AM', sessionDate: '2025-05-27', startTime: '09:00', endTime: '09:45', topic: 'Breathing Exercises', status: 'Scheduled' },
+  { id: 'cs10', classId: 'cl9', className: 'Piano Sun PM', sessionDate: '2025-06-01', startTime: '15:00', endTime: '16:00', topic: 'Ensemble Repertoire', status: 'Scheduled' },
 ];
 
 export const mockAttendance: Attendance[] = [
-  { id: 'a1', classSessionId: 'cs2', sessionDate: '2025-05-19', className: 'Piano Mon AM', studentUserId: '4', studentName: 'Emily Tan', status: 'Present' },
-  { id: 'a2', classSessionId: 'cs2', sessionDate: '2025-05-19', className: 'Piano Mon AM', studentUserId: '5', studentName: 'James Lim', status: 'Late', remarks: 'Arrived 10 mins late' },
-  { id: 'a3', classSessionId: 'cs1', sessionDate: '2025-05-12', className: 'Piano Mon AM', studentUserId: '4', studentName: 'Emily Tan', status: 'Present' },
-  { id: 'a4', classSessionId: 'cs1', sessionDate: '2025-05-12', className: 'Piano Mon AM', studentUserId: '5', studentName: 'James Lim', status: 'Absent', remarks: 'Family emergency' },
+  { id: 'a1', classSessionId: 'cs2', sessionDate: '2026-06-02', className: 'Piano Mon AM', studentUserId: '4', studentName: 'Emily Tan', status: 'Present' },
+  { id: 'a2', classSessionId: 'cs2', sessionDate: '2026-06-02', className: 'Piano Mon AM', studentUserId: '5', studentName: 'James Lim', status: 'Late', remarks: 'Arrived 10 mins late' },
+  { id: 'a3', classSessionId: 'cs13', sessionDate: '2026-05-12', className: 'Piano Mon AM', studentUserId: '4', studentName: 'Emily Tan', status: 'Present' },
+  { id: 'a4', classSessionId: 'cs13', sessionDate: '2026-05-12', className: 'Piano Mon AM', studentUserId: '5', studentName: 'James Lim', status: 'Absent', remarks: 'Family emergency' },
   { id: 'a5', classSessionId: 'cs3', sessionDate: '2025-05-28', className: 'Guitar Wed PM', studentUserId: '4', studentName: 'Emily Tan', status: 'Excused', remarks: 'School event' },
   { id: 'a6', classSessionId: 'cs3', sessionDate: '2025-05-28', className: 'Guitar Wed PM', studentUserId: '5', studentName: 'James Lim', status: 'Present' },
 ];

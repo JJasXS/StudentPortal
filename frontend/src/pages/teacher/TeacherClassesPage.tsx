@@ -4,7 +4,7 @@ import { PageHeader } from '@/components/PageHeader';
 import { TeacherClassCard } from '@/components/TeacherClassCard';
 import { Card, CardContent } from '@/components/ui/Card';
 import { classesApi } from '@/api/resources';
-import { mockClasses } from '@/utils/mockData';
+import { mergeTeacherClasses, mockClassesForTeacher } from '@/utils/teacherClasses';
 import type { ClassItem } from '@/types';
 
 export default function TeacherClassesPage() {
@@ -17,8 +17,8 @@ export default function TeacherClassesPage() {
     setLoading(true);
     classesApi
       .getAll()
-      .then((data) => setClasses(data.filter((c) => c.teacherUserId === user.id)))
-      .catch(() => setClasses(mockClasses.filter((c) => c.teacherUserId === user.id)))
+      .then((data) => setClasses(mergeTeacherClasses(data, user)))
+      .catch(() => setClasses(mockClassesForTeacher(user)))
       .finally(() => setLoading(false));
   }, [user?.id]);
 

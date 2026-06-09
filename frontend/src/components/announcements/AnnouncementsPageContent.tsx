@@ -13,6 +13,8 @@ import {
   splitAnnouncementsForRole,
 } from '@/utils/announcements';
 import { announcementsListPath } from '@/utils/announcementLinks';
+import { logAdminAction } from '@/utils/auditLog';
+import { AUDIT_ACTIONS } from '@/types/auditLog';
 import type { Announcement, UserRole } from '@/types';
 import type { AnnouncementFormValues } from '@/utils/announcementForm';
 
@@ -99,9 +101,21 @@ export function AnnouncementsPageContent(props: AnnouncementsPageContentProps) {
           createdAt: now,
         };
         setAnnouncements((list) => [created, ...list]);
+        logAdminAction(user, {
+          action: AUDIT_ACTIONS.announcementCreated,
+          entityType: 'Announcement',
+          entityId: created.id,
+          entityLabel: payload.title,
+        });
       } else {
         const created = await announcementsApi.create(payload);
         setAnnouncements((list) => [created, ...list]);
+        logAdminAction(user, {
+          action: AUDIT_ACTIONS.announcementCreated,
+          entityType: 'Announcement',
+          entityId: created.id,
+          entityLabel: payload.title,
+        });
       }
       setFormOpen(false);
     } catch {

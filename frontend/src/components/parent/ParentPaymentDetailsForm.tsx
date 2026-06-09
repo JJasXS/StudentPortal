@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/Button';
 import { Input, Label } from '@/components/ui/Input';
 import {
   cardLast4FromNumber,
+  isValidCvv,
   loadParentPaymentDetails,
   maskCardDisplay,
   saveParentPaymentDetails,
@@ -14,16 +15,25 @@ import type { ParentPaymentDetails } from '@/types/parentPayment';
 interface ParentPaymentDetailsFormProps {
   parentUserId: string;
   onSaved?: (details: ParentPaymentDetails) => void;
+  /** Render inside a parent card tab (no nested Card wrapper). */
+  embedded?: boolean;
+  title?: string;
 }
 
 const emptyForm = {
   cardholderName: '',
   cardNumber: '',
   expiry: '',
+  cvv: '',
   billingEmail: '',
 };
 
-export function ParentPaymentDetailsForm({ parentUserId, onSaved }: ParentPaymentDetailsFormProps) {
+export function ParentPaymentDetailsForm({
+  parentUserId,
+  onSaved,
+  embedded = false,
+  title = 'Payment details',
+}: ParentPaymentDetailsFormProps) {
   const [form, setForm] = useState(emptyForm);
   const [saved, setSaved] = useState<ParentPaymentDetails | null>(null);
   const [message, setMessage] = useState('');
@@ -37,13 +47,14 @@ export function ParentPaymentDetailsForm({ parentUserId, onSaved }: ParentPaymen
         cardholderName: existing.cardholderName,
         cardNumber: '',
         expiry: existing.expiry,
+        cvv: '',
         billingEmail: existing.billingEmail,
       });
-      setEditing(false);
+      setEditing(embedded);
     } else {
       setEditing(true);
     }
-  }, [parentUserId]);
+  }, [parentUserId, embedded]);
 
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
@@ -56,6 +67,10 @@ export function ParentPaymentDetailsForm({ parentUserId, onSaved }: ParentPaymen
       setMessage('Enter a valid card number.');
       return;
     }
+    if (!isValidCvv(form.cvv)) {
+      setMessage('Enter a valid CVV (3 or 4 digits).');
+      return;
+    }
 
     const details: ParentPaymentDetails = {
       cardholderName: form.cardholderName.trim(),
@@ -65,22 +80,15 @@ export function ParentPaymentDetailsForm({ parentUserId, onSaved }: ParentPaymen
     };
     saveParentPaymentDetails(parentUserId, details);
     setSaved(details);
-    setForm((f) => ({ ...f, cardNumber: '' }));
+    setForm((f) => ({ ...f, cardNumber: '', cvv: '' }));
     setEditing(false);
     setMessage('Payment details saved.');
     onSaved?.(details);
   };
 
-  return (
-    <Card>
-      <CardHeader className="pb-3">
-        <CardTitle className="flex items-center gap-2 text-base">
-          <CreditCard className="h-5 w-5 text-primary-600" />
-          Payment details
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="pt-0">
-        {saved && !editing ? (
+  const body = (
+    <>
+        {!embedded && saved && !editing ? (
           <div className="space-y-3">
             <dl className="grid gap-2 text-sm sm:grid-cols-2">
               <div>
@@ -108,6 +116,38 @@ export function ParentPaymentDetailsForm({ parentUserId, onSaved }: ParentPaymen
           </div>
         ) : (
           <form onSubmit={handleSave} className="space-y-4">
+            {embedded && saved && (
+              <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+                <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Card on file
+                </p>
+                <dl className="grid gap-2 text-sm sm:grid-cols-2">
+                  <div>
+                    <dt className="text-slate-500">Cardholder</dt>
+                    <dd className="font-medium text-slate-900">{saved.cardholderName}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-slate-500">Card</dt>
+                    <dd className="font-mono font-medium text-slate-900">
+                      {maskCardDisplay(saved.cardLast4)}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-slate-500">Expiry</dt>
+                    <dd className="font-medium text-slate-900">{saved.expiry}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-slate-500">Billing email</dt>
+                    <dd className="font-medium text-slate-900">{saved.billingEmail}</dd>
+                  </div>
+                </dl>
+              </div>
+            )}
+            {embedded && (
+              <p className="text-sm font-medium text-slate-900">
+                {saved ? 'Update payment info' : 'Add payment info'}
+              </p>
+            )}
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="sm:col-span-2">
                 <Label htmlFor="cardholder">Cardholder name</Label>
@@ -143,6 +183,24 @@ export function ParentPaymentDetailsForm({ parentUserId, onSaved }: ParentPaymen
                 />
               </div>
               <div>
+                <Label htmlFor="cvv">CVV</Label>
+                <Input
+                  id="cvv"
+                  value={form.cvv}
+                  onChange={(e) =>
+                    setForm((f) => ({
+                      ...f,
+                      cvv: e.target.value.replace(/\D/g, '').slice(0, 4),
+                    }))
+                  }
+                  placeholder="123"
+                  className="mt-1 font-mono"
+                  inputMode="numeric"
+                  autoComplete="cc-csc"
+                  maxLength={4}
+                />
+              </div>
+              <div className="sm:col-span-2">
                 <Label htmlFor="billingEmail">Billing email</Label>
                 <Input
                   id="billingEmail"
@@ -156,9 +214,9 @@ export function ParentPaymentDetailsForm({ parentUserId, onSaved }: ParentPaymen
             </div>
             <div className="flex flex-wrap gap-2">
               <Button type="submit" size="sm">
-                Save details
+                {embedded ? 'Save payment info' : 'Save details'}
               </Button>
-              {saved && (
+              {saved && !embedded && (
                 <Button
                   type="button"
                   variant="ghost"
@@ -182,9 +240,24 @@ export function ParentPaymentDetailsForm({ parentUserId, onSaved }: ParentPaymen
           </p>
         )}
         <p className="mt-3 text-xs text-slate-500">
-          Demo only — card numbers are not sent to a payment gateway. Only the last four digits are stored locally.
+          Demo only — card numbers and CVV are not sent to a payment gateway. CVV is never stored; only the last four digits of your card are saved locally.
         </p>
-      </CardContent>
+    </>
+  );
+
+  if (embedded) {
+    return <div className="p-4 sm:p-6">{body}</div>;
+  }
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <CardTitle className="flex items-center gap-2 text-base">
+          <CreditCard className="h-5 w-5 text-primary-600" />
+          {title}
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="pt-0">{body}</CardContent>
     </Card>
   );
 }

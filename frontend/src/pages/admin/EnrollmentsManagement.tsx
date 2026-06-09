@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ExternalLink, Pencil, Plus, X } from 'lucide-react';
+import { useAuth } from '@/context/AuthContext';
 import { PageHeader } from '@/components/PageHeader';
 import { SearchBox } from '@/components/SearchBox';
 import {
@@ -18,11 +19,14 @@ import { ENROLLMENT_STATUSES } from '@/utils/constants';
 import { formatDateDDMMYYYY } from '@/utils/dateFormat';
 import { loadMockEnrollments, saveMockEnrollments } from '@/utils/mockEnrollmentStore';
 import { filterByStatus, getStatusCounts } from '@/utils/statusFilter';
+import { logAdminAction } from '@/utils/auditLog';
+import { AUDIT_ACTIONS } from '@/types/auditLog';
 import type { ClassItem, Enrollment, StudentProfile } from '@/types';
 
 const STATUS_TABS = ['All', ...ENROLLMENT_STATUSES] as const;
 
 export default function EnrollmentsManagement() {
+  const { user } = useAuth();
   const [enrollments, setEnrollments] = useState<Enrollment[]>([]);
   const [students, setStudents] = useState<StudentProfile[]>([]);
   const [classes, setClasses] = useState<ClassItem[]>([]);
@@ -100,6 +104,17 @@ export default function EnrollmentsManagement() {
 
     const student = students.find((s) => s.userId === values.studentUserId);
     const cls = classes.find((c) => c.id === values.classId);
+    const entityLabel = `${student?.fullName ?? 'Student'} → ${cls?.className ?? 'Class'}`;
+
+    const logEnrollment = (action: string, entityId: string) => {
+      logAdminAction(user, {
+        action,
+        entityType: 'Enrollment',
+        entityId,
+        entityLabel,
+        details: values.status,
+      });
+    };
 
     try {
       if (isMock) {
@@ -115,6 +130,12 @@ export default function EnrollmentsManagement() {
           );
           setEnrollments(next);
           saveMockEnrollments(next);
+          logEnrollment(
+            values.status === 'Cancelled'
+              ? AUDIT_ACTIONS.enrollmentCancelled
+              : AUDIT_ACTIONS.enrollmentUpdated,
+            editing.id
+          );
         } else {
           const created: Enrollment = {
             id: crypto.randomUUID(),
@@ -128,6 +149,7 @@ export default function EnrollmentsManagement() {
           const next = [...enrollments, created];
           setEnrollments(next);
           saveMockEnrollments(next);
+          logEnrollment(AUDIT_ACTIONS.enrollmentCreated, created.id);
         }
       } else if (editing) {
         const updated = await enrollmentsApi.update(editing.id, {
@@ -138,6 +160,12 @@ export default function EnrollmentsManagement() {
         });
         setEnrollments((list) =>
           list.map((e) => (e.id === editing.id ? { ...e, ...updated } : e))
+        );
+        logEnrollment(
+          values.status === 'Cancelled'
+            ? AUDIT_ACTIONS.enrollmentCancelled
+            : AUDIT_ACTIONS.enrollmentUpdated,
+          editing.id
         );
       } else {
         const created = await enrollmentsApi.create({
@@ -154,6 +182,7 @@ export default function EnrollmentsManagement() {
             className: cls?.className ?? created.className,
           },
         ]);
+        logEnrollment(AUDIT_ACTIONS.enrollmentCreated, created.id);
       }
       setFormOpen(false);
       setEditing(null);

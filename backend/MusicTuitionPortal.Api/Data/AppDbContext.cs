@@ -21,6 +21,10 @@ public class AppDbContext : DbContext
     public DbSet<LessonNote> LessonNotes => Set<LessonNote>();
     public DbSet<Announcement> Announcements => Set<Announcement>();
     public DbSet<Invoice> Invoices => Set<Invoice>();
+    public DbSet<CentreSettings> CentreSettings => Set<CentreSettings>();
+    public DbSet<PasswordReset> PasswordResets => Set<PasswordReset>();
+    public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
+    public DbSet<Notification> Notifications => Set<Notification>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

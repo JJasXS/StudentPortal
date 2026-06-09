@@ -202,11 +202,71 @@ public class Invoice
     public Guid? ParentUserId { get; set; }
     public User? ParentUser { get; set; }
     public string InvoiceNo { get; set; } = string.Empty;
+    public string? CourseName { get; set; }
+    public string? ClassName { get; set; }
     public decimal Amount { get; set; }
     public string Status { get; set; } = "Draft";
+    public string? BillingPeriod { get; set; }
     public DateTime DueDate { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public DateTime? PaidAt { get; set; }
+    public string? BillplzBillId { get; set; }
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
+}
+
+public class CentreSettings
+{
+    public Guid Id { get; set; }
+    public string CentreName { get; set; } = "Music Tuition Portal";
+    public string Timezone { get; set; } = "Asia/Kuala_Lumpur";
+    public string Currency { get; set; } = "MYR";
+    public decimal DefaultMonthlyFee { get; set; } = 300m;
+    public string? PaymentInstructions { get; set; }
+    public string? Address { get; set; }
+    public string? Phone { get; set; }
+    public string? Email { get; set; }
+    public string? BankName { get; set; }
+    public string? BankAccountNo { get; set; }
+    public string InvoicePrefix { get; set; } = "INV";
+    public string? LogoDataUrl { get; set; }
+    public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
+}
+
+public class PasswordReset
+{
+    public Guid Id { get; set; }
+    public Guid UserId { get; set; }
+    public User User { get; set; } = null!;
+    public string Token { get; set; } = string.Empty;
+    public DateTime ExpiresAt { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+}
+
+public class AuditLog
+{
+    public Guid Id { get; set; }
+    public Guid? ActorUserId { get; set; }
+    public string? ActorName { get; set; }
+    public string? ActorRole { get; set; }
+    public string Action { get; set; } = string.Empty;
+    public string EntityType { get; set; } = string.Empty;
+    public string? EntityId { get; set; }
+    public string? EntityLabel { get; set; }
+    public string? Details { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+}
+
+public class Notification
+{
+    public Guid Id { get; set; }
+    public Guid UserId { get; set; }
+    public User User { get; set; } = null!;
+    public string Title { get; set; } = string.Empty;
+    public string Message { get; set; } = string.Empty;
+    public string Category { get; set; } = "System";
+    public string? LinkPath { get; set; }
+    public bool IsRead { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }
 
 public static class Roles

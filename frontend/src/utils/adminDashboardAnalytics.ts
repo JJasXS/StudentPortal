@@ -147,3 +147,61 @@ export function countEnrollmentsThisMonth(enrollments: Enrollment[], now = new D
     (e) => e.status !== 'Cancelled' && monthKeyFromDate(e.enrollmentDate) === key
   ).length;
 }
+
+export function filterInvoicesByDateRange(
+  invoices: Invoice[],
+  fromMonth?: string,
+  toMonth?: string
+): Invoice[] {
+  if (!fromMonth && !toMonth) return invoices;
+  return invoices.filter((inv) => {
+    const key = monthKeyFromDate(inv.createdAt);
+    if (fromMonth && key < fromMonth) return false;
+    if (toMonth && key > toMonth) return false;
+    return true;
+  });
+}
+
+export function filterEnrollmentsByDateRange(
+  enrollments: Enrollment[],
+  fromMonth?: string,
+  toMonth?: string
+): Enrollment[] {
+  if (!fromMonth && !toMonth) return enrollments;
+  return enrollments.filter((e) => {
+    const key = monthKeyFromDate(e.enrollmentDate);
+    if (fromMonth && key < fromMonth) return false;
+    if (toMonth && key > toMonth) return false;
+    return true;
+  });
+}
+
+export interface CourseRevenuePoint {
+  courseName: string;
+  paid: number;
+  unpaid: number;
+  total: number;
+}
+
+/** Revenue totals grouped by course (paid vs outstanding). */
+export function buildRevenueByCourseSeries(invoices: Invoice[]): CourseRevenuePoint[] {
+  const byCourse = new Map<string, { paid: number; unpaid: number }>();
+
+  for (const inv of invoices) {
+    if (inv.status === 'Cancelled') continue;
+    const course = inv.courseName ?? 'Other';
+    const row = byCourse.get(course) ?? { paid: 0, unpaid: 0 };
+    if (inv.status === 'Paid') row.paid += inv.amount;
+    else row.unpaid += inv.amount;
+    byCourse.set(course, row);
+  }
+
+  return [...byCourse.entries()]
+    .map(([courseName, row]) => ({
+      courseName,
+      paid: Math.round(row.paid),
+      unpaid: Math.round(row.unpaid),
+      total: Math.round(row.paid + row.unpaid),
+    }))
+    .sort((a, b) => b.total - a.total);
+}

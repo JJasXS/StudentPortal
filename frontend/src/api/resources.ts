@@ -87,6 +87,29 @@ export const classSessionsApi = {
   update: (id: string, data: Partial<ClassSession>) =>
     apiClient.put<ClassSession>(`/class-sessions/${id}`, data).then((r) => r.data),
   remove: (id: string) => apiClient.delete(`/class-sessions/${id}`),
+  generate: (data: { classId?: string; fromDate: string; toDate: string }) =>
+    apiClient
+      .post<{ createdCount: number; skippedCount: number; sessions: ClassSession[] }>(
+        '/class-sessions/generate',
+        data
+      )
+      .then((r) => r.data),
+  getOrCreateToday: (classId: string) =>
+    apiClient.post<ClassSession>(`/class-sessions/today/${classId}`).then((r) => r.data),
+};
+
+export const notificationsApi = {
+  getAll: (unreadOnly?: boolean) =>
+    apiClient
+      .get<import('@/types/notification').AppNotification[]>('/notifications', {
+        params: unreadOnly ? { unreadOnly: true } : undefined,
+      })
+      .then((r) => r.data),
+  getUnreadCount: () =>
+    apiClient.get<{ count: number }>('/notifications/unread-count').then((r) => r.data.count),
+  markRead: (id: string) =>
+    apiClient.put<import('@/types/notification').AppNotification>(`/notifications/${id}/read`).then((r) => r.data),
+  markAllRead: () => apiClient.put('/notifications/read-all'),
 };
 
 export const attendanceApi = {
@@ -131,4 +154,50 @@ export const announcementsApi = {
 export const invoicesApi = {
   getAll: () => apiClient.get<Invoice[]>('/invoices').then((r) => r.data),
   getById: (id: string) => apiClient.get<Invoice>(`/invoices/${id}`).then((r) => r.data),
+  create: (data: {
+    studentUserId: string;
+    courseName?: string;
+    className?: string;
+    amount: number;
+    dueDate: string;
+    billingPeriod?: string;
+    sendNow?: boolean;
+  }) => apiClient.post<Invoice>('/invoices', data).then((r) => r.data),
+  update: (
+    id: string,
+    data: { amount?: number; dueDate?: string; billingPeriod?: string; status?: Invoice['status'] }
+  ) => apiClient.put<Invoice>(`/invoices/${id}`, data).then((r) => r.data),
+  updateStatus: (id: string, status: Invoice['status']) =>
+    apiClient.put<Invoice>(`/invoices/${id}/status`, { status }).then((r) => r.data),
+};
+
+export const settingsApi = {
+  getCentre: () =>
+    apiClient
+      .get<import('@/types/centreSettings').CentreSettings>('/settings/centre')
+      .then((r) => r.data),
+  updateCentre: (data: import('@/types/centreSettings').CentreSettings) =>
+    apiClient
+      .put<import('@/types/centreSettings').CentreSettings>('/settings/centre', data)
+      .then((r) => r.data),
+};
+
+export const auditLogsApi = {
+  getAll: (params?: {
+    search?: string;
+    action?: string;
+    entityType?: string;
+    from?: string;
+    to?: string;
+  }) =>
+    apiClient
+      .get<import('@/types/auditLog').AuditLogEntry[]>('/audit-logs', { params })
+      .then((r) => r.data),
+  create: (data: {
+    action: string;
+    entityType: string;
+    entityId?: string;
+    entityLabel?: string;
+    details?: string;
+  }) => apiClient.post('/audit-logs', data),
 };

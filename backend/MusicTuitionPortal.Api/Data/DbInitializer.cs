@@ -14,6 +14,16 @@ public static class DbInitializer
         await context.Database.EnsureCreatedAsync();
         await EnsureEmploymentTypeColumnAsync(context);
         await EnsureAttendanceCheckInsTableAsync(context);
+        await EnsureCentreSettingsTableAsync(context);
+        await EnsurePasswordResetsTableAsync(context);
+        await EnsureDefaultCentreSettingsAsync(context);
+        await EnsureInvoiceCourseColumnsAsync(context);
+        await EnsureInvoiceBillingColumnsAsync(context);
+        await EnsureCentreSettingsColumnsAsync(context);
+        await EnsureAuditLogsTableAsync(context);
+        await EnsureNotificationsTableAsync(context);
+        await EnsureDemoNotificationsAsync(context);
+        await EnsureDemoAuditLogsAsync(context);
 
         if (await context.Users.AnyAsync())
         {
@@ -368,12 +378,86 @@ public static class DbInitializer
             MaxStudents = 8,
             Location = "Room A"
         };
-        context.Classes.AddRange(class1, class2, class3);
+        var class4 = new MusicClass
+        {
+            Id = Guid.NewGuid(),
+            CourseId = course1.Id,
+            TeacherUserId = teacher1Id,
+            ClassName = "Piano Wed PM",
+            DayOfWeek = "Wednesday",
+            StartTime = new TimeSpan(14, 0, 0),
+            EndTime = new TimeSpan(15, 0, 0),
+            MaxStudents = 12,
+            Location = "Room A"
+        };
+        var class5 = new MusicClass
+        {
+            Id = Guid.NewGuid(),
+            CourseId = course1.Id,
+            TeacherUserId = teacher1Id,
+            ClassName = "Piano Thu AM",
+            DayOfWeek = "Thursday",
+            StartTime = new TimeSpan(10, 30, 0),
+            EndTime = new TimeSpan(11, 30, 0),
+            MaxStudents = 12,
+            Location = "Room C"
+        };
+        var class6 = new MusicClass
+        {
+            Id = Guid.NewGuid(),
+            CourseId = course1.Id,
+            TeacherUserId = teacher1Id,
+            ClassName = "Piano Grade 5 Tue",
+            DayOfWeek = "Tuesday",
+            StartTime = new TimeSpan(17, 0, 0),
+            EndTime = new TimeSpan(18, 0, 0),
+            MaxStudents = 8,
+            Location = "Room A"
+        };
+        var class7 = new MusicClass
+        {
+            Id = Guid.NewGuid(),
+            CourseId = course1.Id,
+            TeacherUserId = teacher1Id,
+            ClassName = "Theory Fri PM",
+            DayOfWeek = "Friday",
+            StartTime = new TimeSpan(16, 0, 0),
+            EndTime = new TimeSpan(16, 45, 0),
+            MaxStudents = 14,
+            Location = "Room D"
+        };
+        var class8 = new MusicClass
+        {
+            Id = Guid.NewGuid(),
+            CourseId = course4.Id,
+            TeacherUserId = teacher1Id,
+            ClassName = "Vocal Tue AM",
+            DayOfWeek = "Tuesday",
+            StartTime = new TimeSpan(9, 0, 0),
+            EndTime = new TimeSpan(9, 45, 0),
+            MaxStudents = 10,
+            Location = "Studio 2"
+        };
+        var class9 = new MusicClass
+        {
+            Id = Guid.NewGuid(),
+            CourseId = course1.Id,
+            TeacherUserId = teacher1Id,
+            ClassName = "Piano Sun PM",
+            DayOfWeek = "Sunday",
+            StartTime = new TimeSpan(15, 0, 0),
+            EndTime = new TimeSpan(16, 0, 0),
+            MaxStudents = 8,
+            Location = "Room A"
+        };
+        context.Classes.AddRange(class1, class2, class3, class4, class5, class6, class7, class8, class9);
 
         context.Enrollments.AddRange(
             new Enrollment { Id = Guid.NewGuid(), StudentUserId = student1Id, ClassId = class1.Id, EnrollmentDate = new DateTime(2025, 1, 15, 0, 0, 0, DateTimeKind.Utc), Status = "Active" },
             new Enrollment { Id = Guid.NewGuid(), StudentUserId = student2Id, ClassId = class2.Id, EnrollmentDate = new DateTime(2025, 2, 1, 0, 0, 0, DateTimeKind.Utc), Status = "Active" },
-            new Enrollment { Id = Guid.NewGuid(), StudentUserId = student1Id, ClassId = class3.Id, EnrollmentDate = new DateTime(2025, 1, 20, 0, 0, 0, DateTimeKind.Utc), Status = "Active" });
+            new Enrollment { Id = Guid.NewGuid(), StudentUserId = student1Id, ClassId = class3.Id, EnrollmentDate = new DateTime(2025, 1, 20, 0, 0, 0, DateTimeKind.Utc), Status = "Active" },
+            new Enrollment { Id = Guid.NewGuid(), StudentUserId = student1Id, ClassId = class4.Id, EnrollmentDate = new DateTime(2025, 2, 5, 0, 0, 0, DateTimeKind.Utc), Status = "Active" },
+            new Enrollment { Id = Guid.NewGuid(), StudentUserId = student1Id, ClassId = class5.Id, EnrollmentDate = new DateTime(2025, 2, 12, 0, 0, 0, DateTimeKind.Utc), Status = "Active" });
 
         var session1 = new ClassSession
         {
@@ -406,7 +490,68 @@ public static class DbInitializer
             Topic = "Basic Chords",
             Status = "Scheduled"
         };
-        context.ClassSessions.AddRange(session1, session2, session3);
+        var session4 = new ClassSession
+        {
+            Id = Guid.NewGuid(),
+            ClassId = class1.Id,
+            SessionDate = new DateTime(2026, 6, 9, 0, 0, 0, DateTimeKind.Utc),
+            StartTime = new TimeSpan(10, 0, 0),
+            EndTime = new TimeSpan(11, 0, 0),
+            Topic = "Scales and Hand Position",
+            Status = "Scheduled"
+        };
+        var session5 = new ClassSession
+        {
+            Id = Guid.NewGuid(),
+            ClassId = class1.Id,
+            SessionDate = new DateTime(2026, 5, 26, 0, 0, 0, DateTimeKind.Utc),
+            StartTime = new TimeSpan(10, 0, 0),
+            EndTime = new TimeSpan(11, 0, 0),
+            Topic = "G Major and D Minor Scales",
+            Notes = "Strong rhythm from most students",
+            Status = "Completed"
+        };
+        var session6 = new ClassSession
+        {
+            Id = Guid.NewGuid(),
+            ClassId = class1.Id,
+            SessionDate = new DateTime(2026, 5, 19, 0, 0, 0, DateTimeKind.Utc),
+            StartTime = new TimeSpan(10, 0, 0),
+            EndTime = new TimeSpan(11, 0, 0),
+            Topic = "Sight Reading — Week 3",
+            Status = "Completed"
+        };
+        var session7 = new ClassSession
+        {
+            Id = Guid.NewGuid(),
+            ClassId = class1.Id,
+            SessionDate = new DateTime(2026, 5, 12, 0, 0, 0, DateTimeKind.Utc),
+            StartTime = new TimeSpan(10, 0, 0),
+            EndTime = new TimeSpan(11, 0, 0),
+            Topic = "Finger Strength and Independence",
+            Status = "Completed"
+        };
+        var session8 = new ClassSession
+        {
+            Id = Guid.NewGuid(),
+            ClassId = class1.Id,
+            SessionDate = new DateTime(2026, 5, 5, 0, 0, 0, DateTimeKind.Utc),
+            StartTime = new TimeSpan(10, 0, 0),
+            EndTime = new TimeSpan(11, 0, 0),
+            Topic = "Public Holiday — No Class",
+            Status = "Cancelled"
+        };
+        var session9 = new ClassSession
+        {
+            Id = Guid.NewGuid(),
+            ClassId = class1.Id,
+            SessionDate = new DateTime(2026, 6, 16, 0, 0, 0, DateTimeKind.Utc),
+            StartTime = new TimeSpan(10, 0, 0),
+            EndTime = new TimeSpan(11, 0, 0),
+            Topic = "Two-Part Invention — Preparation",
+            Status = "Scheduled"
+        };
+        context.ClassSessions.AddRange(session1, session2, session3, session4, session5, session6, session7, session8, session9);
 
         context.Attendances.AddRange(
             new Attendance { Id = Guid.NewGuid(), ClassSessionId = session2.Id, StudentUserId = student1Id, Status = "Present" },
@@ -538,6 +683,8 @@ public static class DbInitializer
                 StudentUserId = student1Id,
                 ParentUserId = parent1Id,
                 InvoiceNo = "INV-2025-001",
+                CourseName = "Piano Beginner",
+                ClassName = "Piano Mon AM",
                 Amount = 350,
                 Status = "Unpaid",
                 DueDate = new DateTime(2025, 6, 15, 0, 0, 0, DateTimeKind.Utc)
@@ -548,6 +695,8 @@ public static class DbInitializer
                 StudentUserId = student2Id,
                 ParentUserId = parent2Id,
                 InvoiceNo = "INV-2025-002",
+                CourseName = "Guitar Beginner",
+                ClassName = "Guitar Wed PM",
                 Amount = 280,
                 Status = "Paid",
                 DueDate = new DateTime(2025, 5, 15, 0, 0, 0, DateTimeKind.Utc)
@@ -758,5 +907,212 @@ public static class DbInitializer
                 CreatedByUserId TEXT NOT NULL,
                 CreatedAt TEXT NOT NULL
             )");
+    }
+
+    private static async Task EnsureCentreSettingsTableAsync(AppDbContext context)
+    {
+        await context.Database.ExecuteSqlRawAsync(@"
+            CREATE TABLE IF NOT EXISTS CentreSettings (
+                Id TEXT NOT NULL PRIMARY KEY,
+                CentreName TEXT NOT NULL,
+                Timezone TEXT NOT NULL,
+                Currency TEXT NOT NULL,
+                DefaultMonthlyFee REAL NOT NULL,
+                PaymentInstructions TEXT NULL,
+                UpdatedAt TEXT NOT NULL
+            )");
+    }
+
+    private static async Task EnsurePasswordResetsTableAsync(AppDbContext context)
+    {
+        await context.Database.ExecuteSqlRawAsync(@"
+            CREATE TABLE IF NOT EXISTS PasswordResets (
+                Id TEXT NOT NULL PRIMARY KEY,
+                UserId TEXT NOT NULL,
+                Token TEXT NOT NULL,
+                ExpiresAt TEXT NOT NULL,
+                CreatedAt TEXT NOT NULL
+            )");
+    }
+
+    private static async Task EnsureAuditLogsTableAsync(AppDbContext context)
+    {
+        await context.Database.ExecuteSqlRawAsync(@"
+            CREATE TABLE IF NOT EXISTS AuditLogs (
+                Id TEXT NOT NULL PRIMARY KEY,
+                ActorUserId TEXT NULL,
+                ActorName TEXT NULL,
+                ActorRole TEXT NULL,
+                Action TEXT NOT NULL,
+                EntityType TEXT NOT NULL,
+                EntityId TEXT NULL,
+                EntityLabel TEXT NULL,
+                Details TEXT NULL,
+                CreatedAt TEXT NOT NULL
+            )");
+    }
+
+    private static async Task EnsureNotificationsTableAsync(AppDbContext context)
+    {
+        await context.Database.ExecuteSqlRawAsync(@"
+            CREATE TABLE IF NOT EXISTS Notifications (
+                Id TEXT NOT NULL PRIMARY KEY,
+                UserId TEXT NOT NULL,
+                Title TEXT NOT NULL,
+                Message TEXT NOT NULL,
+                Category TEXT NOT NULL,
+                LinkPath TEXT NULL,
+                IsRead INTEGER NOT NULL DEFAULT 0,
+                CreatedAt TEXT NOT NULL
+            )");
+    }
+
+    private static async Task EnsureDemoNotificationsAsync(AppDbContext context)
+    {
+        if (await context.Notifications.AnyAsync()) return;
+
+        var parent1Id = Guid.Parse("44444444-4444-4444-4444-444444444441");
+        var parent2Id = Guid.Parse("44444444-4444-4444-4444-444444444442");
+        var now = DateTime.UtcNow;
+
+        context.Notifications.AddRange(
+            new Notification
+            {
+                Id = Guid.NewGuid(),
+                UserId = parent1Id,
+                Title = "New lesson note",
+                Message = "Introduction to C Major — Emily had a great first lesson!",
+                Category = "LessonNote",
+                LinkPath = "/parent/lesson-notes",
+                IsRead = false,
+                CreatedAt = now.AddHours(-2)
+            },
+            new Notification
+            {
+                Id = Guid.NewGuid(),
+                UserId = parent1Id,
+                Title = "Course fee due",
+                Message = "INV-2026-0042 — RM 300.00 due 15 Jun 2026",
+                Category = "Invoice",
+                LinkPath = "/parent/invoices",
+                IsRead = false,
+                CreatedAt = now.AddDays(-1)
+            },
+            new Notification
+            {
+                Id = Guid.NewGuid(),
+                UserId = parent1Id,
+                Title = "Centre closed — public holiday",
+                Message = "The centre will be closed on 5 May for Labour Day.",
+                Category = "Announcement",
+                LinkPath = "/parent/announcements",
+                IsRead = true,
+                CreatedAt = now.AddDays(-3)
+            },
+            new Notification
+            {
+                Id = Guid.NewGuid(),
+                UserId = parent2Id,
+                Title = "Absent from class",
+                Message = "James was marked absent for Guitar Wed PM on 28 May 2025.",
+                Category = "Attendance",
+                LinkPath = "/parent/attendance",
+                IsRead = false,
+                CreatedAt = now.AddDays(-2)
+            });
+
+        await context.SaveChangesAsync();
+    }
+
+    private static async Task EnsureDemoAuditLogsAsync(AppDbContext context)
+    {
+        if (await context.AuditLogs.AnyAsync()) return;
+
+        var adminId = Guid.Parse("11111111-1111-1111-1111-111111111111");
+        var now = DateTime.UtcNow;
+
+        var samples = new (string Action, string EntityType, string? EntityId, string? EntityLabel, string? Details, int DaysAgo)[]
+        {
+            ("settings.updated", "Settings", null, "Centre settings", "Updated invoice prefix and bank details", 0),
+            ("invoice.sent", "Invoice", "inv-0042", "INV-2026-0042", "Sent to Michael Tan — Piano Mon AM", 1),
+            ("enrollment.created", "Enrollment", "enr-101", "Emily Tan → Piano Mon AM", "Active", 2),
+            ("teacher.rate_updated", "Teacher", "22222222-2222-2222-2222-222222222221", "Sarah Chen", "$85/hr", 3),
+            ("course.created", "Course", null, "Piano Grade 5", null, 4),
+            ("class.created", "Class", null, "Piano Mon AM", null, 5),
+            ("student.updated", "Student", "33333333-3333-3333-3333-333333333331", "Emily Tan", null, 6),
+            ("announcement.created", "Announcement", null, "Labour Day closure", null, 7),
+            ("invoice.monthly_billing", "Invoice", null, "June 2026 monthly run", "12 invoices created", 8),
+            ("parent.updated", "Parent", "44444444-4444-4444-4444-444444444441", "Michael Tan", null, 9),
+        };
+
+        foreach (var (action, entityType, entityId, entityLabel, details, daysAgo) in samples)
+        {
+            context.AuditLogs.Add(new AuditLog
+            {
+                Id = Guid.NewGuid(),
+                ActorUserId = adminId,
+                ActorName = "System Admin",
+                ActorRole = "Admin",
+                Action = action,
+                EntityType = entityType,
+                EntityId = entityId,
+                EntityLabel = entityLabel,
+                Details = details,
+                CreatedAt = now.AddDays(-daysAgo).AddHours(-2)
+            });
+        }
+
+        await context.SaveChangesAsync();
+    }
+
+    private static async Task EnsureInvoiceBillingColumnsAsync(AppDbContext context)
+    {
+        try { await context.Database.ExecuteSqlRawAsync("ALTER TABLE Invoices ADD COLUMN BillingPeriod TEXT NULL"); } catch { }
+        try { await context.Database.ExecuteSqlRawAsync("ALTER TABLE Invoices ADD COLUMN PaidAt TEXT NULL"); } catch { }
+        try { await context.Database.ExecuteSqlRawAsync("ALTER TABLE Invoices ADD COLUMN BillplzBillId TEXT NULL"); } catch { }
+    }
+
+    private static async Task EnsureCentreSettingsColumnsAsync(AppDbContext context)
+    {
+        try { await context.Database.ExecuteSqlRawAsync("ALTER TABLE CentreSettings ADD COLUMN Address TEXT NULL"); } catch { }
+        try { await context.Database.ExecuteSqlRawAsync("ALTER TABLE CentreSettings ADD COLUMN Phone TEXT NULL"); } catch { }
+        try { await context.Database.ExecuteSqlRawAsync("ALTER TABLE CentreSettings ADD COLUMN Email TEXT NULL"); } catch { }
+        try { await context.Database.ExecuteSqlRawAsync("ALTER TABLE CentreSettings ADD COLUMN BankName TEXT NULL"); } catch { }
+        try { await context.Database.ExecuteSqlRawAsync("ALTER TABLE CentreSettings ADD COLUMN BankAccountNo TEXT NULL"); } catch { }
+        try { await context.Database.ExecuteSqlRawAsync("ALTER TABLE CentreSettings ADD COLUMN InvoicePrefix TEXT NOT NULL DEFAULT 'INV'"); } catch { }
+        try { await context.Database.ExecuteSqlRawAsync("ALTER TABLE CentreSettings ADD COLUMN LogoDataUrl TEXT NULL"); } catch { }
+    }
+
+    private static async Task EnsureInvoiceCourseColumnsAsync(AppDbContext context)
+    {
+        try
+        {
+            await context.Database.ExecuteSqlRawAsync(
+                "ALTER TABLE Invoices ADD COLUMN CourseName TEXT NULL");
+        }
+        catch { }
+        try
+        {
+            await context.Database.ExecuteSqlRawAsync(
+                "ALTER TABLE Invoices ADD COLUMN ClassName TEXT NULL");
+        }
+        catch { }
+    }
+
+    private static async Task EnsureDefaultCentreSettingsAsync(AppDbContext context)
+    {
+        var id = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
+        if (await context.CentreSettings.AnyAsync(s => s.Id == id)) return;
+
+        context.CentreSettings.Add(new CentreSettings
+        {
+            Id = id,
+            CentreName = "Music Tuition Portal (Demo)",
+            Timezone = "Asia/Kuala_Lumpur",
+            Currency = "MYR",
+            DefaultMonthlyFee = 300m,
+            PaymentInstructions = "Pay online via the parent portal or bank transfer to the centre account."
+        });
+        await context.SaveChangesAsync();
     }
 }

@@ -18,6 +18,9 @@ import EnrollmentsManagement from '@/pages/admin/EnrollmentsManagement';
 import AttendanceOverview from '@/pages/admin/AttendanceOverview';
 import AnnouncementsPage from '@/pages/admin/AnnouncementsPage';
 import AdminInvoicesPage from '@/pages/admin/AdminInvoicesPage';
+import AdminReportsPage from '@/pages/admin/AdminReportsPage';
+import AdminAuditLogPage from '@/pages/admin/AdminAuditLogPage';
+import AdminCalendarPage from '@/pages/admin/AdminCalendarPage';
 import SettingsPage from '@/pages/admin/SettingsPage';
 import TeacherDashboard from '@/pages/teacher/TeacherDashboard';
 import TeacherClassesPage from '@/pages/teacher/TeacherClassesPage';
@@ -25,6 +28,7 @@ import ClassSessionsPage from '@/pages/teacher/ClassSessionsPage';
 import TakeAttendancePage from '@/pages/teacher/TakeAttendancePage';
 import TeacherLessonNotesPage from '@/pages/teacher/TeacherLessonNotesPage';
 import TeacherAnnouncementsPage from '@/pages/teacher/TeacherAnnouncementsPage';
+import TeacherCalendarPage from '@/pages/teacher/TeacherCalendarPage';
 import StudentDashboard from '@/pages/student/StudentDashboard';
 import StudentClassesPage from '@/pages/student/StudentClassesPage';
 import StudentAttendancePage from '@/pages/student/StudentAttendancePage';
@@ -38,6 +42,8 @@ import ParentLessonNotesPage from '@/pages/parent/ParentLessonNotesPage';
 import ParentAnnouncementsPage from '@/pages/parent/ParentAnnouncementsPage';
 import AnnouncementDetailPage from '@/pages/shared/AnnouncementDetailPage';
 import ParentInvoicesPage from '@/pages/parent/ParentInvoicesPage';
+import ParentNotificationsPage from '@/pages/parent/ParentNotificationsPage';
+import ParentProgressPage from '@/pages/parent/ParentProgressPage';
 import type { UserRole } from '@/types';
 
 function LegacyTeacherAttendanceRedirect() {
@@ -87,13 +93,21 @@ export default function AppRoutes() {
               element={<AnnouncementDetailPage mode="admin" />}
             />
             <Route path="/admin/invoices" element={<AdminInvoicesPage />} />
+            <Route path="/admin/reports" element={<AdminReportsPage />} />
+            <Route path="/admin/audit-log" element={<AdminAuditLogPage />} />
+            <Route path="/admin/calendar" element={<AdminCalendarPage />} />
             <Route path="/admin/settings" element={<SettingsPage />} />
           </Route>
 
           <Route element={<ProtectedRoute allowedRoles={['Teacher']} />}>
             <Route path="/teacher/dashboard" element={<TeacherDashboard />} />
+            <Route path="/teacher/calendar" element={<TeacherCalendarPage />} />
             <Route path="/teacher/classes" element={<TeacherClassesPage />} />
             <Route path="/teacher/classes/:classId/sessions" element={<ClassSessionsPage />} />
+            <Route
+              path="/teacher/classes/:classId/sessions/:sessionId/attendance"
+              element={<TakeAttendancePage />}
+            />
             <Route path="/teacher/classes/:classId/attendance" element={<TakeAttendancePage />} />
             <Route path="/teacher/sessions" element={<Navigate to="/teacher/classes" replace />} />
             <Route path="/teacher/attendance" element={<Navigate to="/teacher/classes" replace />} />
@@ -121,6 +135,8 @@ export default function AppRoutes() {
           <Route element={<ProtectedRoute allowedRoles={['Parent']} />}>
             <Route path="/parent/dashboard" element={<ParentDashboard />} />
             <Route path="/parent/children" element={<MyChildrenPage />} />
+            <Route path="/parent/progress" element={<ParentProgressPage />} />
+            <Route path="/parent/notifications" element={<ParentNotificationsPage />} />
             <Route path="/parent/classes" element={<ChildClassesPage />} />
             <Route path="/parent/attendance" element={<ChildAttendancePage />} />
             <Route path="/parent/lesson-notes" element={<ParentLessonNotesPage />} />

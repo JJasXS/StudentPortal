@@ -39,6 +39,11 @@ Write-Host ""
 
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
 
+if (-not (Test-Path "$root\.env") -and (Test-Path "$root\.env.example")) {
+    Copy-Item "$root\.env.example" "$root\.env"
+    Write-Host "Created .env from .env.example (single env file for backend + frontend)" -ForegroundColor Green
+}
+
 if (Test-Path "$root\frontend\package.json") {
     Write-Host "Installing frontend dependencies..." -ForegroundColor Cyan
     Push-Location "$root\frontend"

@@ -154,11 +154,15 @@ export interface Invoice {
   studentName?: string;
   parentUserId?: string;
   parentName?: string;
+  courseName?: string;
+  className?: string;
   invoiceNo: string;
   amount: number;
   status: 'Draft' | 'Unpaid' | 'Paid' | 'Cancelled';
+  billingPeriod?: string;
   dueDate: string;
   createdAt: string;
+  paidAt?: string;
 }
 
 export interface LoginResponse {

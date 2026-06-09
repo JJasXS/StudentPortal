@@ -1,9 +1,15 @@
 # Run backend API
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
+. "$root\scripts\Import-DotEnv.ps1"
+Import-DotEnv -Path "$root\.env"
+
 Set-Location "$root\backend\MusicTuitionPortal.Api"
 
-$devSettings = Get-Content "appsettings.Development.json" -Raw | ConvertFrom-Json
-$provider = $devSettings.DatabaseProvider
+$provider = $env:DatabaseProvider
+if (-not $provider) {
+    $devSettings = Get-Content "appsettings.Development.json" -Raw | ConvertFrom-Json
+    $provider = $devSettings.DatabaseProvider
+}
 
 if ($provider -eq "Postgres") {
     $pgReady = $false

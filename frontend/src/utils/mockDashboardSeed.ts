@@ -100,7 +100,7 @@ export const dashboardSeedEnrollments: SeedEnrollment[] = [
 
 type ParentRef = { parentUserId: string; parentName: string };
 
-const parentByStudent: Record<string, ParentRef> = {
+export const parentByStudent: Record<string, ParentRef> = {
   '4': { parentUserId: '6', parentName: 'Michael Tan' },
   '5': { parentUserId: '7', parentName: 'Lisa Lim' },
   '8': { parentUserId: '15', parentName: 'David Tan' },
@@ -130,6 +130,25 @@ const parentByStudent: Record<string, ParentRef> = {
   '50': { parentUserId: '6', parentName: 'Michael Tan' },
 };
 
+const CLASS_TO_COURSE: Record<string, string> = {
+  'Piano Mon AM': 'Piano Beginner',
+  'Piano Sat AM': 'Piano Beginner',
+  'Guitar Wed PM': 'Guitar Beginner',
+  'Guitar Sat AM': 'Guitar Beginner',
+  'Violin Tue PM': 'Violin Intermediate',
+  'Vocal Thu PM': 'Vocal',
+  'Drums Fri PM': 'Drums',
+};
+
+function courseBillingForStudent(studentUserId: string) {
+  const enrollment = dashboardSeedEnrollments.find(
+    (e) => e.studentUserId === studentUserId && e.status === 'Active'
+  );
+  const className = enrollment?.className ?? 'Music tuition';
+  const courseName = CLASS_TO_COURSE[className] ?? className;
+  return { courseName, className };
+}
+
 function inv(
   id: string,
   no: string,
@@ -141,12 +160,15 @@ function inv(
   dueDate: string
 ): Invoice {
   const parent = parentByStudent[studentUserId] ?? { parentUserId: '6', parentName: 'Michael Tan' };
+  const { courseName, className } = courseBillingForStudent(studentUserId);
   return {
     id,
     studentUserId,
     studentName,
     parentUserId: parent.parentUserId,
     parentName: parent.parentName,
+    courseName,
+    className,
     invoiceNo: no,
     amount,
     status,

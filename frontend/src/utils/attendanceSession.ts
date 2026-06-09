@@ -1,7 +1,8 @@
+import { formatDateDDMMYYYY } from '@/utils/dateFormat';
 import { getTodayDateKey } from '@/utils/teacherSchedule';
 import type { ClassItem, ClassSession } from '@/types';
 
-/** Ensure each class has a session row for today (uses the class fixed schedule). */
+/** @deprecated Prefer resolveTodaySession for persisted session ids */
 export function ensureTodaySessions(classes: ClassItem[], sessions: ClassSession[]) {
   const today = getTodayDateKey();
   const result = [...sessions];
@@ -24,6 +25,33 @@ export function ensureTodaySessions(classes: ClassItem[], sessions: ClassSession
   return result;
 }
 
+export async function resolveTodaySession(
+  classItem: ClassItem,
+  sessions: ClassSession[]
+): Promise<ClassSession> {
+  const today = getTodayDateKey();
+  const existing = sessions.find(
+    (s) =>
+      s.classId === classItem.id &&
+      s.sessionDate.slice(0, 10) === today &&
+      !s.id.startsWith('today-')
+  );
+  if (existing) return existing;
+
+  if (import.meta.env.VITE_USE_MOCK === 'true') {
+    const { getOrCreateMockTodaySession } = await import('@/utils/mockSessionStore');
+    return getOrCreateMockTodaySession(classItem);
+  }
+
+  try {
+    const { classSessionsApi } = await import('@/api/resources');
+    return await classSessionsApi.getOrCreateToday(classItem.id);
+  } catch {
+    const { getOrCreateMockTodaySession } = await import('@/utils/mockSessionStore');
+    return getOrCreateMockTodaySession(classItem);
+  }
+}
+
 export function getTodaySession(
   sessions: ClassSession[],
   classId: string
@@ -38,4 +66,18 @@ export function formatClassSchedule(c: ClassItem) {
   const parts = [`${c.dayOfWeek} · ${c.startTime}–${c.endTime}`];
   if (c.location) parts.push(c.location);
   return parts.join(' · ');
+}
+
+export function formatSessionSchedule(session: ClassSession) {
+  const parts = [
+    formatDateDDMMYYYY(session.sessionDate),
+    `${session.startTime}–${session.endTime}`,
+  ];
+  if (session.topic) parts.push(session.topic);
+  return parts.join(' · ');
+}
+
+export function formatSessionBreadcrumb(session: ClassSession) {
+  const date = formatDateDDMMYYYY(session.sessionDate);
+  return session.topic ? `${date} — ${session.topic}` : date;
 }

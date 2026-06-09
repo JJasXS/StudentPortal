@@ -91,6 +91,27 @@ public class AuthController : ControllerBase
             return BadRequest(new { message = ex.Message });
         }
     }
+
+    [HttpPost("forgot-password")]
+    [AllowAnonymous]
+    public async Task<IActionResult> ForgotPassword([FromBody] ForgotPasswordRequest request)
+    {
+        var code = await _authService.RequestPasswordResetAsync(request);
+        return Ok(new
+        {
+            message = "If an account exists for this email, a reset code has been issued.",
+            resetCode = code
+        });
+    }
+
+    [HttpPost("reset-password")]
+    [AllowAnonymous]
+    public async Task<IActionResult> ResetPassword([FromBody] ResetPasswordRequest request)
+    {
+        var ok = await _authService.ResetPasswordAsync(request);
+        if (!ok) return BadRequest(new { message = "Invalid or expired reset code." });
+        return Ok(new { message = "Password updated. You can sign in with your new password." });
+    }
 }
 
 [ApiController]
@@ -520,6 +541,33 @@ public class ClassSessionsController : ControllerBase
         return deleted ? NoContent() : NotFound();
     }
 
+    [HttpPost("generate")]
+    [Authorize(Roles = "Admin,Teacher")]
+    public async Task<IActionResult> Generate([FromBody] GenerateSessionsRequest request)
+    {
+        var result = await _service.GenerateAsync(request);
+        return Ok(new
+        {
+            createdCount = result.CreatedCount,
+            skippedCount = result.SkippedCount,
+            sessions = MapList(result.Sessions)
+        });
+    }
+
+    [HttpPost("today/{classId:guid}")]
+    [Authorize(Roles = "Admin,Teacher")]
+    public async Task<IActionResult> GetOrCreateToday(Guid classId)
+    {
+        try
+        {
+            return Ok(Map(await _service.GetOrCreateTodayAsync(classId)));
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+    }
+
     private static object Map(ClassSessionDto s) => new
     {
         id = s.Id.ToString(),
@@ -747,6 +795,62 @@ public class InvoicesController : ControllerBase
         return invoice == null ? NotFound() : Ok(Map(invoice));
     }
 
+    [HttpPost]
+    [Authorize(Roles = "Admin")]
+    public async Task<IActionResult> Create([FromBody] CreateInvoiceRequest request)
+    {
+        var invoice = await _service.CreateAsync(request);
+        return invoice == null ? BadRequest(new { message = "Could not create invoice." }) : Ok(Map(invoice));
+    }
+
+    [HttpPut("{id:guid}")]
+    [Authorize(Roles = "Admin")]
+    public async Task<IActionResult> Update(Guid id, [FromBody] UpdateInvoiceRequest request)
+    {
+        var invoice = await _service.UpdateAsync(id, request);
+        return invoice == null ? BadRequest(new { message = "Invoice cannot be updated." }) : Ok(Map(invoice));
+    }
+
+    [HttpPut("{id:guid}/status")]
+    [Authorize(Roles = "Admin")]
+    public async Task<IActionResult> UpdateStatus(Guid id, [FromBody] UpdateInvoiceStatusRequest request)
+    {
+        var invoice = await _service.UpdateStatusAsync(id, request.Status);
+        return invoice == null ? NotFound() : Ok(Map(invoice));
+    }
+
+    [HttpPost("{id:guid}/billplz")]
+    [Authorize(Roles = "Parent")]
+    public async Task<IActionResult> PayWithBillplz(Guid id, [FromBody] BillplzPayRequest? request)
+    {
+        var parentUserId = Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+        var email = User.FindFirstValue(ClaimTypes.Email) ?? string.Empty;
+        var name = User.FindFirstValue(ClaimTypes.Name) ?? "Parent";
+
+        try
+        {
+            var session = await _service.CreateBillplzPaymentAsync(
+                id,
+                parentUserId,
+                request?.FpxBankCode,
+                email,
+                name,
+                null);
+            return session == null
+                ? BadRequest(new { message = "Invoice cannot be paid." })
+                : Ok(new
+                {
+                    billId = session.BillId,
+                    paymentUrl = session.PaymentUrl,
+                    invoiceId = session.InvoiceId,
+                });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+    }
+
     private static object Map(InvoiceDto i) => new
     {
         id = i.Id.ToString(),
@@ -755,11 +859,131 @@ public class InvoicesController : ControllerBase
         parentUserId = i.ParentUserId?.ToString(),
         parentName = i.ParentName,
         invoiceNo = i.InvoiceNo,
+        courseName = i.CourseName,
+        className = i.ClassName,
         amount = i.Amount,
         status = i.Status,
+        billingPeriod = i.BillingPeriod,
         dueDate = i.DueDate.ToString("yyyy-MM-dd"),
-        createdAt = i.CreatedAt
+        createdAt = i.CreatedAt,
+        paidAt = i.PaidAt
     };
 
     private static List<object> MapList(List<InvoiceDto> list) => list.Select(i => Map(i)).Cast<object>().ToList();
+}
+
+[ApiController]
+[Route("api/[controller]")]
+[Authorize(Roles = "Admin")]
+public class SettingsController : ControllerBase
+{
+    private readonly CentreSettingsService _service;
+    public SettingsController(CentreSettingsService service) => _service = service;
+
+    [HttpGet("centre")]
+    [AllowAnonymous]
+    public async Task<IActionResult> GetCentre() => Ok(await _service.GetAsync());
+
+    [HttpPut("centre")]
+    public async Task<IActionResult> UpdateCentre([FromBody] UpdateCentreSettingsRequest request) =>
+        Ok(await _service.UpdateAsync(request));
+}
+
+[ApiController]
+[Route("api/audit-logs")]
+[Authorize(Roles = "Admin")]
+public class AuditLogsController : ControllerBase
+{
+    private readonly AuditLogService _service;
+    public AuditLogsController(AuditLogService service) => _service = service;
+
+    [HttpGet]
+    public async Task<IActionResult> GetAll(
+        [FromQuery] string? search,
+        [FromQuery] string? action,
+        [FromQuery] string? entityType,
+        [FromQuery] DateTime? from,
+        [FromQuery] DateTime? to) =>
+        Ok(await _service.GetAllAsync(search, action, entityType, from, to));
+
+    [HttpPost]
+    public async Task<IActionResult> Create([FromBody] CreateAuditLogRequest request)
+    {
+        await _service.LogAsync(
+            request.Action,
+            request.EntityType,
+            request.EntityId,
+            request.EntityLabel,
+            request.Details);
+        return Ok(new { success = true });
+    }
+
+    private static object Map(AuditLogDto a) => new
+    {
+        id = a.Id.ToString(),
+        actorUserId = a.ActorUserId?.ToString(),
+        actorName = a.ActorName,
+        actorRole = a.ActorRole,
+        action = a.Action,
+        entityType = a.EntityType,
+        entityId = a.EntityId,
+        entityLabel = a.EntityLabel,
+        details = a.Details,
+        createdAt = a.CreatedAt
+    };
+}
+
+[ApiController]
+[Route("api/notifications")]
+[Authorize]
+public class NotificationsController : ControllerBase
+{
+    private readonly NotificationService _service;
+
+    public NotificationsController(NotificationService service) => _service = service;
+
+    [HttpGet]
+    public async Task<IActionResult> GetAll([FromQuery] bool? unreadOnly)
+    {
+        var userId = Guid.Parse(User.FindFirstValue(System.Security.Claims.ClaimTypes.NameIdentifier)!);
+        return Ok(MapList(await _service.GetForUserAsync(userId, unreadOnly)));
+    }
+
+    [HttpGet("unread-count")]
+    public async Task<IActionResult> GetUnreadCount()
+    {
+        var userId = Guid.Parse(User.FindFirstValue(System.Security.Claims.ClaimTypes.NameIdentifier)!);
+        return Ok(new { count = await _service.GetUnreadCountAsync(userId) });
+    }
+
+    [HttpPut("{id:guid}/read")]
+    public async Task<IActionResult> MarkRead(Guid id)
+    {
+        var userId = Guid.Parse(User.FindFirstValue(System.Security.Claims.ClaimTypes.NameIdentifier)!);
+        var notification = await _service.MarkReadAsync(id, userId);
+        return notification == null ? NotFound() : Ok(Map(notification));
+    }
+
+    [HttpPut("read-all")]
+    public async Task<IActionResult> MarkAllRead()
+    {
+        var userId = Guid.Parse(User.FindFirstValue(System.Security.Claims.ClaimTypes.NameIdentifier)!);
+        await _service.MarkAllReadAsync(userId);
+        return Ok(new { success = true });
+    }
+
+    private static object Map(NotificationDto n) => new
+    {
+        id = n.Id.ToString(),
+        userId = n.UserId.ToString(),
+        title = n.Title,
+        message = n.Message,
+        category = n.Category,
+        linkPath = n.LinkPath,
+        isRead = n.IsRead,
+        createdAt = n.CreatedAt
+    };
+
+    private static List<object> MapList(List<NotificationDto> list) =>
+        list.Select(n => Map(n)).Cast<object>().ToList();
 }

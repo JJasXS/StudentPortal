@@ -62,3 +62,6 @@ Visual Studio Code or Cursor
 - postcss
 - autoprefixer
 - lucide-react
+- jspdf
+- jspdf-autotable
+- recharts

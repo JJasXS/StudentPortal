@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Eye, Pencil, Plus, Trash2, X } from 'lucide-react';
+import { useAuth } from '@/context/AuthContext';
 import { PageHeader } from '@/components/PageHeader';
 import { SearchBox } from '@/components/SearchBox';
 import { CourseFormModal } from '@/components/CourseFormModal';
@@ -15,11 +16,14 @@ import { mockCourses } from '@/utils/mockData';
 import { ACTIVE_STATUSES } from '@/utils/constants';
 import { activeRecordStatus, filterByStatus, getStatusCounts } from '@/utils/statusFilter';
 import { formToPayload, type CourseFormValues } from '@/utils/courseForm';
+import { logAdminAction } from '@/utils/auditLog';
+import { AUDIT_ACTIONS } from '@/types/auditLog';
 import type { Course } from '@/types';
 
 const STATUS_TABS = ['All', ...ACTIVE_STATUSES] as const;
 
 export default function CoursesManagement() {
+  const { user } = useAuth();
   const [courses, setCourses] = useState<Course[]>([]);
   const [search, setSearch] = useState('');
   const [statusTab, setStatusTab] = useState('Active');
@@ -101,11 +105,18 @@ export default function CoursesManagement() {
           setCourses((list) =>
             list.map((c) => (c.id === editing.id ? { ...c, ...payload, id: editing.id } : c))
           );
+          logAdminAction(user, {
+            action: AUDIT_ACTIONS.courseUpdated,
+            entityType: 'Course',
+            entityId: editing.id,
+            entityLabel: payload.courseName,
+          });
         } else {
+          const newId = crypto.randomUUID();
           setCourses((list) => [
             ...list,
             {
-              id: crypto.randomUUID(),
+              id: newId,
               courseName: payload.courseName,
               category: payload.category,
               description: payload.description,
@@ -114,13 +125,31 @@ export default function CoursesManagement() {
               isActive: payload.isActive,
             },
           ]);
+          logAdminAction(user, {
+            action: AUDIT_ACTIONS.courseCreated,
+            entityType: 'Course',
+            entityId: newId,
+            entityLabel: payload.courseName,
+          });
         }
       } else if (editing) {
         const updated = await coursesApi.update(editing.id, payload);
         setCourses((list) => list.map((c) => (c.id === editing.id ? updated : c)));
+        logAdminAction(user, {
+          action: AUDIT_ACTIONS.courseUpdated,
+          entityType: 'Course',
+          entityId: editing.id,
+          entityLabel: payload.courseName,
+        });
       } else {
         const created = await coursesApi.create(payload);
         setCourses((list) => [...list, created]);
+        logAdminAction(user, {
+          action: AUDIT_ACTIONS.courseCreated,
+          entityType: 'Course',
+          entityId: created.id,
+          entityLabel: payload.courseName,
+        });
       }
       setFormOpen(false);
       setEditing(null);
@@ -175,6 +204,12 @@ export default function CoursesManagement() {
       setCourses((list) =>
         list.map((c) => (c.id === deleteTarget.id ? { ...c, isActive: false } : c))
       );
+      logAdminAction(user, {
+        action: AUDIT_ACTIONS.courseDeactivated,
+        entityType: 'Course',
+        entityId: deleteTarget.id,
+        entityLabel: deleteTarget.courseName,
+      });
       setDeleteTarget(null);
     } catch {
       setCourses((list) =>
