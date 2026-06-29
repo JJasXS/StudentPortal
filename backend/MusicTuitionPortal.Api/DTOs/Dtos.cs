@@ -5,6 +5,17 @@ public record LoginRequest(string Email, string Password);
 public record ForgotPasswordRequest(string Email);
 public record ResetPasswordRequest(string Email, string ResetCode, string NewPassword);
 public record RegisterRequest(string FullName, string Email, string Password, string Role, string? PhoneNumber);
+
+public record RegisterStudentRequest(
+    string FullName,
+    string Email,
+    string Password,
+    DateTime DateOfBirth,
+    string Gender,
+    string? PhoneNumber,
+    string? SchoolName,
+    string? Instrument,
+    string? Experience);
 public record UpdateProfileRequest(string FullName, string Email, string? PhoneNumber, string? Password);
 public record LoginResponse(string Token, UserDto User);
 
@@ -13,8 +24,19 @@ public record StudentDto(
     DateTime? DateOfBirth, string? Gender, string? SchoolName, string? Notes, bool IsActive);
 
 public record CreateStudentRequest(
-    string FullName, string Email, string Password, string StudentCode,
-    DateTime? DateOfBirth, string? Gender, string? SchoolName, string? Notes, string? PhoneNumber);
+    string FullName, string Email, string Password, string? StudentCode,
+    DateTime? DateOfBirth, string? Gender, string? SchoolName, string? Notes, string? PhoneNumber,
+    Guid? ParentUserId = null);
+
+public record LinkedParentSummaryDto(string FullName, string Email, string? PhoneNumber, string? Relationship);
+
+public record StudentSelfProfileDto(
+    Guid Id, Guid UserId, string FullName, string Email, string? PhoneNumber, string StudentCode,
+    DateTime? DateOfBirth, string? Gender, string? SchoolName, string? Notes,
+    LinkedParentSummaryDto? Parent, bool IsActive);
+
+public record UpdateStudentSelfRequest(
+    DateTime? DateOfBirth, string? Gender, string? SchoolName, string? Instrument, string? Experience);
 
 public record ParentDto(
     Guid Id, Guid UserId, string FullName, string Email, string? PhoneNumber,

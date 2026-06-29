@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useAuth } from '@/context/AuthContext';
+import { useToast } from '@/context/ToastContext';
+import { SkeletonCard } from '@/components/ui/Skeleton';
 import { PageHeader } from '@/components/PageHeader';
 import { ChildProfileCard, PendingChildCard } from '@/components/parent/ChildProfileCard';
 import { RegisterAnotherChildCard } from '@/components/parent/RegisterAnotherChildCard';
@@ -19,7 +21,7 @@ export default function MyChildrenPage() {
   const [pending, setPending] = useState<PendingChildRegistration[]>([]);
   const [loading, setLoading] = useState(true);
   const [registerOpen, setRegisterOpen] = useState(false);
-  const [toast, setToast] = useState('');
+  const { success: showToast } = useToast();
 
   const loadChildren = useCallback(() => {
     if (!user?.id) return;
@@ -45,8 +47,7 @@ export default function MyChildrenPage() {
     if (!user?.id) return;
     const entry = addPendingRegistration(user.id, form);
     setPending((list) => [...list, entry]);
-    setToast(`${form.fullName} submitted — we'll notify you when linked.`);
-    setTimeout(() => setToast(''), 5000);
+    showToast(`${form.fullName} submitted — we'll notify you when linked.`);
   };
 
   return (
@@ -56,14 +57,12 @@ export default function MyChildrenPage() {
         description="Students linked to your family account"
       />
 
-      {toast && (
-        <p className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm text-emerald-800">
-          {toast}
-        </p>
-      )}
-
       {loading ? (
-        <p className="text-sm text-slate-500">Loading…</p>
+        <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-3">
+          <SkeletonCard />
+          <SkeletonCard />
+          <SkeletonCard />
+        </div>
       ) : (
         <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-3">
           {children.map((child, index) => (

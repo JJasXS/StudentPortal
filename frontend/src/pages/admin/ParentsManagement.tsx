@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Calendar, Pencil, Users, X } from 'lucide-react';
+import { Calendar, Pencil, Plus, Users, X } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
+import { useToast } from '@/context/ToastContext';
 import { PageHeader } from '@/components/PageHeader';
 import { SearchBox } from '@/components/SearchBox';
 import { ParentFormModal } from '@/components/ParentFormModal';
@@ -29,6 +30,7 @@ function createdDateKey(value?: string) {
 
 export default function ParentsManagement() {
   const { user } = useAuth();
+  const { success: showSuccess } = useToast();
   const [parents, setParents] = useState<ParentProfile[]>([]);
   const [students, setStudents] = useState<StudentProfile[]>([]);
   const [nameFilter, setNameFilter] = useState('');
@@ -36,6 +38,7 @@ export default function ParentsManagement() {
   const [statusTab, setStatusTab] = useState('All');
   const [viewParent, setViewParent] = useState<ParentProfile | null>(null);
   const [editing, setEditing] = useState<ParentProfile | null>(null);
+  const [creating, setCreating] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
@@ -105,6 +108,47 @@ export default function ParentsManagement() {
     setStatusTab('All');
   };
 
+  const handleCreate = async (values: ParentFormValues) => {
+    setSaving(true);
+    setError('');
+    const payload = formToParentPayload(values);
+
+    try {
+      const created =
+        import.meta.env.VITE_USE_MOCK === 'true'
+          ? ({
+              id: crypto.randomUUID(),
+              userId: crypto.randomUUID(),
+              fullName: payload.fullName,
+              email: payload.email,
+              phoneNumber: payload.phoneNumber,
+              relationship: payload.relationship,
+              address: payload.address,
+              children: [],
+              isActive: true,
+              createdAt: new Date().toISOString(),
+            } satisfies ParentProfile)
+          : await parentsApi.create(payload);
+      setParents((list) => [...list, created]);
+      setCreating(false);
+      showSuccess(`${payload.fullName} added as parent.`);
+      logAdminAction(user, {
+        action: AUDIT_ACTIONS.parentCreated,
+        entityType: 'Parent',
+        entityId: created.id,
+        entityLabel: payload.fullName,
+      });
+    } catch (err: unknown) {
+      const msg =
+        err && typeof err === 'object' && 'response' in err
+          ? (err as { response?: { data?: { message?: string } } }).response?.data?.message
+          : undefined;
+      setError(msg ?? 'Could not create parent. Check the email is unique.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const handleSave = async (values: ParentFormValues) => {
     if (!editing) return;
     setSaving(true);
@@ -125,6 +169,7 @@ export default function ParentsManagement() {
           : await parentsApi.update(editing.id, payload);
       setParents((list) => list.map((p) => (p.id === editing.id ? { ...p, ...updated } : p)));
       setEditing(null);
+      showSuccess('Parent updated.');
       logAdminAction(user, {
         action: AUDIT_ACTIONS.parentUpdated,
         entityType: 'Parent',
@@ -157,7 +202,13 @@ export default function ParentsManagement() {
     <div>
       <PageHeader
         title="Parents Management"
-        description="Filter by name, account date, and status — view linked children per parent"
+        description="Add parent accounts first — students must be linked to an existing parent"
+        actions={
+          <Button type="button" onClick={() => setCreating(true)}>
+            <Plus className="mr-1.5 h-4 w-4" />
+            Add parent
+          </Button>
+        }
       />
 
       {error && (
@@ -301,9 +352,18 @@ export default function ParentsManagement() {
       </Card>
 
       <ParentFormModal
+        open={creating}
+        onClose={() => setCreating(false)}
+        mode="create"
+        onSubmit={handleCreate}
+        saving={saving}
+      />
+
+      <ParentFormModal
         open={Boolean(editing)}
         onClose={() => setEditing(null)}
         parent={editing}
+        mode="edit"
         onSubmit={handleSave}
         saving={saving}
       />

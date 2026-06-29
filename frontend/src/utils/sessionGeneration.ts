@@ -107,3 +107,28 @@ export function weekDayKeys(anchor: Date) {
   const { startDate } = weekRange(anchor);
   return Array.from({ length: 7 }, (_, i) => toDateKey(addDays(startDate, i)));
 }
+
+export function monthRange(anchor: Date) {
+  const year = anchor.getFullYear();
+  const month = anchor.getMonth();
+  const first = new Date(year, month, 1);
+  const last = new Date(year, month + 1, 0);
+  return {
+    start: toDateKey(first),
+    end: toDateKey(last),
+    year,
+    month,
+    label: first.toLocaleDateString('en-US', { month: 'long', year: 'numeric' }),
+  };
+}
+
+export function monthGridDays(anchor: Date) {
+  const { month } = monthRange(anchor);
+  const first = new Date(anchor.getFullYear(), month, 1);
+  const startPad = first.getDay() === 0 ? 6 : first.getDay() - 1;
+  const gridStart = addDays(first, -startPad);
+  return Array.from({ length: 42 }, (_, i) => {
+    const d = addDays(gridStart, i);
+    return { dateKey: toDateKey(d), inMonth: d.getMonth() === month, day: d.getDate() };
+  });
+}

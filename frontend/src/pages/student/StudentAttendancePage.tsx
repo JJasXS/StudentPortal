@@ -1,45 +1,63 @@
 import { useEffect, useMemo, useState } from 'react';
+import { ClipboardCheck, KeyRound } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
+import { useToast } from '@/context/ToastContext';
 import { PageHeader } from '@/components/PageHeader';
-import { DataTable } from '@/components/ui/DataTable';
-import { StatusTabs } from '@/components/ui/StatusTabs';
+import { CheckInCodeInput, CHECK_IN_CODE_LENGTH } from '@/components/student/CheckInCodeInput';
+import { EmptyState } from '@/components/ui/EmptyState';
+import { SkeletonListRows, SkeletonTableRows } from '@/components/ui/Skeleton';
+import { SlidingTabs } from '@/components/ui/SlidingTabs';
 import { Card, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
-import { Input, Label } from '@/components/ui/Input';
-import { attendanceApi, classSessionsApi, enrollmentsApi } from '@/api/resources';
+import { StatusBadge } from '@/components/ui/StatusBadge';
+import {
+  attendanceApi,
+  classSessionsApi,
+  enrollmentsApi,
+  classesApi,
+} from '@/api/resources';
 import { mockRedeemCheckIn, loadExtraMockAttendance } from '@/utils/mockAttendanceCheckIn';
 import {
   mockAttendance,
   mockClassSessions,
   mockEnrollments,
+  mockClasses,
 } from '@/utils/mockData';
-import { ATTENDANCE_STATUSES } from '@/utils/constants';
-import { filterByStatus, getStatusCounts } from '@/utils/statusFilter';
+import { buildClassAttendanceSummaries, type ClassAttendanceSummary } from '@/utils/studentAttendanceStats';
 import type { Attendance } from '@/types';
+
+type MainTab = 'Check in' | 'Attendance';
 
 export default function StudentAttendancePage() {
   const { user } = useAuth();
+  const { success: showSuccess, error: showError } = useToast();
+  const [mainTab, setMainTab] = useState<MainTab>('Check in');
   const [attendance, setAttendance] = useState<Attendance[]>([]);
-  const [statusTab, setStatusTab] = useState('All');
+  const [classSummaries, setClassSummaries] = useState<ClassAttendanceSummary[]>([]);
+  const [selectedClassId, setSelectedClassId] = useState('');
   const [code, setCode] = useState('');
-  const [checkInMessage, setCheckInMessage] = useState('');
-  const [checkInError, setCheckInError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [loading, setLoading] = useState(true);
 
   const loadAttendance = () => {
+    setLoading(true);
     attendanceApi
       .getAll()
       .then((data) => {
         const mine = data.filter((a) => a.studentUserId === user?.id);
         const extras = loadExtraMockAttendance().filter((a) => a.studentUserId === user?.id);
         const ids = new Set(mine.map((a) => `${a.classSessionId}-${a.studentUserId}`));
-        setAttendance([...mine, ...extras.filter((e) => !ids.has(`${e.classSessionId}-${e.studentUserId}`))]);
+        setAttendance([
+          ...mine,
+          ...extras.filter((e) => !ids.has(`${e.classSessionId}-${e.studentUserId}`)),
+        ]);
       })
       .catch(() => {
         const base = mockAttendance.filter((a) => a.studentUserId === user?.id);
         const extras = loadExtraMockAttendance().filter((a) => a.studentUserId === user?.id);
         setAttendance([...base, ...extras]);
-      });
+      })
+      .finally(() => setLoading(false));
   };
 
   useEffect(() => {
@@ -47,23 +65,58 @@ export default function StudentAttendancePage() {
     loadAttendance();
   }, [user?.id]);
 
-  const statusCounts = useMemo(
-    () => getStatusCounts(attendance, (a) => a.status, ATTENDANCE_STATUSES),
-    [attendance]
+  useEffect(() => {
+    if (!user?.id) return;
+    Promise.all([
+      enrollmentsApi.getAll().catch(() => mockEnrollments),
+      classesApi.getAll().catch(() => mockClasses),
+    ]).then(([enrollments, classes]) => {
+      const meta = new Map(classes.map((c) => [c.id, { courseName: c.courseName }]));
+      setClassSummaries(
+        buildClassAttendanceSummaries(enrollments, attendance, user.id, meta)
+      );
+    });
+  }, [user?.id, attendance]);
+
+  useEffect(() => {
+    if (classSummaries.length === 0) {
+      setSelectedClassId('');
+      return;
+    }
+    if (!classSummaries.some((s) => s.classId === selectedClassId)) {
+      setSelectedClassId(classSummaries[0].classId);
+    }
+  }, [classSummaries, selectedClassId]);
+
+  const selectedSummary = useMemo(
+    () => classSummaries.find((s) => s.classId === selectedClassId),
+    [classSummaries, selectedClassId]
   );
 
-  const filtered = useMemo(
-    () => filterByStatus(attendance, statusTab, (a) => a.status),
-    [attendance, statusTab]
+  const classAttendance = useMemo(() => {
+    if (!selectedSummary) return [];
+    return attendance
+      .filter((a) => a.className === selectedSummary.className)
+      .sort((a, b) => (b.sessionDate ?? '').localeCompare(a.sessionDate ?? ''));
+  }, [attendance, selectedSummary]);
+
+  const classTabIds = useMemo(() => classSummaries.map((s) => s.classId), [classSummaries]);
+
+  const classTabLabels = useMemo(
+    () => Object.fromEntries(classSummaries.map((s) => [s.classId, s.className])),
+    [classSummaries]
+  );
+
+  const classTabCounts = useMemo(
+    () => Object.fromEntries(classSummaries.map((s) => [s.classId, s.attendedCount])),
+    [classSummaries]
   );
 
   const handleCheckIn = async (e: React.FormEvent) => {
     e.preventDefault();
-    setCheckInError('');
-    setCheckInMessage('');
     const trimmed = code.trim();
-    if (trimmed.length !== 5) {
-      setCheckInError('Enter the 5-digit code from your teacher.');
+    if (trimmed.length !== CHECK_IN_CODE_LENGTH) {
+      showError('Enter the full 5-digit code from your teacher.');
       return;
     }
 
@@ -80,24 +133,26 @@ export default function StudentAttendancePage() {
           enrollments
         );
         if (!record) {
-          setCheckInError('Invalid code, outside class time, or you are not enrolled in that class.');
+          showError('Invalid code, outside class time, or you are not enrolled in that class.');
           return;
         }
-        setCheckInMessage(`Checked in to ${record.className ?? 'class'} successfully.`);
+        showSuccess(`Checked in to ${record.className ?? 'class'} successfully.`);
         setCode('');
         loadAttendance();
+        setMainTab('Attendance');
         return;
       }
       const record = await attendanceApi.redeemCheckIn(trimmed);
-      setCheckInMessage(`Checked in to ${record.className ?? 'class'} successfully.`);
+      showSuccess(`Checked in to ${record.className ?? 'class'} successfully.`);
       setCode('');
       loadAttendance();
+      setMainTab('Attendance');
     } catch (err: unknown) {
       const msg =
         err && typeof err === 'object' && 'response' in err
           ? (err as { response?: { data?: { message?: string } } }).response?.data?.message
           : undefined;
-      setCheckInError(msg ?? 'Could not check in. Check the code and try again.');
+      showError(msg ?? 'Could not check in. Check the code and try again.');
     } finally {
       setSubmitting(false);
     }
@@ -105,61 +160,115 @@ export default function StudentAttendancePage() {
 
   return (
     <div>
-      <PageHeader title="My Attendance" description="Check in with a class code or view your history" />
+      <PageHeader
+        title="My Attendance"
+        description="Check in with your teacher's code or view sessions attended per class"
+      />
 
-      <Card className="mb-6">
-        <CardContent className="p-4 sm:p-6">
-          <h2 className="text-lg font-semibold text-slate-900">Check in to class</h2>
-          <p className="mt-1 text-sm text-slate-600">
-            Enter the 5-digit code your teacher displays during class.
-          </p>
-          <form onSubmit={handleCheckIn} className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-end">
-            <div className="flex-1">
-              <Label htmlFor="check-in-code">5-digit code</Label>
-              <Input
-                id="check-in-code"
-                inputMode="numeric"
-                pattern="[0-9]*"
-                maxLength={5}
-                value={code}
-                onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 5))}
-                placeholder="00000"
-                className="mt-1 font-mono text-lg tracking-[0.35em]"
+      <Card className="overflow-hidden">
+        <SlidingTabs
+          tabs={['Check in', 'Attendance'] as const}
+          value={mainTab}
+          onChange={(v) => setMainTab(v as MainTab)}
+        />
+
+        <CardContent className="space-y-0 p-0">
+          {mainTab === 'Check in' ? (
+            <div className="mx-auto max-w-sm px-4 py-8 text-center sm:px-6">
+              <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-primary-50 text-primary-600">
+                <KeyRound className="h-6 w-6" />
+              </div>
+              <h2 className="text-lg font-semibold text-slate-900">Enter check-in code</h2>
+              <p className="mt-1 text-sm text-slate-600">
+                Type the 5-digit code your teacher shows in class.
+              </p>
+              <form onSubmit={handleCheckIn} className="mt-6 space-y-5">
+                <div>
+                  <p id="check-in-code-label" className="sr-only">
+                    5-digit check-in code
+                  </p>
+                  <CheckInCodeInput value={code} onChange={setCode} disabled={submitting} />
+                </div>
+                <Button
+                  type="submit"
+                  className="w-full"
+                  disabled={submitting || code.length !== CHECK_IN_CODE_LENGTH}
+                >
+                  {submitting ? 'Checking in…' : 'Check in'}
+                </Button>
+              </form>
+            </div>
+          ) : loading ? (
+            <div className="space-y-4 p-4 sm:p-6">
+              <SkeletonTableRows rows={1} cols={3} />
+              <SkeletonListRows rows={4} />
+            </div>
+          ) : classSummaries.length === 0 ? (
+            <div className="p-4 sm:p-6">
+              <EmptyState
+                icon={ClipboardCheck}
+                title="No classes enrolled"
+                description="Once you are enrolled, pick a class tab here to see your attendance."
+                compact
               />
             </div>
-            <Button type="submit" disabled={submitting || code.length !== 5}>
-              {submitting ? 'Checking in…' : 'Check in'}
-            </Button>
-          </form>
-          {checkInMessage && (
-            <p className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
-              {checkInMessage}
-            </p>
-          )}
-          {checkInError && (
-            <p className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
-              {checkInError}
-            </p>
-          )}
-        </CardContent>
-      </Card>
+          ) : (
+            <>
+              <SlidingTabs
+                tabs={classTabIds}
+                value={selectedClassId}
+                onChange={setSelectedClassId}
+                labels={classTabLabels}
+                counts={classTabCounts}
+                className="border-b border-slate-200 bg-slate-50/50"
+              />
 
-      <Card>
-        <CardContent className="space-y-4 p-4">
-          <StatusTabs
-            statuses={ATTENDANCE_STATUSES}
-            value={statusTab}
-            onChange={setStatusTab}
-            counts={statusCounts}
-          />
-          <DataTable
-            data={filtered}
-            columns={[
-              { key: 'sessionDate', header: 'Date' },
-              { key: 'className', header: 'Class' },
-              { key: 'status', header: 'Status' },
-            ]}
-          />
+              <div className="space-y-4 p-4 sm:p-6">
+                {selectedSummary && (
+                  <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-4">
+                    <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                      {selectedSummary.courseName ?? 'Class'}
+                    </p>
+                    <p className="mt-0.5 text-lg font-semibold text-slate-900">
+                      {selectedSummary.className}
+                    </p>
+                    <p className="mt-2 text-2xl font-bold text-primary-700">
+                      {selectedSummary.attendedCount}
+                      <span className="ml-1 text-sm font-medium text-slate-500">
+                        {selectedSummary.attendedCount === 1 ? 'session' : 'sessions'} attended
+                      </span>
+                    </p>
+                  </div>
+                )}
+
+                <div>
+                  <h3 className="mb-3 text-sm font-semibold text-slate-900">Session history</h3>
+                  {classAttendance.length === 0 ? (
+                    <EmptyState
+                      icon={ClipboardCheck}
+                      title="No sessions yet"
+                      description="Your attendance for this class will show here after your first lesson."
+                      compact
+                    />
+                  ) : (
+                    <ul className="divide-y divide-slate-100 rounded-xl border border-slate-200 bg-white">
+                      {classAttendance.map((record) => (
+                        <li
+                          key={record.id}
+                          className="flex flex-wrap items-center justify-between gap-2 px-4 py-3"
+                        >
+                          <span className="text-sm font-medium text-slate-900">
+                            {record.sessionDate ?? '—'}
+                          </span>
+                          <StatusBadge status={record.status} />
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              </div>
+            </>
+          )}
         </CardContent>
       </Card>
     </div>

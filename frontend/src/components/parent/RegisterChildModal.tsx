@@ -2,12 +2,13 @@ import { useState } from 'react';
 import { Modal } from '@/components/ui/Modal';
 import { Button } from '@/components/ui/Button';
 import { Input, Label, Select } from '@/components/ui/Input';
+import { GENDER_OPTIONS } from '@/utils/gender';
 import type { RegisterChildFormData } from '@/types/childRegistration';
 
 const emptyForm: RegisterChildFormData = {
   fullName: '',
   dateOfBirth: '',
-  gender: '',
+  gender: 'Male',
   schoolName: '',
   instrument: '',
 };
@@ -73,9 +74,11 @@ export function RegisterChildModal({ open, onClose, onSubmit }: RegisterChildMod
               className="mt-1"
               required
             >
-              <option value="">Select…</option>
-              <option value="F">F</option>
-              <option value="M">M</option>
+              {GENDER_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
             </Select>
           </div>
         </div>

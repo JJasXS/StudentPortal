@@ -1,5 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
+  isTeacherTodoListEnabled,
+  TEACHER_TODO_PREF_UPDATED,
+} from '@/utils/teacherTodoPreferences';
+import {
   Calendar,
   ClipboardCheck,
   Lightbulb,
@@ -11,6 +15,7 @@ import { PageHeader } from '@/components/PageHeader';
 import { StatCard } from '@/components/StatCard';
 import { TodayClassesList } from '@/components/TodayClassesList';
 import { TeacherQuickActions } from '@/components/teacher/TeacherQuickActions';
+import { TeacherTodoList } from '@/components/teacher/TeacherTodoList';
 import { TeacherStudentProgressSection } from '@/components/teacher/TeacherStudentProgressSection';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Modal } from '@/components/ui/Modal';
@@ -23,11 +28,29 @@ import type { ClassItem, ClassSession } from '@/types';
 
 export default function TeacherDashboard() {
   const { user } = useAuth();
+  const [todoListEnabled, setTodoListEnabled] = useState(() =>
+    isTeacherTodoListEnabled(user?.id)
+  );
   const [classes, setClasses] = useState<ClassItem[]>([]);
   const [sessions, setSessions] = useState<ClassSession[]>([]);
   const [notesCount, setNotesCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [tipsOpen, setTipsOpen] = useState(false);
+
+  useEffect(() => {
+    setTodoListEnabled(isTeacherTodoListEnabled(user?.id));
+  }, [user?.id]);
+
+  useEffect(() => {
+    const onPrefUpdate = (event: Event) => {
+      const detail = (event as CustomEvent<{ userId?: string }>).detail;
+      if (!detail?.userId || detail.userId === user?.id) {
+        setTodoListEnabled(isTeacherTodoListEnabled(user?.id));
+      }
+    };
+    window.addEventListener(TEACHER_TODO_PREF_UPDATED, onPrefUpdate);
+    return () => window.removeEventListener(TEACHER_TODO_PREF_UPDATED, onPrefUpdate);
+  }, [user?.id]);
 
   useEffect(() => {
     if (!user?.id) return;
@@ -103,6 +126,8 @@ export default function TeacherDashboard() {
         />
       </div>
 
+      {todoListEnabled && <TeacherTodoList userId={user?.id} />}
+
       <TeacherQuickActions />
 
       <TodayClassesList items={todayClasses} loading={loading} />
@@ -110,9 +135,7 @@ export default function TeacherDashboard() {
       <Card>
         <CardHeader className="border-b border-slate-100">
           <CardTitle className="text-lg">Student progress</CardTitle>
-          <p className="text-sm font-normal text-slate-500">
-            Analytics across your classes — attendance, skills, and roster
-          </p>
+          <p className="text-sm font-normal text-slate-500">Overview of students across your classes</p>
         </CardHeader>
         <CardContent className="pt-6">
           <TeacherStudentProgressSection

@@ -2,13 +2,14 @@ import { useEffect, useState } from 'react';
 import { Modal } from '@/components/ui/Modal';
 import { Button } from '@/components/ui/Button';
 import { Input, Label, Textarea } from '@/components/ui/Input';
-import { parentToForm, type ParentFormValues } from '@/utils/parentForm';
+import { emptyParentForm, parentToForm, type ParentFormValues } from '@/utils/parentForm';
 import type { ParentProfile } from '@/types';
 
 interface ParentFormModalProps {
   open: boolean;
   onClose: () => void;
-  parent: ParentProfile | null;
+  parent?: ParentProfile | null;
+  mode: 'create' | 'edit';
   onSubmit: (values: ParentFormValues) => Promise<void>;
   saving?: boolean;
 }
@@ -17,25 +18,19 @@ export function ParentFormModal({
   open,
   onClose,
   parent,
+  mode,
   onSubmit,
   saving = false,
 }: ParentFormModalProps) {
-  const [form, setForm] = useState<ParentFormValues>({
-    fullName: '',
-    email: '',
-    phoneNumber: '',
-    relationship: '',
-    address: '',
-    password: '',
-  });
+  const [form, setForm] = useState<ParentFormValues>(emptyParentForm());
   const [error, setError] = useState('');
+  const isCreate = mode === 'create';
 
   useEffect(() => {
-    if (open && parent) {
-      setForm(parentToForm(parent));
-      setError('');
-    }
-  }, [open, parent]);
+    if (!open) return;
+    setForm(isCreate ? emptyParentForm() : parent ? parentToForm(parent) : emptyParentForm());
+    setError('');
+  }, [open, parent, isCreate]);
 
   const set = <K extends keyof ParentFormValues>(key: K, value: ParentFormValues[K]) => {
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -51,14 +46,23 @@ export function ParentFormModal({
       setError('Email is required.');
       return;
     }
+    if (isCreate && (!form.password || form.password.length < 6)) {
+      setError('Password must be at least 6 characters.');
+      return;
+    }
     setError('');
     await onSubmit(form);
   };
 
-  if (!parent) return null;
+  if (!open) return null;
 
   return (
-    <Modal open={open} onClose={onClose} title="Edit parent" className="max-w-lg">
+    <Modal
+      open={open}
+      onClose={onClose}
+      title={isCreate ? 'Add parent' : 'Edit parent'}
+      className="max-w-lg"
+    >
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
           <Label htmlFor="parentName">Full name</Label>
@@ -114,14 +118,15 @@ export function ParentFormModal({
         </div>
 
         <div>
-          <Label htmlFor="parentPassword">New password</Label>
+          <Label htmlFor="parentPassword">{isCreate ? 'Password' : 'New password'}</Label>
           <Input
             id="parentPassword"
             type="password"
             value={form.password}
             onChange={(e) => set('password', e.target.value)}
-            placeholder="Leave blank to keep current"
+            placeholder={isCreate ? 'Min. 6 characters' : 'Leave blank to keep current'}
             autoComplete="new-password"
+            required={isCreate}
           />
         </div>
 
@@ -132,7 +137,7 @@ export function ParentFormModal({
             Cancel
           </Button>
           <Button type="submit" disabled={saving}>
-            {saving ? 'Saving…' : 'Save'}
+            {saving ? 'Saving…' : isCreate ? 'Create parent' : 'Save'}
           </Button>
         </div>
       </form>

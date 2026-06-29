@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Calendar, Clock, ClipboardCheck, Eye, MapPin, Users } from 'lucide-react';
+import { Calendar, CalendarDays, Clock, ClipboardCheck, Eye, MapPin, Users } from 'lucide-react';
+import { EmptyState } from '@/components/ui/EmptyState';
+import { SkeletonListRows } from '@/components/ui/Skeleton';
 import { teacherClassAttendanceUrl, teacherClassSessionsUrl } from '@/utils/attendanceLinks';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Modal } from '@/components/ui/Modal';
@@ -110,19 +112,21 @@ export function TodayClassesList({ items, loading }: TodayClassesListProps) {
       </CardHeader>
       <CardContent className="p-0">
         {loading ? (
-          <p className="p-6 text-sm text-slate-500">Loading today&apos;s schedule…</p>
+          <div className="p-4">
+            <SkeletonListRows rows={3} />
+          </div>
         ) : items.length === 0 ? (
-          <div className="p-8 text-center">
-            <p className="font-medium text-slate-700">No classes today</p>
-            <p className="mt-1 text-sm text-slate-500">
-              You have no recurring classes or sessions scheduled for this day.
-            </p>
-            <Link
-              to="/teacher/classes"
-              className="mt-4 inline-flex h-8 items-center justify-center rounded-lg border border-slate-300 bg-white px-3 text-sm font-medium text-slate-900 hover:bg-slate-50"
-            >
-              View all my classes
-            </Link>
+          <div className="p-4">
+            <EmptyState
+              icon={CalendarDays}
+              title="No sessions today"
+              description="You have no classes or sessions scheduled for today."
+              compact
+              actions={[
+                { label: 'Open calendar', href: '/teacher/calendar' },
+                { label: 'My classes', href: '/teacher/classes', variant: 'outline' },
+              ]}
+            />
           </div>
         ) : (
           <ul className="divide-y divide-slate-100">

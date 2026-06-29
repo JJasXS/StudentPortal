@@ -3,11 +3,8 @@ import { Link } from 'react-router-dom';
 import {
   GraduationCap,
   Users,
-  Calendar,
   ClipboardList,
-  FileText,
   Banknote,
-  AlertCircle,
   UserPlus,
 } from 'lucide-react';
 import { PageHeader } from '@/components/PageHeader';
@@ -16,14 +13,12 @@ import { AdminDashboardCharts } from '@/components/admin/AdminDashboardCharts';
 import {
   studentsApi,
   teachersApi,
-  classesApi,
   enrollmentsApi,
   invoicesApi,
 } from '@/api/resources';
 import {
   mockStudents,
   mockTeachers,
-  mockClasses,
   mockEnrollments,
   mockInvoices,
 } from '@/utils/mockData';
@@ -40,7 +35,6 @@ import type { Enrollment, Invoice } from '@/types';
 export default function AdminDashboard() {
   const [students, setStudents] = useState(mockStudents);
   const [teachers, setTeachers] = useState(mockTeachers);
-  const [classes, setClasses] = useState(mockClasses);
   const [enrollments, setEnrollments] = useState<Enrollment[]>(mockEnrollments);
   const [invoices, setInvoices] = useState<Invoice[]>(mockInvoices);
   const [loading, setLoading] = useState(true);
@@ -52,14 +46,12 @@ export default function AdminDashboard() {
     Promise.all([
       studentsApi.getAll().catch(() => mockStudents),
       teachersApi.getAll().catch(() => mockTeachers),
-      classesApi.getAll().catch(() => mockClasses),
       enrollmentsApi.getAll().catch(() => mockEnrollments),
       invoicesApi.getAll().catch(() => mockInvoices),
     ])
-      .then(([s, t, c, e, inv]) => {
+      .then(([s, t, e, inv]) => {
         setStudents(useMockCharts || s.length < mockStudents.length ? mockStudents : s);
         setTeachers(t);
-        setClasses(c);
         setEnrollments(useMockCharts || e.length < mockEnrollments.length ? mockEnrollments : e);
         const mergedInv = loadAllInvoices();
         setInvoices(useMockCharts || inv.length < mockInvoices.length ? mergedInv : mergedInv);
@@ -93,35 +85,20 @@ export default function AdminDashboard() {
         description="Centre overview — students, enrollments, and invoices"
       />
 
-      <div className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
         <StatCard title="Total Students" value={students.length} icon={GraduationCap} />
         <StatCard title="Total Teachers" value={teachers.length} icon={Users} />
-        <StatCard title="Active Classes" value={classes.length} icon={Calendar} />
         <StatCard
           title="Active Enrollments"
           value={activeEnrollments}
           icon={ClipboardList}
           description={joinedThisMonth > 0 ? `${joinedThisMonth} new this month` : undefined}
         />
-      </div>
-
-      <div className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard
-          title="Collected"
+          title="Revenue"
           value={`RM ${invoiceSummary.collectedAmount.toLocaleString('en-MY')}`}
           icon={Banknote}
-          description={`${invoiceSummary.paid} paid invoice${invoiceSummary.paid === 1 ? '' : 's'}`}
-        />
-        <StatCard
-          title="Outstanding"
-          value={`RM ${invoiceSummary.outstandingAmount.toLocaleString('en-MY')}`}
-          icon={AlertCircle}
-          description={`${invoiceSummary.unpaid + invoiceSummary.draft} pending`}
-        />
-        <StatCard
-          title="Total Invoiced"
-          value={`RM ${invoiceSummary.totalAmount.toLocaleString('en-MY')}`}
-          icon={FileText}
+          description="Collected from paid invoices"
         />
         <StatCard
           title="Students Joined"

@@ -6,13 +6,23 @@ interface SlidingTabsProps {
   value: string;
   onChange: (value: string) => void;
   counts?: Record<string, number>;
+  /** Display text per tab value (defaults to tab string) */
+  labels?: Record<string, string>;
   className?: string;
   /** Shown on the right (e.g. "5 of 10") */
   trailing?: ReactNode;
 }
 
 /** Underline tabs with a sliding blue indicator (embedded above table content). */
-export function SlidingTabs({ tabs, value, onChange, counts, className, trailing }: SlidingTabsProps) {
+export function SlidingTabs({
+  tabs,
+  value,
+  onChange,
+  counts,
+  labels,
+  className,
+  trailing,
+}: SlidingTabsProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const tabRefs = useRef(new Map<string, HTMLButtonElement>());
   const [indicator, setIndicator] = useState({ left: 0, width: 0 });
@@ -66,7 +76,7 @@ export function SlidingTabs({ tabs, value, onChange, counts, className, trailing
                     : 'text-slate-500 hover:text-slate-700'
                 )}
               >
-                {tab}
+                {labels?.[tab] ?? tab}
                 {count !== undefined && (
                   <span
                     className={cn(

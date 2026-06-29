@@ -15,6 +15,8 @@ import {
   type CentreSettings,
 } from '@/types/centreSettings';
 import { loadCentreSettings, saveCentreSettings } from '@/utils/centreSettingsStorage';
+import { notifyCentreSettingsUpdated } from '@/utils/centreBrandingEvents';
+import { useToast } from '@/context/ToastContext';
 import { logAdminAction } from '@/utils/auditLog';
 import { AUDIT_ACTIONS } from '@/types/auditLog';
 import {
@@ -75,6 +77,7 @@ export default function SettingsPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
+  const { success: showToast } = useToast();
   const [error, setError] = useState('');
 
   useEffect(() => {
@@ -113,9 +116,13 @@ export default function SettingsPage() {
         saveCentreSettings(settings);
       } else {
         const saved = await settingsApi.updateCentre(settings);
-        setSettings(saved);
+        const merged = { ...settings, ...saved };
+        setSettings(merged);
+        saveCentreSettings(merged);
       }
+      notifyCentreSettingsUpdated();
       setMessage('Settings saved.');
+      showToast('Settings saved.');
       logAdminAction(user, {
         action: AUDIT_ACTIONS.settingsUpdated,
         entityType: 'Settings',
@@ -124,7 +131,9 @@ export default function SettingsPage() {
       });
     } catch {
       saveCentreSettings(settings);
+      notifyCentreSettingsUpdated();
       setMessage('Saved locally — restart the backend to persist to the server.');
+      showToast('Settings saved locally.');
     } finally {
       setSaving(false);
     }
@@ -206,6 +215,32 @@ export default function SettingsPage() {
                     )}
 
                     {activeTab === 'Branding' && (
+                      <>
+                      <div>
+                        <Label htmlFor="brandColor">Brand colour</Label>
+                        <div className="mt-1 flex items-center gap-3">
+                          <Input
+                            id="brandColor"
+                            type="color"
+                            value={settings.brandColor ?? DEFAULT_CENTRE_SETTINGS.brandColor}
+                            onChange={(e) =>
+                              setSettings((s) => ({ ...s, brandColor: e.target.value }))
+                            }
+                            className="h-10 w-14 cursor-pointer p-1"
+                          />
+                          <Input
+                            value={settings.brandColor ?? DEFAULT_CENTRE_SETTINGS.brandColor}
+                            onChange={(e) =>
+                              setSettings((s) => ({ ...s, brandColor: e.target.value }))
+                            }
+                            placeholder="#2563eb"
+                            className="max-w-[8rem] font-mono text-sm"
+                          />
+                        </div>
+                        <p className="mt-1 text-xs text-slate-500">
+                          Used on login, sidebar accents, and invoice PDF headers.
+                        </p>
+                      </div>
                       <div>
                         <Label htmlFor="logo">Centre logo</Label>
                         <Input
@@ -251,6 +286,7 @@ export default function SettingsPage() {
                           </p>
                         )}
                       </div>
+                      </>
                     )}
 
                     {activeTab === 'Locale' && (

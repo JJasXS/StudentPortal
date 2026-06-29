@@ -3,12 +3,15 @@ import { authApi } from '@/api/auth';
 import type { User } from '@/types';
 import { TOKEN_KEY, USER_KEY } from '@/utils/constants';
 import { demoCredentials, mockUsers } from '@/utils/mockData';
+import { saveCurrentAccount } from '@/utils/savedAccounts';
 import { getDemoPassword } from '@/utils/demoPasswordOverrides';
+import { canSignIn } from '@/utils/learnerPortal';
 
 interface AuthContextType {
   user: User | null;
   isLoading: boolean;
   login: (email: string, password: string) => Promise<void>;
+  setSession: (token: string, user: User) => void;
   logout: () => void;
   updateUser: (user: User) => void;
 }
@@ -16,6 +19,11 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 const useApi = import.meta.env.VITE_USE_MOCK !== 'true';
+
+function rejectUnsupportedRole() {
+  localStorage.removeItem(TOKEN_KEY);
+  localStorage.removeItem(USER_KEY);
+}
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
@@ -29,14 +37,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         try {
           if (useApi) {
             const me = await authApi.me();
-            setUser(me);
-            localStorage.setItem(USER_KEY, JSON.stringify(me));
+            if (!canSignIn(me.role)) {
+              rejectUnsupportedRole();
+              setUser(null);
+            } else {
+              setUser(me);
+              localStorage.setItem(USER_KEY, JSON.stringify(me));
+            }
           } else {
-            setUser(JSON.parse(stored));
+            const parsed = JSON.parse(stored) as User;
+            if (!canSignIn(parsed.role)) {
+              rejectUnsupportedRole();
+              setUser(null);
+            } else {
+              setUser(parsed);
+            }
           }
         } catch {
-          localStorage.removeItem(TOKEN_KEY);
-          localStorage.removeItem(USER_KEY);
+          rejectUnsupportedRole();
         }
       }
       setIsLoading(false);
@@ -46,10 +64,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const login = async (email: string, password: string) => {
     if (useApi) {
-      const response = await authApi.login(email, password);
-      localStorage.setItem(TOKEN_KEY, response.token);
-      localStorage.setItem(USER_KEY, JSON.stringify(response.user));
-      setUser(response.user);
+      try {
+        const response = await authApi.login(email, password);
+        if (!canSignIn(response.user.role)) {
+          throw new Error(
+            'This account cannot sign in here. Use a student account — each learner has their own login.'
+          );
+        }
+        localStorage.setItem(TOKEN_KEY, response.token);
+        localStorage.setItem(USER_KEY, JSON.stringify(response.user));
+        setUser(response.user);
+        saveCurrentAccount();
+      } catch (err: unknown) {
+        const apiMessage = (err as { response?: { data?: { message?: string } } }).response?.data
+          ?.message;
+        throw new Error(apiMessage ?? (err instanceof Error ? err.message : 'Login failed'));
+      }
       return;
     }
 
@@ -59,14 +89,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
     const found = mockUsers.find((u) => u.email === email);
     if (!found) throw new Error('Invalid email or password');
+    if (!canSignIn(found.role)) {
+      throw new Error(
+        'This account cannot sign in here. Use a student account — each learner has their own login.'
+      );
+    }
     localStorage.setItem(TOKEN_KEY, 'mock-token');
     localStorage.setItem(USER_KEY, JSON.stringify(found));
     setUser(found);
+    saveCurrentAccount();
+  };
+
+  const setSession = (token: string, sessionUser: User) => {
+    if (!canSignIn(sessionUser.role)) return;
+    localStorage.setItem(TOKEN_KEY, token);
+    localStorage.setItem(USER_KEY, JSON.stringify(sessionUser));
+    setUser(sessionUser);
   };
 
   const logout = () => {
-    localStorage.removeItem(TOKEN_KEY);
-    localStorage.removeItem(USER_KEY);
+    rejectUnsupportedRole();
     setUser(null);
   };
 
@@ -76,7 +118,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, isLoading, login, logout, updateUser }}>
+    <AuthContext.Provider value={{ user, isLoading, login, setSession, logout, updateUser }}>
       {children}
     </AuthContext.Provider>
   );

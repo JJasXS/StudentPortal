@@ -15,11 +15,11 @@ public static class DbInitializer
         await EnsureEmploymentTypeColumnAsync(context);
         await EnsureAttendanceCheckInsTableAsync(context);
         await EnsureCentreSettingsTableAsync(context);
+        await EnsureCentreSettingsColumnsAsync(context);
         await EnsurePasswordResetsTableAsync(context);
         await EnsureDefaultCentreSettingsAsync(context);
         await EnsureInvoiceCourseColumnsAsync(context);
         await EnsureInvoiceBillingColumnsAsync(context);
-        await EnsureCentreSettingsColumnsAsync(context);
         await EnsureAuditLogsTableAsync(context);
         await EnsureNotificationsTableAsync(context);
         await EnsureDemoNotificationsAsync(context);

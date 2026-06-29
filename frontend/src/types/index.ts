@@ -23,6 +23,18 @@ export interface StudentProfile {
   isActive?: boolean;
 }
 
+export interface LinkedParentSummary {
+  fullName: string;
+  email: string;
+  phoneNumber?: string;
+  relationship?: string;
+}
+
+export interface StudentSelfProfile extends StudentProfile {
+  phoneNumber?: string;
+  parent?: LinkedParentSummary | null;
+}
+
 export interface ParentProfile {
   id: string;
   userId: string;

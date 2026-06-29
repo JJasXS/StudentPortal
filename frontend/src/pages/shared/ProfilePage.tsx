@@ -1,7 +1,11 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { Pencil } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
+import { useAccountSwitcher } from '@/context/AccountSwitcherContext';
 import { authApi } from '@/api/auth';
+import { StudentProfileView } from '@/components/profile/StudentProfileView';
+import { ProfileIdentityCard } from '@/components/profile/ProfileIdentityCard';
+import { AccountSwitcherPanel } from '@/components/profile/AccountSwitcherModal';
 import { PageHeader } from '@/components/PageHeader';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { StatusBadge } from '@/components/ui/StatusBadge';
@@ -13,6 +17,7 @@ const useApi = import.meta.env.VITE_USE_MOCK !== 'true';
 
 export default function ProfilePage() {
   const { user, updateUser } = useAuth();
+  const { openSwitcher } = useAccountSwitcher();
   const [editOpen, setEditOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -75,10 +80,31 @@ export default function ProfilePage() {
     }
   };
 
+  if (user?.role === 'Student') {
+    return <StudentProfileView />;
+  }
+
   return (
-    <div>
+    <div className="max-w-lg">
       <PageHeader title="My Profile" description="View and update your account information" />
-      <Card className="max-w-lg">
+
+      {user && (
+        <div className="mb-4">
+          <ProfileIdentityCard
+            user={user}
+            onDoubleClick={openSwitcher}
+            subtitle="Double-click to switch account"
+          />
+        </div>
+      )}
+
+      <Card className="mb-6">
+        <CardContent className="pt-6">
+          <AccountSwitcherPanel />
+        </CardContent>
+      </Card>
+
+      <Card>
         <CardHeader className="flex flex-row items-center justify-between space-y-0">
           <CardTitle>Account Details</CardTitle>
           <Button type="button" variant="outline" size="sm" onClick={openEdit}>

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { AlertCircle, Banknote, Calendar, Download, FileText, Plus, Receipt, Send, X, Zap } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
+import { useToast } from '@/context/ToastContext';
 import { PageHeader } from '@/components/PageHeader';
 import { SearchBox } from '@/components/SearchBox';
 import { StatCard } from '@/components/StatCard';
@@ -73,12 +74,7 @@ export default function AdminInvoicesPage() {
   const [creating, setCreating] = useState(false);
   const [editing, setEditing] = useState(false);
   const [billing, setBilling] = useState(false);
-  const [toast, setToast] = useState('');
-
-  const showToast = (message: string) => {
-    setToast(message);
-    setTimeout(() => setToast(''), 5000);
-  };
+  const { success: showToast } = useToast();
 
   const refreshInvoices = useCallback(() => {
     setInvoices(loadAllInvoices());
@@ -350,12 +346,6 @@ export default function AdminInvoicesPage() {
           </>
         }
       />
-
-      {toast && (
-        <div className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
-          {toast}
-        </div>
-      )}
 
       <div className="mb-4 rounded-xl border border-slate-200 bg-slate-50/80 px-4 py-3 text-sm text-slate-600">
         Create invoices per child or whole class. <strong>Run monthly billing</strong> uses active

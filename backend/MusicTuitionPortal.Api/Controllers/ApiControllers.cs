@@ -18,20 +18,27 @@ public class AuthController : ControllerBase
     [AllowAnonymous]
     public async Task<IActionResult> Login([FromBody] LoginRequest request)
     {
-        var result = await _authService.LoginAsync(request);
-        if (result == null) return Unauthorized(new { message = "Invalid email or password." });
-        return Ok(new
+        try
         {
-            token = result.Token,
-            user = new
+            var result = await _authService.LoginAsync(request);
+            if (result == null) return Unauthorized(new { message = "Invalid email or password." });
+            return Ok(new
             {
-                id = result.User.Id.ToString(),
-                fullName = result.User.FullName,
-                email = result.User.Email,
-                phoneNumber = result.User.PhoneNumber,
-                role = result.User.Role
-            }
-        });
+                token = result.Token,
+                user = new
+                {
+                    id = result.User.Id.ToString(),
+                    fullName = result.User.FullName,
+                    email = result.User.Email,
+                    phoneNumber = result.User.PhoneNumber,
+                    role = result.User.Role
+                }
+            });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return StatusCode(403, new { message = ex.Message });
+        }
     }
 
     [HttpPost("register")]
@@ -42,6 +49,33 @@ public class AuthController : ControllerBase
         {
             var result = await _authService.RegisterAsync(request);
             return Ok(result);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+    }
+
+    [HttpPost("register/student")]
+    [AllowAnonymous]
+    public async Task<IActionResult> RegisterStudent([FromBody] RegisterStudentRequest request)
+    {
+        try
+        {
+            var result = await _authService.RegisterStudentAsync(request);
+            return Ok(new
+            {
+                token = result.Token,
+                user = new
+                {
+                    id = result.User.Id.ToString(),
+                    fullName = result.User.FullName,
+                    email = result.User.Email,
+                    phoneNumber = result.User.PhoneNumber,
+                    role = result.User.Role,
+                    isActive = result.User.IsActive
+                }
+            });
         }
         catch (InvalidOperationException ex)
         {
@@ -165,6 +199,31 @@ public class StudentsController : ControllerBase
     [HttpGet]
     public async Task<IActionResult> GetAll() => Ok(MapList(await _service.GetAllAsync()));
 
+    [HttpGet("me")]
+    [Authorize(Roles = "Student")]
+    public async Task<IActionResult> GetMe()
+    {
+        var userId = Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+        var profile = await _service.GetSelfProfileAsync(userId);
+        return profile == null ? NotFound() : Ok(MapSelf(profile));
+    }
+
+    [HttpPut("me")]
+    [Authorize(Roles = "Student")]
+    public async Task<IActionResult> UpdateMe([FromBody] UpdateStudentSelfRequest request)
+    {
+        var userId = Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+        try
+        {
+            var profile = await _service.UpdateSelfAsync(userId, request);
+            return profile == null ? NotFound() : Ok(MapSelf(profile));
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+    }
+
     [HttpGet("{id:guid}")]
     public async Task<IActionResult> GetById(Guid id)
     {
@@ -208,6 +267,30 @@ public class StudentsController : ControllerBase
         schoolName = s.SchoolName,
         notes = s.Notes,
         isActive = s.IsActive
+    };
+
+    private static object MapSelf(StudentSelfProfileDto s) => new
+    {
+        id = s.Id.ToString(),
+        userId = s.UserId.ToString(),
+        fullName = s.FullName,
+        email = s.Email,
+        phoneNumber = s.PhoneNumber,
+        studentCode = s.StudentCode,
+        dateOfBirth = s.DateOfBirth?.ToString("yyyy-MM-dd"),
+        gender = s.Gender,
+        schoolName = s.SchoolName,
+        notes = s.Notes,
+        isActive = s.IsActive,
+        parent = s.Parent == null
+            ? null
+            : new
+            {
+                fullName = s.Parent.FullName,
+                email = s.Parent.Email,
+                phoneNumber = s.Parent.PhoneNumber,
+                relationship = s.Parent.Relationship
+            }
     };
 
     private static List<object> MapList(List<StudentDto> list) => list.Select(s => Map(s)).Cast<object>().ToList();

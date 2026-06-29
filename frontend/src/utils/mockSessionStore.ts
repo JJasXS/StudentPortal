@@ -54,6 +54,22 @@ export function generateMockSessions(
   };
 }
 
+/** Seed demo sessions for admin calendar (prev, current, next month). */
+export function seedAdminCalendarSessions(classes: ClassItem[]) {
+  const active = classes.filter((c) => c.isActive);
+  const now = new Date();
+
+  for (const monthOffset of [-1, 0, 1]) {
+    const anchor = new Date(now.getFullYear(), now.getMonth() + monthOffset, 1);
+    const year = anchor.getFullYear();
+    const month = anchor.getMonth();
+    const from = `${year}-${String(month + 1).padStart(2, '0')}-01`;
+    const lastDay = new Date(year, month + 1, 0).getDate();
+    const to = `${year}-${String(month + 1).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+    generateMockSessions(active, from, to);
+  }
+}
+
 export function getOrCreateMockTodaySession(classItem: ClassItem): ClassSession {
   const today = new Date();
   const dateKey = today.toISOString().slice(0, 10);

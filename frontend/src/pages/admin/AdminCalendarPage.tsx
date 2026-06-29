@@ -1,14 +1,18 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { CalendarDays, RefreshCw } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { CalendarDays, ChevronRight, GraduationCap, RefreshCw } from 'lucide-react';
 import { PageHeader } from '@/components/PageHeader';
-import { WeekCalendar, type CalendarEvent } from '@/components/calendar/WeekCalendar';
+import { CalendarSessionDetailModal } from '@/components/calendar/CalendarSessionDetailModal';
+import { MonthCalendar } from '@/components/calendar/MonthCalendar';
+import type { CalendarEvent } from '@/components/calendar/WeekCalendar';
 import { Button } from '@/components/ui/Button';
-import { Card, CardContent } from '@/components/ui/Card';
-import { classesApi, classSessionsApi } from '@/api/resources';
-import { mockClasses, mockClassSessions } from '@/utils/mockData';
-import { generateMockSessions, loadAllSessions } from '@/utils/mockSessionStore';
-import { sessionsInRange } from '@/utils/sessionGeneration';
-import type { ClassItem, ClassSession } from '@/types';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
+import { StatusBadge } from '@/components/ui/StatusBadge';
+import { classesApi, classSessionsApi, coursesApi } from '@/api/resources';
+import { mockClasses, mockCourses } from '@/utils/mockData';
+import { generateMockSessions, loadAllSessions, seedAdminCalendarSessions } from '@/utils/mockSessionStore';
+import { monthRange, sessionsInRange } from '@/utils/sessionGeneration';
+import type { ClassItem, ClassSession, Course } from '@/types';
 
 function addDays(date: Date, days: number) {
   const next = new Date(date);
@@ -18,60 +22,79 @@ function addDays(date: Date, days: number) {
 
 export default function AdminCalendarPage() {
   const [classes, setClasses] = useState<ClassItem[]>([]);
+  const [courses, setCourses] = useState<Course[]>([]);
   const [sessions, setSessions] = useState<ClassSession[]>([]);
   const [anchorDate, setAnchorDate] = useState(() => new Date());
   const [generating, setGenerating] = useState(false);
   const [message, setMessage] = useState('');
+  const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
   const isMock = import.meta.env.VITE_USE_MOCK === 'true';
 
   const loadData = useCallback(() => {
     Promise.all([
       classesApi.getAll().catch(() => mockClasses),
-      isMock
-        ? Promise.resolve(loadAllSessions())
-        : classSessionsApi.getAll().catch(() => mockClassSessions),
-    ]).then(([classList, sessionList]) => {
+      coursesApi.getAll().catch(() => mockCourses),
+    ]).then(([classList, courseList]) => {
       setClasses(classList.length >= mockClasses.length ? classList : mockClasses);
-      setSessions(sessionList);
+      setCourses(courseList.length >= mockCourses.length ? courseList : mockCourses);
+      setSessions(loadAllSessions());
     });
-  }, [isMock]);
+  }, []);
 
   useEffect(() => {
+    seedAdminCalendarSessions(mockClasses);
     loadData();
   }, [loadData]);
 
-  const weekStart = useMemo(() => {
-    const day = anchorDate.getDay();
-    const diff = day === 0 ? -6 : 1 - day;
-    const start = new Date(anchorDate);
-    start.setDate(start.getDate() + diff);
-    return start.toISOString().slice(0, 10);
-  }, [anchorDate]);
+  const { start: monthStart, end: monthEnd } = useMemo(
+    () => monthRange(anchorDate),
+    [anchorDate]
+  );
 
-  const weekEnd = useMemo(() => addDays(new Date(`${weekStart}T12:00:00`), 6), [weekStart]);
-
-  const weekSessions = useMemo(
-    () => sessionsInRange(sessions, weekStart, weekEnd),
-    [sessions, weekStart, weekEnd]
+  const monthSessions = useMemo(
+    () => sessionsInRange(sessions, monthStart, monthEnd),
+    [sessions, monthStart, monthEnd]
   );
 
   const classById = useMemo(() => new Map(classes.map((c) => [c.id, c])), [classes]);
+  const courseById = useMemo(() => new Map(courses.map((c) => [c.id, c])), [courses]);
 
   const events: CalendarEvent[] = useMemo(
     () =>
-      weekSessions.map((session) => {
+      monthSessions.map((session) => {
         const cls = classById.get(session.classId);
+        const course = cls ? courseById.get(cls.courseId) : undefined;
         return {
           id: session.id,
           session,
+          courseName: cls?.courseName ?? course?.courseName,
+          className: cls?.className ?? session.className,
+          teacherName: cls?.teacherName,
+          location: cls?.location,
           subtitle: cls?.teacherName,
           href: cls
             ? `/admin/courses/${cls.courseId}/classes/${cls.id}?tab=sessions`
             : undefined,
         };
       }),
-    [weekSessions, classById]
+    [monthSessions, classById, courseById]
   );
+
+  const courseSummaries = useMemo(() => {
+    return courses
+      .map((course) => {
+        const courseClasses = classes.filter((c) => c.courseId === course.id);
+        const activeClasses = courseClasses.filter((c) => c.isActive);
+        const monthClassIds = new Set(courseClasses.map((c) => c.id));
+        const sessionsThisMonth = monthSessions.filter((s) => monthClassIds.has(s.classId)).length;
+        return {
+          course,
+          classCount: activeClasses.length,
+          sessionsThisMonth,
+        };
+      })
+      .sort((a, b) => a.course.courseName.localeCompare(b.course.courseName));
+  }, [courses, classes, monthSessions]);
 
   const handleGenerate = async (weeks: number) => {
     setGenerating(true);
@@ -83,7 +106,9 @@ export default function AdminCalendarPage() {
       if (isMock) {
         const result = generateMockSessions(classes, from, to);
         setSessions(result.sessions);
-        setMessage(`Generated ${result.createdCount} sessions (${result.skippedCount} skipped — already exist or holidays).`);
+        setMessage(
+          `Generated ${result.createdCount} sessions (${result.skippedCount} skipped — already exist or holidays).`
+        );
       } else {
         const result = await classSessionsApi.generate({ fromDate: from, toDate: to });
         setSessions((prev) => {
@@ -103,10 +128,10 @@ export default function AdminCalendarPage() {
   const upcomingCount = sessions.filter((s) => s.status === 'Scheduled').length;
 
   return (
-    <div>
+    <div className="space-y-6">
       <PageHeader
-        title="Class calendar"
-        description="Weekly schedule with auto-generated sessions from class templates"
+        title="Calendar & Courses"
+        description="Monthly class schedule and course management in one place"
         actions={
           <div className="flex flex-wrap gap-2">
             <Button type="button" variant="outline" disabled={generating} onClick={() => handleGenerate(4)}>
@@ -122,12 +147,12 @@ export default function AdminCalendarPage() {
       />
 
       {message && (
-        <p className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm text-emerald-800">
+        <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm text-emerald-800">
           {message}
         </p>
       )}
 
-      <div className="mb-4 grid gap-3 sm:grid-cols-3">
+      <div className="grid gap-3 sm:grid-cols-3">
         <Card>
           <CardContent className="p-4">
             <p className="text-xs uppercase tracking-wide text-slate-500">Active classes</p>
@@ -136,8 +161,8 @@ export default function AdminCalendarPage() {
         </Card>
         <Card>
           <CardContent className="p-4">
-            <p className="text-xs uppercase tracking-wide text-slate-500">This week</p>
-            <p className="text-2xl font-bold text-slate-900">{weekSessions.length}</p>
+            <p className="text-xs uppercase tracking-wide text-slate-500">This month</p>
+            <p className="text-2xl font-bold text-slate-900">{monthSessions.length}</p>
           </CardContent>
         </Card>
         <Card>
@@ -148,12 +173,46 @@ export default function AdminCalendarPage() {
         </Card>
       </div>
 
-      <WeekCalendar
+      <MonthCalendar
         anchorDate={anchorDate}
         onAnchorChange={setAnchorDate}
         events={events}
-        emptyMessage="No sessions this week. Generate sessions from class weekly schedules."
+        onEventClick={setSelectedEvent}
+        emptyMessage="No sessions this month. Generate sessions from class weekly schedules."
       />
+
+      <CalendarSessionDetailModal event={selectedEvent} onClose={() => setSelectedEvent(null)} />
+
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
+          <div className="flex items-center gap-2">
+            <GraduationCap className="h-5 w-5 text-slate-500" />
+            <CardTitle className="text-base">Courses</CardTitle>
+          </div>
+          <p className="text-sm text-slate-500">{courses.length} total</p>
+        </CardHeader>
+        <CardContent className="divide-y divide-slate-100 p-0 pt-0">
+          {courseSummaries.map(({ course, classCount, sessionsThisMonth }) => (
+            <Link
+              key={course.id}
+              to={`/admin/courses/${course.id}`}
+              className="flex items-center justify-between gap-3 px-6 py-3.5 transition hover:bg-slate-50"
+            >
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="font-medium text-slate-900">{course.courseName}</p>
+                  <StatusBadge status={course.isActive ? 'Active' : 'Inactive'} />
+                </div>
+                <p className="text-sm text-slate-500">
+                  {course.category} · {course.level} · {classCount} class{classCount === 1 ? '' : 'es'}
+                  {sessionsThisMonth > 0 && ` · ${sessionsThisMonth} sessions this month`}
+                </p>
+              </div>
+              <ChevronRight className="h-4 w-4 shrink-0 text-slate-400" />
+            </Link>
+          ))}
+        </CardContent>
+      </Card>
     </div>
   );
 }

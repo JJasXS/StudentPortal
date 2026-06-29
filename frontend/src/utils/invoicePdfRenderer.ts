@@ -3,6 +3,7 @@ import autoTable from 'jspdf-autotable';
 import type { Invoice } from '@/types';
 import type { CentreSettings } from '@/types/centreSettings';
 import { loadCentreSettings } from '@/utils/centreSettingsStorage';
+import { brandColorToRgb } from '@/utils/brandColor';
 import { formatInvoiceCourse, formatRm } from '@/utils/invoiceBilling';
 import { formatDateDDMMYYYY } from '@/utils/dateFormat';
 import { currentBillingPeriod } from '@/utils/billingPeriod';
@@ -31,7 +32,8 @@ function drawPaidStamp(doc: jsPDF, pageWidth: number) {
 }
 
 function drawCentreHeader(doc: jsPDF, settings: CentreSettings, pageWidth: number, kind: DocumentKind) {
-  doc.setFillColor(79, 70, 229);
+  const [r, g, b] = brandColorToRgb(settings.brandColor);
+  doc.setFillColor(r, g, b);
   doc.rect(0, 0, pageWidth, 36, 'F');
 
   let textX = 14;

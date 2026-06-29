@@ -2,11 +2,6 @@ import { useEffect, useMemo, useState } from 'react';
 import { TrendingUp, Users, ClipboardCheck, BookOpen } from 'lucide-react';
 import { StatCard } from '@/components/StatCard';
 import { StudentProgressGrid } from '@/components/StudentProgressGrid';
-import {
-  WeeklyAttendanceChart,
-  SkillTrendChart,
-  StudentSkillBarChart,
-} from '@/components/progress/ProgressCharts';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { lessonNotesApi } from '@/api/resources';
 import { mockLessonNotes } from '@/utils/mockData';
@@ -62,23 +57,13 @@ export function TeacherStudentProgressSection({
     return { avgAttendance, avgSkill, improving, studentCount: students.length };
   }, [progress]);
 
-  const skillBars = useMemo(
-    () =>
-      [...progress.students]
-        .sort((a, b) => b.skillScore - a.skillScore)
-        .map((s) => ({ name: s.studentName, score: s.skillScore })),
-    [progress.students]
-  );
-
   const content = (
     <>
       {!embedded && (
         <>
           <div className="mb-4">
             <h2 className="text-lg font-semibold text-slate-900">Student progress</h2>
-            <p className="mt-0.5 text-sm text-slate-500">
-              Attendance trends, skill growth, and per-student overview
-            </p>
+            <p className="mt-0.5 text-sm text-slate-500">Per-student overview across your classes</p>
           </div>
 
           <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -117,55 +102,17 @@ export function TeacherStudentProgressSection({
         </div>
       )}
 
-      <div className={embedded ? 'grid gap-4 lg:grid-cols-2' : 'mb-6 grid gap-4 lg:grid-cols-2'}>
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Weekly attendance</CardTitle>
-            <p className="text-sm font-normal text-slate-500">
-              Hover bars for present, late, excused, and absent counts
-            </p>
-          </CardHeader>
-          <CardContent>
-            <WeeklyAttendanceChart data={progress.weeklyAttendance} />
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Class skill trend</CardTitle>
-            <p className="text-sm font-normal text-slate-500">Average score over time</p>
-          </CardHeader>
-          <CardContent>
-            <SkillTrendChart data={progress.skillTrend} />
-          </CardContent>
-        </Card>
-      </div>
-
-      <div className="grid gap-4 lg:grid-cols-5">
-        <Card className="lg:col-span-2">
-          <CardHeader>
-            <CardTitle className="text-base">Skill by student</CardTitle>
-            <p className="text-sm font-normal text-slate-500">
-              {summary.improving} student{summary.improving === 1 ? '' : 's'} improving
-            </p>
-          </CardHeader>
-          <CardContent>
-            <StudentSkillBarChart students={skillBars} />
-          </CardContent>
-        </Card>
-
-        <Card className="lg:col-span-3">
-          <CardHeader>
-            <CardTitle className="text-base">Student roster</CardTitle>
-            <p className="text-sm font-normal text-slate-500">
-              Hover cells for attendance, sessions, and skill details
-            </p>
-          </CardHeader>
-          <CardContent className="p-0 sm:p-6 sm:pt-0">
-            <StudentProgressGrid students={progress.students} />
-          </CardContent>
-        </Card>
-      </div>
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Student roster</CardTitle>
+          <p className="text-sm font-normal text-slate-500">
+            Hover cells for attendance, sessions, and skill details
+          </p>
+        </CardHeader>
+        <CardContent className="p-0 sm:p-6 sm:pt-0">
+          <StudentProgressGrid students={progress.students} />
+        </CardContent>
+      </Card>
     </>
   );
 

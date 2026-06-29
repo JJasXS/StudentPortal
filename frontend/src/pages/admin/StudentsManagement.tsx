@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Calendar, Pencil, X } from 'lucide-react';
+import { Calendar, Pencil, Plus, X } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
+import { useToast } from '@/context/ToastContext';
 import { PageHeader } from '@/components/PageHeader';
 import { SearchBox } from '@/components/SearchBox';
 import { StudentFormModal } from '@/components/StudentFormModal';
@@ -9,16 +11,20 @@ import { SlidingTabs } from '@/components/ui/SlidingTabs';
 import { Card, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
-import { studentsApi } from '@/api/resources';
-import { mockStudents } from '@/utils/mockData';
+import { parentsApi, studentsApi } from '@/api/resources';
+import { mockParents, mockStudents } from '@/utils/mockData';
 import { ACTIVE_STATUSES } from '@/utils/constants';
 import { activeRecordStatus, filterByStatus, getStatusCounts } from '@/utils/statusFilter';
 import { formatDateDDMMYYYY } from '@/utils/dateFormat';
 import { formatGender } from '@/utils/gender';
-import { formToStudentPayload, type StudentFormValues } from '@/utils/studentForm';
+import {
+  formToStudentCreatePayload,
+  formToStudentPayload,
+  type StudentFormValues,
+} from '@/utils/studentForm';
 import { logAdminAction } from '@/utils/auditLog';
 import { AUDIT_ACTIONS } from '@/types/auditLog';
-import type { StudentProfile } from '@/types';
+import type { ParentProfile, StudentProfile } from '@/types';
 
 const STATUS_TABS = ['All', ...ACTIVE_STATUSES] as const;
 
@@ -29,11 +35,14 @@ function dateOfBirthKey(value?: string) {
 
 export default function StudentsManagement() {
   const { user } = useAuth();
+  const { success: showSuccess } = useToast();
   const [students, setStudents] = useState<StudentProfile[]>([]);
+  const [parents, setParents] = useState<ParentProfile[]>([]);
   const [nameFilter, setNameFilter] = useState('');
   const [dateFilter, setDateFilter] = useState('');
   const [statusTab, setStatusTab] = useState('All');
   const [editing, setEditing] = useState<StudentProfile | null>(null);
+  const [creating, setCreating] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
@@ -49,6 +58,22 @@ export default function StudentsManagement() {
         setStudents([...data, ...mockStudents.filter((m) => !codes.has(m.studentCode))]);
       })
       .catch(() => setStudents(mockStudents));
+
+    parentsApi
+      .getAll()
+      .then((data) => {
+        if (data.length >= mockParents.length) {
+          setParents(data.filter((p) => p.isActive !== false));
+          return;
+        }
+        const emails = new Set(data.map((p) => p.email));
+        setParents(
+          [...data, ...mockParents.filter((m) => !emails.has(m.email))].filter(
+            (p) => p.isActive !== false
+          )
+        );
+      })
+      .catch(() => setParents(mockParents.filter((p) => p.isActive !== false)));
   }, []);
 
   const filteredByNameAndDate = useMemo(() => {
@@ -83,6 +108,54 @@ export default function StudentsManagement() {
     setStatusTab('All');
   };
 
+  const handleCreate = async (values: StudentFormValues) => {
+    if (!values.parentUserId) {
+      setError('Select a parent before creating a student.');
+      return;
+    }
+    setSaving(true);
+    setError('');
+    const payload = formToStudentCreatePayload(values);
+
+    try {
+      const created =
+        import.meta.env.VITE_USE_MOCK === 'true'
+          ? ({
+              id: crypto.randomUUID(),
+              userId: crypto.randomUUID(),
+              fullName: payload.fullName,
+              email: payload.email,
+              studentCode: `STU-${new Date().getFullYear()}-${String(students.length + 1).padStart(4, '0')}`,
+              isActive: true,
+            } satisfies StudentProfile)
+          : await studentsApi.create(payload);
+      setStudents((list) => [...list, created]);
+      setParents((list) =>
+        list.map((p) =>
+          p.userId === values.parentUserId
+            ? { ...p, children: [...(p.children ?? []), created.userId] }
+            : p
+        )
+      );
+      setCreating(false);
+      showSuccess(`${created.fullName} added and linked to parent.`);
+      logAdminAction(user, {
+        action: AUDIT_ACTIONS.studentCreated,
+        entityType: 'Student',
+        entityId: created.id,
+        entityLabel: created.fullName,
+      });
+    } catch (err: unknown) {
+      const msg =
+        err && typeof err === 'object' && 'response' in err
+          ? (err as { response?: { data?: { message?: string } } }).response?.data?.message
+          : undefined;
+      setError(msg ?? 'Could not create student. Ensure a parent exists and the email is unique.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const handleSave = async (values: StudentFormValues) => {
     if (!editing) return;
     setSaving(true);
@@ -96,7 +169,7 @@ export default function StudentsManagement() {
               ...editing,
               fullName: payload.fullName,
               email: payload.email,
-              studentCode: payload.studentCode,
+              studentCode: payload.studentCode ?? editing.studentCode,
               dateOfBirth: payload.dateOfBirth,
               gender: payload.gender,
               schoolName: payload.schoolName,
@@ -105,6 +178,7 @@ export default function StudentsManagement() {
           : await studentsApi.update(editing.id, payload);
       setStudents((list) => list.map((s) => (s.id === editing.id ? { ...s, ...updated } : s)));
       setEditing(null);
+      showSuccess('Student updated.');
       logAdminAction(user, {
         action: AUDIT_ACTIONS.studentUpdated,
         entityType: 'Student',
@@ -119,7 +193,7 @@ export default function StudentsManagement() {
                 ...s,
                 fullName: payload.fullName,
                 email: payload.email,
-                studentCode: payload.studentCode,
+                studentCode: payload.studentCode ?? editing.studentCode,
                 dateOfBirth: payload.dateOfBirth,
                 gender: payload.gender,
                 schoolName: payload.schoolName,
@@ -139,8 +213,18 @@ export default function StudentsManagement() {
     <div>
       <PageHeader
         title="Students Management"
-        description="Filter by name, date of birth, and record status"
+        description="Students must be linked to a parent account that already exists"
       />
+
+      {parents.length === 0 && (
+        <p className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800">
+          No parent accounts yet.{' '}
+          <Link to="/admin/parents" className="font-medium text-amber-900 underline">
+            Add a parent
+          </Link>{' '}
+          before creating students.
+        </p>
+      )}
 
       {error && (
         <p className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800">
@@ -168,6 +252,16 @@ export default function StudentsManagement() {
                 title="Date of birth"
               />
             </div>
+            <Button
+              type="button"
+              onClick={() => setCreating(true)}
+              disabled={parents.length === 0}
+              title={parents.length === 0 ? 'Add a parent first' : undefined}
+              className="shrink-0"
+            >
+              <Plus className="mr-1.5 h-4 w-4" />
+              Add student
+            </Button>
             {hasActiveFilters && (
               <Button
                 type="button"
@@ -273,9 +367,20 @@ export default function StudentsManagement() {
       </Card>
 
       <StudentFormModal
+        open={creating}
+        onClose={() => setCreating(false)}
+        parents={parents}
+        mode="create"
+        onSubmit={handleCreate}
+        saving={saving}
+      />
+
+      <StudentFormModal
         open={Boolean(editing)}
         onClose={() => setEditing(null)}
         student={editing}
+        parents={parents}
+        mode="edit"
         onSubmit={handleSave}
         saving={saving}
       />

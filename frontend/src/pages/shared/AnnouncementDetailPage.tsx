@@ -104,7 +104,9 @@ export default function AnnouncementDetailPage(props: AnnouncementDetailPageProp
         Back to announcements
       </Link>
       <h1 className="mt-8 text-2xl font-semibold text-slate-900">{announcement.title}</h1>
-      <p className="mt-6 w-full text-[15px] leading-7 text-slate-800">{announcement.content}</p>
+      <p className="mt-6 w-full text-justify text-[15px] leading-7 text-slate-800">
+        {announcement.content}
+      </p>
     </>
   );
 }

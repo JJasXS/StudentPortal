@@ -4,11 +4,16 @@ import { Button } from '@/components/ui/Button';
 import { cn } from '@/utils/cn';
 import { formatDateDDMMYYYY } from '@/utils/dateFormat';
 import { weekDayKeys, weekRange } from '@/utils/sessionGeneration';
+import { sessionStatusColor } from '@/components/calendar/calendarStyles';
 import type { ClassSession } from '@/types';
 
 export interface CalendarEvent {
   id: string;
   session: ClassSession;
+  courseName?: string;
+  className?: string;
+  teacherName?: string;
+  location?: string;
   subtitle?: string;
   href?: string;
 }
@@ -21,19 +26,6 @@ interface WeekCalendarProps {
 }
 
 const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-
-function statusColor(status: ClassSession['status']) {
-  switch (status) {
-    case 'Completed':
-      return 'border-emerald-200 bg-emerald-50 text-emerald-900';
-    case 'Cancelled':
-      return 'border-slate-200 bg-slate-100 text-slate-500 line-through';
-    case 'Rescheduled':
-      return 'border-amber-200 bg-amber-50 text-amber-900';
-    default:
-      return 'border-primary-200 bg-primary-50 text-primary-900';
-  }
-}
 
 export function WeekCalendar({
   anchorDate,
@@ -100,7 +92,7 @@ export function WeekCalendar({
                       <div
                         className={cn(
                           'rounded-lg border px-2 py-1.5 text-xs',
-                          statusColor(event.session.status)
+                          sessionStatusColor(event.session.status)
                         )}
                       >
                         <p className="font-semibold">{event.session.className ?? 'Class'}</p>

@@ -10,6 +10,7 @@ import type {
   LessonNote,
   ParentProfile,
   StudentProfile,
+  StudentSelfProfile,
   TeacherProfile,
   User,
 } from '@/types';
@@ -25,6 +26,14 @@ export const usersApi = {
 export const studentsApi = {
   getAll: () => apiClient.get<StudentProfile[]>('/students').then((r) => r.data),
   getById: (id: string) => apiClient.get<StudentProfile>(`/students/${id}`).then((r) => r.data),
+  getMe: () => apiClient.get<StudentSelfProfile>('/students/me').then((r) => r.data),
+  updateMe: (data: {
+    dateOfBirth?: string;
+    gender?: string;
+    schoolName?: string;
+    instrument?: string;
+    experience?: string;
+  }) => apiClient.put<StudentSelfProfile>('/students/me', data).then((r) => r.data),
   create: (data: Partial<StudentProfile> & { password?: string; email?: string; fullName?: string }) =>
     apiClient.post<StudentProfile>('/students', data).then((r) => r.data),
   update: (id: string, data: Partial<StudentProfile>) =>

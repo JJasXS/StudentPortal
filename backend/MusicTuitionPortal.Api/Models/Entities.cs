@@ -277,4 +277,9 @@ public static class Roles
     public const string Parent = "Parent";
 
     public static readonly string[] All = [Admin, Teacher, Student, Parent];
+
+    public static readonly string[] PortalSignIn = [Admin, Teacher, Student];
+
+    public static bool CanSignIn(string role) =>
+        role is Admin or Teacher or Student;
 }

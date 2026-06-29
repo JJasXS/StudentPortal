@@ -1,8 +1,10 @@
 import { useMemo } from 'react';
 import { Megaphone } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { AnnouncementRowList } from '@/components/announcements/AnnouncementRowList';
 import { SearchBox } from '@/components/SearchBox';
 import { DataTable } from '@/components/ui/DataTable';
+import { cn } from '@/utils/cn';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { formatDateDDMMYYYY } from '@/utils/dateFormat';
 import {
@@ -109,57 +111,31 @@ export function MergedAnnouncementsPanel({
 
         {merged.length === 0 ? (
           <p className="py-8 text-center text-sm text-slate-500">{generalEmptyMessage}</p>
-        ) : isViewerPage ? (
-          <DataTable
-            embedded
-            data={merged}
-            emptyMessage={generalEmptyMessage}
-            columns={[
-              {
-                key: 'title',
-                header: 'Title',
-                sortable: true,
-                sortType: 'text',
-                getSortValue: (a) => a.title,
-                className: 'whitespace-normal pr-6',
-                render: (a) => titleCell(a),
-              },
-              {
-                key: 'sender',
-                header: 'Sender',
-                colWidth: '10rem',
-                sortable: true,
-                sortType: 'text',
-                getSortValue: (a) => senderLabel(a),
-                render: (a) => <span className="text-slate-700">{senderLabel(a)}</span>,
-              },
-              {
-                key: 'date',
-                header: 'Date',
-                colWidth: '7rem',
-                sortable: true,
-                sortType: 'date',
-                getSortValue: (a) =>
-                  getAnnouncementCategory(a) === 'Holiday' && a.holidayDate
-                    ? a.holidayDate
-                    : a.createdAt,
-                render: (a) => (
-                  <span className="tabular-nums text-slate-600">{dateLabel(a)}</span>
-                ),
-              },
-            ]}
-          />
         ) : (
-          <DataTable
-            embedded
-            data={merged}
-            emptyMessage={generalEmptyMessage}
-            columns={
-              isAdminPage
-                ? [
+          <>
+            {(isViewerPage || isAdminPage) && (
+              <AnnouncementRowList
+                items={merged}
+                renderTitle={titleCell}
+                senderLabel={senderLabel}
+                dateLabel={dateLabel}
+                className="md:hidden"
+              />
+            )}
+
+            <div className={cn((isViewerPage || isAdminPage) && 'hidden md:block')}>
+              {isViewerPage ? (
+                <DataTable
+                  embedded
+                  data={merged}
+                  emptyMessage={generalEmptyMessage}
+                  columns={[
                     {
                       key: 'title',
                       header: 'Title',
+                      sortable: true,
+                      sortType: 'text',
+                      getSortValue: (a) => a.title,
                       className: 'whitespace-normal pr-6',
                       render: (a) => titleCell(a),
                     },
@@ -167,32 +143,74 @@ export function MergedAnnouncementsPanel({
                       key: 'sender',
                       header: 'Sender',
                       colWidth: '10rem',
-                      render: (a) => senderLabel(a),
+                      sortable: true,
+                      sortType: 'text',
+                      getSortValue: (a) => senderLabel(a),
+                      render: (a) => <span className="text-slate-700">{senderLabel(a)}</span>,
                     },
                     {
                       key: 'date',
                       header: 'Date',
                       colWidth: '7rem',
-                      render: (a) => dateLabel(a),
+                      sortable: true,
+                      sortType: 'date',
+                      getSortValue: (a) =>
+                        getAnnouncementCategory(a) === 'Holiday' && a.holidayDate
+                          ? a.holidayDate
+                          : a.createdAt,
+                      render: (a) => (
+                        <span className="tabular-nums text-slate-600">{dateLabel(a)}</span>
+                      ),
                     },
-                  ]
-                : [
-                    { key: 'title', header: 'Title', className: 'pr-6' },
-                    {
-                      key: 'sender',
-                      header: 'Sender',
-                      colWidth: '10rem',
-                      render: (a) => senderLabel(a),
-                    },
-                    {
-                      key: 'date',
-                      header: 'Date',
-                      colWidth: '7rem',
-                      render: (a) => dateLabel(a),
-                    },
-                  ]
-            }
-          />
+                  ]}
+                />
+              ) : (
+                <DataTable
+                  embedded
+                  data={merged}
+                  emptyMessage={generalEmptyMessage}
+                  columns={
+                    isAdminPage
+                      ? [
+                          {
+                            key: 'title',
+                            header: 'Title',
+                            className: 'whitespace-normal pr-6',
+                            render: (a) => titleCell(a),
+                          },
+                          {
+                            key: 'sender',
+                            header: 'Sender',
+                            colWidth: '10rem',
+                            render: (a) => senderLabel(a),
+                          },
+                          {
+                            key: 'date',
+                            header: 'Date',
+                            colWidth: '7rem',
+                            render: (a) => dateLabel(a),
+                          },
+                        ]
+                      : [
+                          { key: 'title', header: 'Title', className: 'pr-6' },
+                          {
+                            key: 'sender',
+                            header: 'Sender',
+                            colWidth: '10rem',
+                            render: (a) => senderLabel(a),
+                          },
+                          {
+                            key: 'date',
+                            header: 'Date',
+                            colWidth: '7rem',
+                            render: (a) => dateLabel(a),
+                          },
+                        ]
+                  }
+                />
+              )}
+            </div>
+          </>
         )}
       </CardContent>
     </Card>

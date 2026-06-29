@@ -59,7 +59,8 @@ if (Test-Path "$root\backend\MusicTuitionPortal.Api\MusicTuitionPortal.Api.cspro
 }
 
 Write-Host ""
-Write-Host "Next steps (use these scripts from project root):" -ForegroundColor Green
+Write-Host "Next steps (from project root):" -ForegroundColor Green
+Write-Host "  Both:     .\run.ps1"
 Write-Host "  Backend:  .\run-backend.ps1"
 Write-Host "  Frontend: .\run-frontend.ps1"
 Write-Host ""

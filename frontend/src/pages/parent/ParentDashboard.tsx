@@ -1,11 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { Baby } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { invoicesApi } from '@/api/resources';
 import { mockInvoices } from '@/utils/mockData';
 import { applyInvoicePatches } from '@/utils/mockInvoicePayments';
 import { formatRm, unpaidInvoiceTotal } from '@/utils/invoiceBilling';
 import { PageHeader } from '@/components/PageHeader';
+import { EmptyState } from '@/components/ui/EmptyState';
+import { SkeletonListRows } from '@/components/ui/Skeleton';
 import { ParentChildRecordPanel } from '@/components/parent/ParentChildRecordPanel';
 import { ParentProgressSection } from '@/components/parent/ParentProgressSection';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
@@ -139,14 +142,15 @@ export default function ParentDashboard() {
         </CardHeader>
         <CardContent className="pt-0">
           {loading ? (
-            <p className="text-sm text-slate-500">Loading…</p>
+            <SkeletonListRows rows={2} />
           ) : !hasAny ? (
-            <p className="rounded-lg border border-dashed border-slate-200 bg-slate-50/80 px-4 py-8 text-center text-sm text-slate-500">
-              No children linked yet.{' '}
-              <Link to="/parent/children" className="font-medium text-primary-600 hover:underline">
-                Register a child
-              </Link>
-            </p>
+            <EmptyState
+              icon={Baby}
+              title="No children linked yet"
+              description="Register your child to view classes, attendance, and progress in one place."
+              compact
+              actions={[{ label: 'Register a child', href: '/parent/children' }]}
+            />
           ) : (
             <div className="space-y-4">
               {records.map((record) => (

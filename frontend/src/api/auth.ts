@@ -10,6 +10,20 @@ export const authApi = {
     const { data } = await apiClient.post<LoginResponse>('/auth/register', payload);
     return data;
   },
+  registerStudent: async (payload: {
+    fullName: string;
+    email: string;
+    password: string;
+    dateOfBirth: string;
+    gender: string;
+    phoneNumber?: string;
+    schoolName?: string;
+    instrument?: string;
+    experience?: string;
+  }): Promise<LoginResponse> => {
+    const { data } = await apiClient.post<LoginResponse>('/auth/register/student', payload);
+    return data;
+  },
   me: async (): Promise<User> => {
     const { data } = await apiClient.get<User>('/auth/me');
     return data;

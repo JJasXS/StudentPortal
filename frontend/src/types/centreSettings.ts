@@ -11,6 +11,7 @@ export interface CentreSettings {
   bankAccountNo?: string;
   invoicePrefix?: string;
   logoDataUrl?: string;
+  brandColor?: string;
 }
 
 export const DEFAULT_CENTRE_SETTINGS: CentreSettings = {
@@ -26,6 +27,7 @@ export const DEFAULT_CENTRE_SETTINGS: CentreSettings = {
   bankName: 'Maybank',
   bankAccountNo: '5123 4567 8901',
   invoicePrefix: 'INV',
+  brandColor: '#2563eb',
 };
 
 export const TIMEZONE_OPTIONS = [

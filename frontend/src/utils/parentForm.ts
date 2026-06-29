@@ -30,3 +30,12 @@ export function formToParentPayload(values: ParentFormValues) {
     address: values.address.trim() || undefined,
   };
 }
+
+export const emptyParentForm = (): ParentFormValues => ({
+  fullName: '',
+  email: '',
+  phoneNumber: '',
+  relationship: '',
+  address: '',
+  password: '',
+});

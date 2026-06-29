@@ -1,5 +1,6 @@
 import { Navigate, Outlet } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
+import { dashboardPathForRole, isStudentPortalRole } from '@/utils/learnerPortal';
 import type { UserRole } from '@/types';
 
 interface ProtectedRouteProps {
@@ -20,13 +21,13 @@ export default function ProtectedRoute({ allowedRoles }: ProtectedRouteProps) {
   if (!user) return <Navigate to="/login" replace />;
 
   if (allowedRoles && !allowedRoles.includes(user.role)) {
-    const dashboardMap: Record<UserRole, string> = {
-      Admin: '/admin/dashboard',
-      Teacher: '/teacher/dashboard',
-      Student: '/student/dashboard',
-      Parent: '/parent/dashboard',
-    };
-    return <Navigate to={dashboardMap[user.role]} replace />;
+    if (isStudentPortalRole(user.role) && allowedRoles.includes('Student')) {
+      return <Outlet />;
+    }
+    if (user.role === 'Admin' || user.role === 'Teacher' || user.role === 'Student') {
+      return <Navigate to={dashboardPathForRole(user.role)} replace />;
+    }
+    return <Navigate to="/login" replace />;
   }
 
   return <Outlet />;

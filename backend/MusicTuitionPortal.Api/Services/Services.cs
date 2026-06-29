@@ -23,6 +23,10 @@ public class AuthService
         if (user == null || !PasswordHelper.Verify(request.Password, user.PasswordHash))
             return null;
 
+        if (!Roles.CanSignIn(user.Role))
+            throw new InvalidOperationException(
+                "This account cannot sign in here. Use a student account — each learner has their own login.");
+
         var token = JwtHelper.GenerateToken(user, _jwtSettings);
         return new LoginResponse(token, MapUser(user));
     }
@@ -51,6 +55,71 @@ public class AuthService
 
         var token = JwtHelper.GenerateToken(user, _jwtSettings);
         return new LoginResponse(token, MapUser(user));
+    }
+
+    public async Task<LoginResponse> RegisterStudentAsync(RegisterStudentRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.FullName))
+            throw new InvalidOperationException("Full name is required.");
+        if (string.IsNullOrWhiteSpace(request.Email))
+            throw new InvalidOperationException("Email is required.");
+        if (string.IsNullOrWhiteSpace(request.Password) || request.Password.Length < 6)
+            throw new InvalidOperationException("Password must be at least 6 characters.");
+        if (string.IsNullOrWhiteSpace(request.Gender))
+            throw new InvalidOperationException("Gender is required.");
+        if (request.DateOfBirth.Date > DateTime.UtcNow.Date)
+            throw new InvalidOperationException("Date of birth cannot be in the future.");
+
+        if (await _context.Users.AnyAsync(u => u.Email == request.Email))
+            throw new InvalidOperationException("Email already exists.");
+
+        var user = new User
+        {
+            Id = Guid.NewGuid(),
+            FullName = request.FullName.Trim(),
+            Email = request.Email.Trim(),
+            PasswordHash = PasswordHelper.Hash(request.Password),
+            PhoneNumber = string.IsNullOrWhiteSpace(request.PhoneNumber) ? null : request.PhoneNumber.Trim(),
+            Role = Roles.Student,
+            IsActive = true
+        };
+
+        var notes = BuildStudentInterestNotes(request.Instrument, request.Experience);
+        var profile = new StudentProfile
+        {
+            Id = Guid.NewGuid(),
+            UserId = user.Id,
+            StudentCode = await NextStudentCodeAsync(),
+            DateOfBirth = request.DateOfBirth.Date,
+            Gender = request.Gender.Trim(),
+            SchoolName = string.IsNullOrWhiteSpace(request.SchoolName) ? null : request.SchoolName.Trim(),
+            Notes = notes
+        };
+
+        _context.Users.Add(user);
+        _context.StudentProfiles.Add(profile);
+        await _context.SaveChangesAsync();
+
+        var token = JwtHelper.GenerateToken(user, _jwtSettings);
+        return new LoginResponse(token, MapUser(user));
+    }
+
+    private async Task<string> NextStudentCodeAsync()
+    {
+        var year = DateTime.UtcNow.Year;
+        var prefix = $"STU-{year}-";
+        var count = await _context.StudentProfiles.CountAsync(s => s.StudentCode.StartsWith(prefix));
+        return $"{prefix}{(count + 1):D4}";
+    }
+
+    private static string? BuildStudentInterestNotes(string? instrument, string? experience)
+    {
+        var parts = new List<string>();
+        if (!string.IsNullOrWhiteSpace(instrument))
+            parts.Add($"Interest: {instrument.Trim()}");
+        if (!string.IsNullOrWhiteSpace(experience))
+            parts.Add($"Experience: {experience.Trim()}");
+        return parts.Count == 0 ? null : string.Join("; ", parts);
     }
 
     public async Task<UserDto?> GetMeAsync(Guid userId)
@@ -214,17 +283,98 @@ public class StudentService
         return s == null ? null : Map(s);
     }
 
+    public async Task<StudentSelfProfileDto?> GetSelfProfileAsync(Guid userId)
+    {
+        var profile = await _context.StudentProfiles.Include(s => s.User).FirstOrDefaultAsync(s => s.UserId == userId);
+        if (profile == null) return null;
+
+        LinkedParentSummaryDto? parent = null;
+        var link = await _context.ParentStudents.FirstOrDefaultAsync(l => l.StudentUserId == userId);
+        if (link != null)
+        {
+            var parentProfile = await _context.ParentProfiles
+                .Include(p => p.User)
+                .FirstOrDefaultAsync(p => p.UserId == link.ParentUserId);
+            if (parentProfile != null)
+            {
+                parent = new LinkedParentSummaryDto(
+                    parentProfile.User.FullName,
+                    parentProfile.User.Email,
+                    parentProfile.User.PhoneNumber,
+                    parentProfile.Relationship ?? link.Relationship);
+            }
+        }
+
+        return new StudentSelfProfileDto(
+            profile.Id,
+            profile.UserId,
+            profile.User.FullName,
+            profile.User.Email,
+            profile.User.PhoneNumber,
+            profile.StudentCode,
+            profile.DateOfBirth,
+            profile.Gender,
+            profile.SchoolName,
+            profile.Notes,
+            parent,
+            profile.User.IsActive);
+    }
+
+    public async Task<StudentSelfProfileDto?> UpdateSelfAsync(Guid userId, UpdateStudentSelfRequest request)
+    {
+        var profile = await _context.StudentProfiles.Include(s => s.User).FirstOrDefaultAsync(s => s.UserId == userId);
+        if (profile == null) return null;
+
+        if (request.DateOfBirth.HasValue && request.DateOfBirth.Value.Date > DateTime.UtcNow.Date)
+            throw new InvalidOperationException("Date of birth cannot be in the future.");
+
+        profile.DateOfBirth = request.DateOfBirth?.Date;
+        profile.Gender = string.IsNullOrWhiteSpace(request.Gender) ? profile.Gender : request.Gender.Trim();
+        profile.SchoolName = string.IsNullOrWhiteSpace(request.SchoolName) ? null : request.SchoolName.Trim();
+        profile.Notes = BuildStudentInterestNotes(request.Instrument, request.Experience);
+        profile.UpdatedAt = DateTime.UtcNow;
+        await _context.SaveChangesAsync();
+        return await GetSelfProfileAsync(userId);
+    }
+
+    private static string? BuildStudentInterestNotes(string? instrument, string? experience)
+    {
+        var parts = new List<string>();
+        if (!string.IsNullOrWhiteSpace(instrument))
+            parts.Add($"Interest: {instrument.Trim()}");
+        if (!string.IsNullOrWhiteSpace(experience))
+            parts.Add($"Experience: {experience.Trim()}");
+        return parts.Count == 0 ? null : string.Join("; ", parts);
+    }
+
     public async Task<StudentDto> CreateAsync(CreateStudentRequest request)
     {
+        if (request.ParentUserId is not Guid parentUserId || parentUserId == Guid.Empty)
+            throw new InvalidOperationException("A parent account is required before adding a student.");
+
+        var parent = await _context.ParentProfiles
+            .Include(p => p.User)
+            .FirstOrDefaultAsync(p => p.UserId == parentUserId && p.User.IsActive);
+        if (parent == null)
+            throw new InvalidOperationException("Selected parent was not found. Create the parent account first.");
+
         if (await _context.Users.AnyAsync(u => u.Email == request.Email))
             throw new InvalidOperationException("Email already exists.");
+
+        var password = string.IsNullOrWhiteSpace(request.Password) ? "Student@123" : request.Password.Trim();
+        if (password.Length < 6)
+            throw new InvalidOperationException("Password must be at least 6 characters.");
+
+        var studentCode = string.IsNullOrWhiteSpace(request.StudentCode)
+            ? await NextStudentCodeAsync()
+            : request.StudentCode.Trim();
 
         var user = new User
         {
             Id = Guid.NewGuid(),
-            FullName = request.FullName,
-            Email = request.Email,
-            PasswordHash = PasswordHelper.Hash(request.Password),
+            FullName = request.FullName.Trim(),
+            Email = request.Email.Trim(),
+            PasswordHash = PasswordHelper.Hash(password),
             PhoneNumber = request.PhoneNumber,
             Role = Roles.Student,
             IsActive = true
@@ -233,7 +383,7 @@ public class StudentService
         {
             Id = Guid.NewGuid(),
             UserId = user.Id,
-            StudentCode = request.StudentCode,
+            StudentCode = studentCode,
             DateOfBirth = request.DateOfBirth,
             Gender = request.Gender,
             SchoolName = request.SchoolName,
@@ -241,10 +391,25 @@ public class StudentService
         };
         _context.Users.Add(user);
         _context.StudentProfiles.Add(profile);
+        _context.ParentStudents.Add(new ParentStudent
+        {
+            Id = Guid.NewGuid(),
+            ParentUserId = parent.UserId,
+            StudentUserId = user.Id,
+            Relationship = parent.Relationship
+        });
         await _context.SaveChangesAsync();
         profile.User = user;
         await _audit.LogAsync("student.created", "Student", profile.Id.ToString(), user.FullName);
         return Map(profile);
+    }
+
+    private async Task<string> NextStudentCodeAsync()
+    {
+        var year = DateTime.UtcNow.Year;
+        var prefix = $"STU-{year}-";
+        var count = await _context.StudentProfiles.CountAsync(s => s.StudentCode.StartsWith(prefix));
+        return $"{prefix}{(count + 1):D4}";
     }
 
     public async Task<StudentDto?> UpdateAsync(Guid id, CreateStudentRequest request)
@@ -257,7 +422,8 @@ public class StudentService
         profile.User.PhoneNumber = request.PhoneNumber;
         if (!string.IsNullOrWhiteSpace(request.Password))
             profile.User.PasswordHash = PasswordHelper.Hash(request.Password);
-        profile.StudentCode = request.StudentCode;
+        if (!string.IsNullOrWhiteSpace(request.StudentCode))
+            profile.StudentCode = request.StudentCode.Trim();
         profile.DateOfBirth = request.DateOfBirth;
         profile.Gender = request.Gender;
         profile.SchoolName = request.SchoolName;

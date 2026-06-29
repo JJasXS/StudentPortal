@@ -1,28 +1,24 @@
 import { NavLink } from 'react-router-dom';
 import {
   LayoutDashboard,
-  Users,
   UserCircle,
   GraduationCap,
-  BookOpen,
   Calendar,
   CalendarDays,
   Megaphone,
-  FileText,
   Settings,
-  Music,
-  ClipboardCheck,
-  BarChart3,
-  History,
   NotebookPen,
-  Baby,
   Bell,
-  TrendingUp,
   LogOut,
   X,
+  History,
+  BookOpenCheck,
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
+import { useCentreBranding } from '@/context/CentreBrandingContext';
+import { CentreMarkInline } from '@/components/branding/CentreMark';
 import { cn } from '@/utils/cn';
+import { isStudentPortalRole } from '@/utils/learnerPortal';
 import type { UserRole } from '@/types';
 
 interface NavItem {
@@ -33,52 +29,36 @@ interface NavItem {
 
 const adminNav: NavItem[] = [
   { label: 'Dashboard', path: '/admin/dashboard', icon: LayoutDashboard },
-  { label: 'Students', path: '/admin/students', icon: GraduationCap },
-  { label: 'Parents', path: '/admin/parents', icon: Users },
+  { label: 'Students & Parents', path: '/admin/students', icon: GraduationCap },
   { label: 'Staff Management', path: '/admin/teachers', icon: UserCircle },
-  { label: 'Courses', path: '/admin/courses', icon: BookOpen },
-  { label: 'Calendar', path: '/admin/calendar', icon: CalendarDays },
+  { label: 'Calendar & Courses', path: '/admin/calendar', icon: CalendarDays },
+  { label: 'Homework', path: '/admin/homework', icon: BookOpenCheck },
   { label: 'Announcements', path: '/admin/announcements', icon: Megaphone },
-  { label: 'Invoices', path: '/admin/invoices', icon: FileText },
-  { label: 'Reports', path: '/admin/reports', icon: BarChart3 },
   { label: 'Audit log', path: '/admin/audit-log', icon: History },
-  { label: 'Attendance', path: '/admin/attendance', icon: ClipboardCheck },
   { label: 'Settings', path: '/admin/settings', icon: Settings },
 ];
 
 const teacherNav: NavItem[] = [
   { label: 'Dashboard', path: '/teacher/dashboard', icon: LayoutDashboard },
-  { label: 'Calendar', path: '/teacher/calendar', icon: CalendarDays },
+  { label: 'Schedule', path: '/teacher/calendar', icon: CalendarDays },
   { label: 'My Classes', path: '/teacher/classes', icon: Calendar },
   { label: 'Lesson Notes', path: '/teacher/lesson-notes', icon: NotebookPen },
-  { label: 'Announcements', path: '/teacher/announcements', icon: Megaphone },
+  { label: 'Homework', path: '/teacher/homework', icon: BookOpenCheck },
+  { label: 'Notifications', path: '/teacher/notifications', icon: Bell },
 ];
 
-const studentNav: NavItem[] = [
+const learnerNav: NavItem[] = [
   { label: 'Dashboard', path: '/student/dashboard', icon: LayoutDashboard },
-  { label: 'My Classes', path: '/student/classes', icon: Calendar },
-  { label: 'My Attendance', path: '/student/attendance', icon: ClipboardCheck },
-  { label: 'Lesson Notes', path: '/student/lesson-notes', icon: NotebookPen },
-  { label: 'Announcements', path: '/student/announcements', icon: Megaphone },
+  { label: 'Schedule', path: '/student/schedule', icon: CalendarDays },
+  { label: 'My Courses', path: '/student/courses', icon: GraduationCap },
+  { label: 'Homework', path: '/student/homework', icon: BookOpenCheck },
+  { label: 'Notifications', path: '/student/notifications', icon: Bell },
 ];
 
-const parentNav: NavItem[] = [
-  { label: 'Dashboard', path: '/parent/dashboard', icon: LayoutDashboard },
-  { label: 'My Children', path: '/parent/children', icon: Baby },
-  { label: 'Progress', path: '/parent/progress', icon: TrendingUp },
-  { label: 'Notifications', path: '/parent/notifications', icon: Bell },
-  { label: 'Child Classes', path: '/parent/classes', icon: Calendar },
-  { label: 'Child Attendance', path: '/parent/attendance', icon: ClipboardCheck },
-  { label: 'Lesson Notes', path: '/parent/lesson-notes', icon: NotebookPen },
-  { label: 'Announcements', path: '/parent/announcements', icon: Megaphone },
-  { label: 'Billing', path: '/parent/invoices', icon: FileText },
-];
-
-export const navByRole: Record<UserRole, NavItem[]> = {
+export const navByRole: Record<Exclude<UserRole, 'Parent'>, NavItem[]> = {
   Admin: adminNav,
   Teacher: teacherNav,
-  Student: studentNav,
-  Parent: parentNav,
+  Student: learnerNav,
 };
 
 interface SidebarProps {
@@ -89,7 +69,8 @@ interface SidebarProps {
 
 export default function Sidebar({ role, open, onClose }: SidebarProps) {
   const { logout } = useAuth();
-  const items = navByRole[role];
+  const { centreName } = useCentreBranding();
+  const items = isStudentPortalRole(role) ? learnerNav : navByRole[role as Exclude<UserRole, 'Parent'>];
 
   const handleLogout = () => {
     onClose();
@@ -106,10 +87,7 @@ export default function Sidebar({ role, open, onClose }: SidebarProps) {
         )}
       >
         <div className="flex h-16 items-center justify-between border-b border-slate-200 px-4">
-          <div className="flex items-center gap-2">
-            <Music className="h-7 w-7 text-primary-600" />
-            <span className="font-bold text-slate-900">Tuition Portal</span>
-          </div>
+          <CentreMarkInline className="min-w-0 flex-1" />
           <button onClick={onClose} className="rounded-lg p-1 hover:bg-slate-100 lg:hidden">
             <X className="h-5 w-5" />
           </button>
@@ -148,7 +126,7 @@ export default function Sidebar({ role, open, onClose }: SidebarProps) {
           </ul>
         </nav>
         <div className="border-t border-slate-200 p-4 text-center text-xs text-slate-400">
-          Music Tuition Portal v1.0
+          {centreName} · v1.0
         </div>
       </aside>
     </>
