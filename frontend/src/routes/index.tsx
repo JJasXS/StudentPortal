@@ -123,6 +123,8 @@ export default function AppRoutes() {
           <Route element={<ProtectedRoute allowedRoles={['Student']} />}>
             <Route path="/student/dashboard" element={<StudentDashboard />} />
             <Route path="/student/schedule" element={<LearnerSchedulePage />} />
+            <Route path="/student/courses/:courseId/:classId" element={<LearnerCoursesPage />} />
+            <Route path="/student/courses/:courseId" element={<LearnerCoursesPage />} />
             <Route path="/student/courses" element={<LearnerCoursesPage />} />
             <Route path="/student/lesson-notes" element={<LearnerLessonNotesPage />} />
             <Route path="/student/homework" element={<StudentHomeworkPage />} />

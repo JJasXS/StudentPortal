@@ -101,3 +101,37 @@ export function lessonNotesForClassMonth(
 export function classMeta(classId: string): ClassItem | undefined {
   return mockClasses.find((c) => c.id === classId);
 }
+
+export interface StudentCoursesUrlOptions {
+  courseId?: string;
+  classId?: string;
+  month?: string;
+  noteId?: string;
+}
+
+/** Build `/student/courses` path with optional course, class, month, and note params. */
+export function studentCoursesUrl(options: StudentCoursesUrlOptions = {}): string {
+  const { courseId, classId, month, noteId } = options;
+  let path = '/student/courses';
+  if (courseId) {
+    path += `/${encodeURIComponent(courseId)}`;
+    if (classId) path += `/${encodeURIComponent(classId)}`;
+  }
+  const params = new URLSearchParams();
+  if (month) params.set('month', month);
+  if (noteId) params.set('note', noteId);
+  const query = params.toString();
+  return query ? `${path}?${query}` : path;
+}
+
+export function monthOffsetForKey(monthKey: string): number {
+  const now = new Date();
+  const currentKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  const [cy, cm] = currentKey.split('-').map(Number);
+  const [y, m] = monthKey.split('-').map(Number);
+  return (y - cy) * 12 + (m - cm);
+}
+
+export function isValidMonthKey(value: string | null): value is string {
+  return Boolean(value && /^\d{4}-\d{2}$/.test(value));
+}

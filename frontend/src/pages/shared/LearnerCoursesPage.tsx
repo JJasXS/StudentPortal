@@ -13,7 +13,7 @@ export default function LearnerCoursesPage() {
   );
 
   return (
-    <div>
+    <div className="mx-auto max-w-2xl">
       <PageHeader
         title="My Courses"
         description="Course → class → lesson notes from your teachers"
@@ -22,6 +22,7 @@ export default function LearnerCoursesPage() {
         studentUserId={mockStudentId}
         notes={mockLessonNotes}
         title="Courses"
+        urlSync
       />
     </div>
   );
