@@ -1,11 +1,30 @@
+import { useState } from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
-import { CalendarEventChip } from '@/components/calendar/CalendarSessionDetailModal';
+import { Modal } from '@/components/ui/Modal';
+import {
+  CalendarEventChip,
+} from '@/components/calendar/CalendarSessionDetailModal';
 import { cn } from '@/utils/cn';
 import { monthGridDays, monthRange } from '@/utils/sessionGeneration';
 import type { CalendarEvent } from '@/components/calendar/WeekCalendar';
 
 const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+function formatDayLabel(dateKey: string) {
+  const [y, m, d] = dateKey.split('-').map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString('en-US', {
+    weekday: 'long',
+    month: 'long',
+    day: 'numeric',
+    year: 'numeric',
+  });
+}
+
+interface DaySelection {
+  dateKey: string;
+  events: CalendarEvent[];
+}
 
 interface MonthCalendarProps {
   anchorDate: Date;
@@ -27,6 +46,7 @@ export function MonthCalendar({
   const { label } = monthRange(anchorDate);
   const cells = monthGridDays(anchorDate);
   const todayKey = new Date().toISOString().slice(0, 10);
+  const [selectedDay, setSelectedDay] = useState<DaySelection | null>(null);
 
   const eventsByDay = cells.reduce<Record<string, CalendarEvent[]>>((acc, cell) => {
     acc[cell.dateKey] = events.filter((e) => e.session.sessionDate.slice(0, 10) === cell.dateKey);
@@ -39,86 +59,147 @@ export function MonthCalendar({
     onAnchorChange(next);
   };
 
+  const openDay = (dateKey: string, dayEvents: CalendarEvent[]) => {
+    if (dayEvents.length === 0) return;
+    setSelectedDay({ dateKey, events: dayEvents });
+  };
+
+  const handleEventPick = (event: CalendarEvent) => {
+    setSelectedDay(null);
+    onEventClick?.(event);
+  };
+
   return (
-    <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-4 py-3">
-        <div>
-          <p className="text-sm font-semibold text-slate-900">Month view</p>
-          <p className="text-xs text-slate-500">{label}</p>
-        </div>
-        <div className="flex items-center gap-1">
-          <Button type="button" variant="ghost" size="sm" onClick={() => shiftMonth(-1)} aria-label="Previous month">
-            <ChevronLeft className="h-4 w-4" />
-          </Button>
-          <Button type="button" variant="outline" size="sm" onClick={() => onAnchorChange(new Date())}>
-            Today
-          </Button>
-          <Button type="button" variant="ghost" size="sm" onClick={() => shiftMonth(1)} aria-label="Next month">
-            <ChevronRight className="h-4 w-4" />
-          </Button>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-7 border-b border-slate-200 bg-slate-50 text-center text-xs font-semibold uppercase tracking-wide text-slate-500">
-        {DAY_LABELS.map((d) => (
-          <div key={d} className="px-1 py-2">
-            {d}
+    <>
+      <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-4 py-3">
+          <div>
+            <p className="text-sm font-semibold text-slate-900">Month view</p>
+            <p className="text-xs text-slate-500">{label}</p>
           </div>
-        ))}
-      </div>
+          <div className="flex items-center gap-1">
+            <Button type="button" variant="ghost" size="sm" onClick={() => shiftMonth(-1)} aria-label="Previous month">
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+            <Button type="button" variant="outline" size="sm" onClick={() => onAnchorChange(new Date())}>
+              Today
+            </Button>
+            <Button type="button" variant="ghost" size="sm" onClick={() => shiftMonth(1)} aria-label="Next month">
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
 
-      <div className="grid grid-cols-7">
-        {cells.map((cell) => {
-          const dayEvents = eventsByDay[cell.dateKey] ?? [];
-          const isToday = cell.dateKey === todayKey;
-          const visible = dayEvents.slice(0, maxEventsPerDay);
-          const overflow = dayEvents.length - visible.length;
-
-          return (
-            <div
-              key={cell.dateKey}
-              className={cn(
-                'min-h-[8.5rem] border-b border-r border-slate-100 p-1.5 last:border-r-0',
-                !cell.inMonth && 'bg-slate-50/80',
-                isToday && cell.inMonth && 'bg-primary-50/30'
-              )}
-            >
-              <div className="mb-1 flex justify-end">
-                <span
-                  className={cn(
-                    'inline-flex h-6 min-w-6 items-center justify-center rounded-full px-1 text-xs font-medium',
-                    isToday && cell.inMonth
-                      ? 'bg-primary-600 text-white'
-                      : cell.inMonth
-                        ? 'text-slate-700'
-                        : 'text-slate-300'
-                  )}
-                >
-                  {cell.day}
-                </span>
-              </div>
-              <div className="space-y-0.5">
-                {visible.map((event) => (
-                  <CalendarEventChip
-                    key={event.id}
-                    event={event}
-                    onClick={onEventClick ? () => onEventClick(event) : undefined}
-                  />
-                ))}
-                {overflow > 0 && (
-                  <p className="px-0.5 text-[10px] font-medium text-slate-500">+{overflow} more</p>
-                )}
-              </div>
+        <div className="grid grid-cols-7 border-b border-slate-200 bg-slate-50 text-center text-xs font-semibold uppercase tracking-wide text-slate-500">
+          {DAY_LABELS.map((d) => (
+            <div key={d} className="px-1 py-2">
+              {d}
             </div>
-          );
-        })}
+          ))}
+        </div>
+
+        <div className="grid grid-cols-7">
+          {cells.map((cell) => {
+            const dayEvents = eventsByDay[cell.dateKey] ?? [];
+            const isToday = cell.dateKey === todayKey;
+            const visible = dayEvents.slice(0, maxEventsPerDay);
+            const overflow = dayEvents.length - visible.length;
+            const hasEvents = dayEvents.length > 0;
+
+            return (
+              <div
+                key={cell.dateKey}
+                role={hasEvents ? 'button' : undefined}
+                tabIndex={hasEvents ? 0 : undefined}
+                onClick={() => openDay(cell.dateKey, dayEvents)}
+                onKeyDown={(e) => {
+                  if (hasEvents && (e.key === 'Enter' || e.key === ' ')) {
+                    e.preventDefault();
+                    openDay(cell.dateKey, dayEvents);
+                  }
+                }}
+                className={cn(
+                  'min-h-[8.5rem] border-b border-r border-slate-100 p-1.5 last:border-r-0',
+                  !cell.inMonth && 'bg-slate-50/80',
+                  isToday && cell.inMonth && 'bg-primary-50/30',
+                  hasEvents && 'cursor-pointer transition hover:bg-slate-50/90'
+                )}
+              >
+                <div className="mb-1 flex justify-end">
+                  <span
+                    className={cn(
+                      'inline-flex h-6 min-w-6 items-center justify-center rounded-full px-1 text-xs font-medium',
+                      isToday && cell.inMonth
+                        ? 'bg-primary-600 text-white'
+                        : cell.inMonth
+                          ? 'text-slate-700'
+                          : 'text-slate-300'
+                    )}
+                  >
+                    {cell.day}
+                  </span>
+                </div>
+                <div className="space-y-0.5">
+                  {visible.map((event) => (
+                    <div key={event.id} onClick={(e) => e.stopPropagation()}>
+                      <CalendarEventChip
+                        event={event}
+                        onClick={onEventClick ? () => onEventClick(event) : undefined}
+                      />
+                    </div>
+                  ))}
+                  {overflow > 0 && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        openDay(cell.dateKey, dayEvents);
+                      }}
+                      className="w-full px-0.5 text-left text-[10px] font-semibold text-primary-600 hover:underline"
+                    >
+                      +{overflow} more
+                    </button>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {events.length === 0 && (
+          <p className="border-t border-slate-200 px-4 py-6 text-center text-sm text-slate-500">
+            {emptyMessage}
+          </p>
+        )}
       </div>
 
-      {events.length === 0 && (
-        <p className="border-t border-slate-200 px-4 py-6 text-center text-sm text-slate-500">
-          {emptyMessage}
-        </p>
-      )}
-    </div>
+      <Modal
+        open={Boolean(selectedDay)}
+        onClose={() => setSelectedDay(null)}
+        title={selectedDay ? formatDayLabel(selectedDay.dateKey) : 'Sessions'}
+        className="max-w-md"
+      >
+        {selectedDay && (
+          <div className="space-y-2">
+            <p className="text-sm text-slate-500">
+              {selectedDay.events.length} class{selectedDay.events.length === 1 ? '' : 'es'} this day
+            </p>
+            <ul className="max-h-[min(24rem,60vh)] space-y-2 overflow-y-auto">
+              {selectedDay.events.map((event) => (
+                <li key={event.id}>
+                  <button
+                    type="button"
+                    onClick={() => handleEventPick(event)}
+                    className="block w-full text-left"
+                  >
+                    <CalendarEventChip event={event} />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </Modal>
+    </>
   );
 }
