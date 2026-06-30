@@ -1,7 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { Pencil } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
-import { useAccountSwitcher } from '@/context/AccountSwitcherContext';
 import { authApi } from '@/api/auth';
 import { StudentProfileView } from '@/components/profile/StudentProfileView';
 import { ProfileIdentityCard } from '@/components/profile/ProfileIdentityCard';
@@ -17,7 +16,6 @@ const useApi = import.meta.env.VITE_USE_MOCK !== 'true';
 
 export default function ProfilePage() {
   const { user, updateUser } = useAuth();
-  const { openSwitcher } = useAccountSwitcher();
   const [editOpen, setEditOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -90,19 +88,9 @@ export default function ProfilePage() {
 
       {user && (
         <div className="mb-4">
-          <ProfileIdentityCard
-            user={user}
-            onDoubleClick={openSwitcher}
-            subtitle="Double-click to switch account"
-          />
+          <ProfileIdentityCard user={user} />
         </div>
       )}
-
-      <Card className="mb-6">
-        <CardContent className="pt-6">
-          <AccountSwitcherPanel />
-        </CardContent>
-      </Card>
 
       <Card>
         <CardHeader className="flex flex-row items-center justify-between space-y-0">
@@ -131,6 +119,13 @@ export default function ProfilePage() {
           </div>
         </CardContent>
       </Card>
+
+      <div className="mt-8 rounded-xl border border-slate-200 bg-slate-50/50 p-5">
+        <p className="mb-4 text-xs font-semibold uppercase tracking-wide text-slate-500">
+          Switch account
+        </p>
+        <AccountSwitcherPanel />
+      </div>
 
       <Modal open={editOpen} onClose={() => setEditOpen(false)} title="Edit Profile">
         <form onSubmit={handleSubmit} className="space-y-4">

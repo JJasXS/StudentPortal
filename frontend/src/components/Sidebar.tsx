@@ -13,6 +13,8 @@ import {
   X,
   History,
   BookOpenCheck,
+  CalendarOff,
+  RefreshCw,
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { useCentreBranding } from '@/context/CentreBrandingContext';
@@ -33,6 +35,7 @@ const adminNav: NavItem[] = [
   { label: 'Staff Management', path: '/admin/teachers', icon: UserCircle },
   { label: 'Calendar & Courses', path: '/admin/calendar', icon: CalendarDays },
   { label: 'Homework', path: '/admin/homework', icon: BookOpenCheck },
+  { label: 'Leave requests', path: '/admin/leave', icon: CalendarOff },
   { label: 'Announcements', path: '/admin/announcements', icon: Megaphone },
   { label: 'Audit log', path: '/admin/audit-log', icon: History },
   { label: 'Settings', path: '/admin/settings', icon: Settings },
@@ -44,6 +47,7 @@ const teacherNav: NavItem[] = [
   { label: 'My Classes', path: '/teacher/classes', icon: Calendar },
   { label: 'Lesson Notes', path: '/teacher/lesson-notes', icon: NotebookPen },
   { label: 'Homework', path: '/teacher/homework', icon: BookOpenCheck },
+  { label: 'Replacements', path: '/teacher/replacements', icon: RefreshCw },
   { label: 'Notifications', path: '/teacher/notifications', icon: Bell },
 ];
 
@@ -52,6 +56,7 @@ const learnerNav: NavItem[] = [
   { label: 'Schedule', path: '/student/schedule', icon: CalendarDays },
   { label: 'My Courses', path: '/student/courses', icon: GraduationCap },
   { label: 'Homework', path: '/student/homework', icon: BookOpenCheck },
+  { label: 'Leave', path: '/student/leave', icon: CalendarOff },
   { label: 'Notifications', path: '/student/notifications', icon: Bell },
 ];
 

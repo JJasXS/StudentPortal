@@ -1,7 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { Pencil } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
-import { useAccountSwitcher } from '@/context/AccountSwitcherContext';
 import { authApi } from '@/api/auth';
 import { studentsApi } from '@/api/resources';
 import { PageHeader } from '@/components/PageHeader';
@@ -55,7 +54,6 @@ function Field({ label, value }: { label: string; value?: string }) {
 
 export function StudentProfileView() {
   const { user, updateUser } = useAuth();
-  const { openSwitcher } = useAccountSwitcher();
   const [profile, setProfile] = useState<StudentSelfProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [editOpen, setEditOpen] = useState(false);
@@ -190,20 +188,10 @@ export function StudentProfileView() {
       />
 
       {user && (
-        <div className="mb-4 max-w-3xl space-y-3">
-          <ProfileIdentityCard
-            user={user}
-            onDoubleClick={openSwitcher}
-            subtitle="Double-click to switch account"
-          />
+        <div className="mb-4 max-w-3xl">
+          <ProfileIdentityCard user={user} />
         </div>
       )}
-
-      <Card className="mb-4 max-w-3xl">
-        <CardContent className="pt-6">
-          <AccountSwitcherPanel />
-        </CardContent>
-      </Card>
 
       {loading ? (
         <p className="text-sm text-slate-500">Loading profile…</p>
@@ -280,6 +268,13 @@ export function StudentProfileView() {
           </Card>
         </div>
       )}
+
+      <div className="mt-8 max-w-3xl rounded-xl border border-slate-200 bg-slate-50/50 p-5">
+        <p className="mb-4 text-xs font-semibold uppercase tracking-wide text-slate-500">
+          Switch account
+        </p>
+        <AccountSwitcherPanel />
+      </div>
 
       <Modal open={editOpen} onClose={() => setEditOpen(false)} title="Edit account details" className="max-w-lg">
         <form onSubmit={handleSubmit} className="space-y-4">

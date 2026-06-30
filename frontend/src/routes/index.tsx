@@ -18,6 +18,7 @@ import AnnouncementsPage from '@/pages/admin/AnnouncementsPage';
 import AdminAuditLogPage from '@/pages/admin/AdminAuditLogPage';
 import AdminCalendarPage from '@/pages/admin/AdminCalendarPage';
 import AdminHomeworkPage from '@/pages/admin/AdminHomeworkPage';
+import AdminLeavePage from '@/pages/admin/AdminLeavePage';
 import SettingsPage from '@/pages/admin/SettingsPage';
 import TeacherDashboard from '@/pages/teacher/TeacherDashboard';
 import TeacherClassesPage from '@/pages/teacher/TeacherClassesPage';
@@ -27,9 +28,11 @@ import TeacherLessonNotesPage from '@/pages/teacher/TeacherLessonNotesPage';
 import TeacherAnnouncementsPage from '@/pages/teacher/TeacherAnnouncementsPage';
 import TeacherCalendarPage from '@/pages/teacher/TeacherCalendarPage';
 import TeacherHomeworkPage from '@/pages/teacher/TeacherHomeworkPage';
+import TeacherReplacementPage from '@/pages/teacher/TeacherReplacementPage';
 import StudentDashboard from '@/pages/student/StudentDashboard';
 import StudentHomeworkPage from '@/pages/student/StudentHomeworkPage';
 import StudentHomeworkClassPage from '@/pages/student/StudentHomeworkClassPage';
+import StudentLeavePage from '@/pages/student/StudentLeavePage';
 import LearnerSchedulePage from '@/pages/shared/LearnerSchedulePage';
 import LearnerCoursesPage from '@/pages/shared/LearnerCoursesPage';
 import LearnerLessonNotesPage from '@/pages/shared/LearnerLessonNotesPage';
@@ -90,6 +93,7 @@ export default function AppRoutes() {
             <Route path="/admin/audit-log" element={<AdminAuditLogPage />} />
             <Route path="/admin/calendar" element={<AdminCalendarPage />} />
             <Route path="/admin/homework" element={<AdminHomeworkPage />} />
+            <Route path="/admin/leave" element={<AdminLeavePage />} />
             <Route path="/admin/settings" element={<SettingsPage />} />
           </Route>
 
@@ -108,6 +112,7 @@ export default function AppRoutes() {
             <Route path="/teacher/attendance/:classId" element={<LegacyTeacherAttendanceRedirect />} />
             <Route path="/teacher/lesson-notes" element={<TeacherLessonNotesPage />} />
             <Route path="/teacher/homework" element={<TeacherHomeworkPage />} />
+            <Route path="/teacher/replacements" element={<TeacherReplacementPage />} />
             <Route path="/teacher/notifications" element={<TeacherAnnouncementsPage />} />
             <Route path="/teacher/announcements" element={<Navigate to="/teacher/notifications" replace />} />
             <Route
@@ -129,6 +134,7 @@ export default function AppRoutes() {
             <Route path="/student/lesson-notes" element={<LearnerLessonNotesPage />} />
             <Route path="/student/homework" element={<StudentHomeworkPage />} />
             <Route path="/student/homework/:classId" element={<StudentHomeworkClassPage />} />
+            <Route path="/student/leave" element={<StudentLeavePage />} />
             <Route path="/student/notifications" element={<LearnerNotificationsPage />} />
             <Route
               path="/student/announcements/:announcementId"
