@@ -14,10 +14,7 @@ import { useAuth } from '@/context/AuthContext';
 import { PageHeader } from '@/components/PageHeader';
 import { StatCard } from '@/components/StatCard';
 import { TodayClassesList } from '@/components/TodayClassesList';
-import { TeacherQuickActions } from '@/components/teacher/TeacherQuickActions';
 import { TeacherTodoList } from '@/components/teacher/TeacherTodoList';
-import { TeacherStudentProgressSection } from '@/components/teacher/TeacherStudentProgressSection';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Modal } from '@/components/ui/Modal';
 import { Button } from '@/components/ui/Button';
 import { classesApi, classSessionsApi, lessonNotesApi } from '@/api/resources';
@@ -128,23 +125,7 @@ export default function TeacherDashboard() {
 
       {todoListEnabled && <TeacherTodoList userId={user?.id} />}
 
-      <TeacherQuickActions />
-
       <TodayClassesList items={todayClasses} loading={loading} />
-
-      <Card>
-        <CardHeader className="border-b border-slate-100">
-          <CardTitle className="text-lg">Student progress</CardTitle>
-          <p className="text-sm font-normal text-slate-500">Overview of students across your classes</p>
-        </CardHeader>
-        <CardContent className="pt-6">
-          <TeacherStudentProgressSection
-            teacherUserId={user?.id}
-            lessonNotesCount={notesCount}
-            embedded
-          />
-        </CardContent>
-      </Card>
 
       <Modal open={tipsOpen} onClose={() => setTipsOpen(false)} title="Quick tips" className="max-w-md">
         <ul className="space-y-3 text-sm text-slate-600">
@@ -153,13 +134,6 @@ export default function TeacherDashboard() {
             <span>
               <strong className="text-slate-900">Today&apos;s schedule</strong> — your classes for
               the day appear at the top with times and rooms.
-            </span>
-          </li>
-          <li className="flex gap-3 rounded-lg bg-slate-50 p-3">
-            <ClipboardCheck className="mt-0.5 h-5 w-5 shrink-0 text-primary-600" />
-            <span>
-              <strong className="text-slate-900">Attendance</strong> — open a class from My Classes
-              to take attendance or share a check-in code.
             </span>
           </li>
           <li className="flex gap-3 rounded-lg bg-slate-50 p-3">
