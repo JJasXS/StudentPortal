@@ -13,6 +13,7 @@ import { DEFAULT_CENTRE_SETTINGS } from '@/types/centreSettings';
 import { applyBrandPalette } from '@/utils/brandColor';
 import { loadCentreSettings } from '@/utils/centreSettingsStorage';
 import { CENTRE_SETTINGS_UPDATED } from '@/utils/centreBrandingEvents';
+import { envAppName, envCentreName } from '@/utils/envBranding';
 
 interface CentreBrandingContextValue {
   settings: CentreSettings;
@@ -28,7 +29,11 @@ const CentreBrandingContext = createContext<CentreBrandingContextValue | null>(n
 const useApi = import.meta.env.VITE_USE_MOCK !== 'true';
 
 function mergeSettings(partial: Partial<CentreSettings>): CentreSettings {
-  return { ...DEFAULT_CENTRE_SETTINGS, ...loadCentreSettings(), ...partial };
+  const merged = { ...DEFAULT_CENTRE_SETTINGS, ...loadCentreSettings(), ...partial };
+  if (import.meta.env.VITE_CENTRE_NAME) {
+    merged.centreName = envCentreName();
+  }
+  return merged;
 }
 
 export function CentreBrandingProvider({ children }: { children: ReactNode }) {
@@ -37,8 +42,7 @@ export function CentreBrandingProvider({ children }: { children: ReactNode }) {
   const apply = useCallback((next: CentreSettings) => {
     setSettings(next);
     applyBrandPalette(next.brandColor);
-    const appName = next.centreName || import.meta.env.VITE_APP_NAME || 'Music Tuition Portal';
-    document.title = appName;
+    document.title = next.centreName || envAppName();
   }, []);
 
   const refresh = useCallback(async () => {
@@ -66,7 +70,7 @@ export function CentreBrandingProvider({ children }: { children: ReactNode }) {
   const value = useMemo<CentreBrandingContextValue>(
     () => ({
       settings,
-      centreName: settings.centreName,
+      centreName: settings.centreName || envCentreName(),
       logoDataUrl: settings.logoDataUrl,
       brandColor: settings.brandColor ?? DEFAULT_CENTRE_SETTINGS.brandColor!,
       contactEmail: settings.email,

@@ -1630,11 +1630,13 @@ public class CentreSettingsService
     private static readonly Guid SettingsId = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
     private readonly AppDbContext _context;
     private readonly AuditLogService _audit;
+    private readonly IConfiguration _configuration;
 
-    public CentreSettingsService(AppDbContext context, AuditLogService audit)
+    public CentreSettingsService(AppDbContext context, AuditLogService audit, IConfiguration configuration)
     {
         _context = context;
         _audit = audit;
+        _configuration = configuration;
     }
 
     public async Task<CentreSettingsDto> GetAsync()
@@ -1645,7 +1647,7 @@ public class CentreSettingsService
             settings = new CentreSettings
             {
                 Id = SettingsId,
-                CentreName = "Music Tuition Portal (Demo)",
+                CentreName = CentreBrandingDefaults.CentreName(_configuration),
                 Timezone = "Asia/Kuala_Lumpur",
                 Currency = "MYR",
                 DefaultMonthlyFee = 300m,

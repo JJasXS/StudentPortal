@@ -6,6 +6,7 @@ interface ImportMetaEnv {
   readonly VITE_DEV_PORT?: string;
   readonly VITE_USE_MOCK?: string;
   readonly VITE_APP_NAME?: string;
+  readonly VITE_CENTRE_NAME?: string;
 }
 
 interface ImportMeta {

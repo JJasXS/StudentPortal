@@ -1,65 +1,87 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { PageHeader } from '@/components/PageHeader';
-import { WeekCalendar, type CalendarEvent } from '@/components/calendar/WeekCalendar';
-import { classesApi, classSessionsApi } from '@/api/resources';
-import { mockClasses, mockClassSessions } from '@/utils/mockData';
-import { loadAllSessions } from '@/utils/mockSessionStore';
-import { sessionsInRange } from '@/utils/sessionGeneration';
+import { CalendarSessionDetailModal } from '@/components/calendar/CalendarSessionDetailModal';
+import { MonthCalendar } from '@/components/calendar/MonthCalendar';
+import type { CalendarEvent } from '@/components/calendar/WeekCalendar';
+import { classesApi } from '@/api/resources';
+import { mockClasses } from '@/utils/mockData';
+import { generateMockSessions, loadAllSessions } from '@/utils/mockSessionStore';
+import { monthRange, sessionsInRange } from '@/utils/sessionGeneration';
 import { mergeTeacherClasses } from '@/utils/teacherClasses';
-import type { ClassSession } from '@/types';
+import type { ClassItem, ClassSession } from '@/types';
+
+function seedTeacherCalendarSessions(classes: ClassItem[]) {
+  const active = classes.filter((c) => c.isActive);
+  const now = new Date();
+
+  for (const monthOffset of [-1, 0, 1]) {
+    const anchor = new Date(now.getFullYear(), now.getMonth() + monthOffset, 1);
+    const year = anchor.getFullYear();
+    const month = anchor.getMonth();
+    const from = `${year}-${String(month + 1).padStart(2, '0')}-01`;
+    const lastDay = new Date(year, month + 1, 0).getDate();
+    const to = `${year}-${String(month + 1).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+    generateMockSessions(active, from, to);
+  }
+}
 
 export default function TeacherCalendarPage() {
   const { user } = useAuth();
+  const [classes, setClasses] = useState<ClassItem[]>([]);
   const [sessions, setSessions] = useState<ClassSession[]>([]);
   const [anchorDate, setAnchorDate] = useState(() => new Date());
-  const isMock = import.meta.env.VITE_USE_MOCK === 'true';
+  const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
 
   const loadData = useCallback(() => {
     if (!user?.id) return;
-    Promise.all([
-      classesApi.getAll().catch(() => mockClasses),
-      isMock
-        ? Promise.resolve(loadAllSessions())
-        : classSessionsApi.getAll().catch(() => mockClassSessions),
-    ]).then(([classList, sessionList]) => {
-      const mine = user ? mergeTeacherClasses(classList, user) : [];
-      const classIds = new Set(mine.map((c) => c.id));
-      setSessions(sessionList.filter((s) => classIds.has(s.classId)));
-    });
-  }, [user, isMock]);
+
+    classesApi
+      .getAll()
+      .catch(() => mockClasses)
+      .then((classList) => {
+        const mine = mergeTeacherClasses(classList, user);
+        setClasses(mine);
+        seedTeacherCalendarSessions(mine);
+
+        const classIds = new Set(mine.map((c) => c.id));
+        const all = loadAllSessions();
+        setSessions(all.filter((s) => classIds.has(s.classId)));
+      });
+  }, [user]);
 
   useEffect(() => {
     loadData();
   }, [loadData]);
 
-  const weekStart = useMemo(() => {
-    const day = anchorDate.getDay();
-    const diff = day === 0 ? -6 : 1 - day;
-    const start = new Date(anchorDate);
-    start.setDate(start.getDate() + diff);
-    return start.toISOString().slice(0, 10);
-  }, [anchorDate]);
-
-  const weekEnd = useMemo(() => {
-    const end = new Date(`${weekStart}T12:00:00`);
-    end.setDate(end.getDate() + 6);
-    return end.toISOString().slice(0, 10);
-  }, [weekStart]);
-
-  const weekSessions = useMemo(
-    () => sessionsInRange(sessions, weekStart, weekEnd),
-    [sessions, weekStart, weekEnd]
+  const { start: monthStart, end: monthEnd } = useMemo(
+    () => monthRange(anchorDate),
+    [anchorDate]
   );
+
+  const monthSessions = useMemo(
+    () => sessionsInRange(sessions, monthStart, monthEnd),
+    [sessions, monthStart, monthEnd]
+  );
+
+  const classById = useMemo(() => new Map(classes.map((c) => [c.id, c])), [classes]);
 
   const events: CalendarEvent[] = useMemo(
     () =>
-      weekSessions.map((session) => ({
-        id: session.id,
-        session,
-        href: `/teacher/classes/${session.classId}/sessions`,
-      })),
-    [weekSessions]
+      monthSessions.map((session) => {
+        const cls = classById.get(session.classId);
+        return {
+          id: session.id,
+          session,
+          courseName: cls?.courseName,
+          className: cls?.className ?? session.className,
+          teacherName: cls?.teacherName ?? user?.fullName,
+          location: cls?.location,
+          subtitle: cls?.courseName,
+          href: `/teacher/classes/${session.classId}/sessions`,
+        };
+      }),
+    [monthSessions, classById, user?.fullName]
   );
 
   return (
@@ -69,12 +91,15 @@ export default function TeacherCalendarPage() {
         description="Your teaching schedule — sessions are created automatically from class templates"
       />
 
-      <WeekCalendar
+      <MonthCalendar
         anchorDate={anchorDate}
         onAnchorChange={setAnchorDate}
         events={events}
-        emptyMessage="No sessions scheduled this week for your classes."
+        onEventClick={setSelectedEvent}
+        emptyMessage="No sessions this month for your classes."
       />
+
+      <CalendarSessionDetailModal event={selectedEvent} onClose={() => setSelectedEvent(null)} />
     </div>
   );
 }

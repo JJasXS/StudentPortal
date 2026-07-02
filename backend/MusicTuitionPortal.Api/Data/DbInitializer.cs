@@ -17,7 +17,7 @@ public static class DbInitializer
         await EnsureCentreSettingsTableAsync(context);
         await EnsureCentreSettingsColumnsAsync(context);
         await EnsurePasswordResetsTableAsync(context);
-        await EnsureDefaultCentreSettingsAsync(context);
+        await EnsureDefaultCentreSettingsAsync(context, scope.ServiceProvider.GetRequiredService<IConfiguration>());
         await EnsureInvoiceCourseColumnsAsync(context);
         await EnsureInvoiceBillingColumnsAsync(context);
         await EnsureAuditLogsTableAsync(context);
@@ -1099,7 +1099,7 @@ public static class DbInitializer
         catch { }
     }
 
-    private static async Task EnsureDefaultCentreSettingsAsync(AppDbContext context)
+    private static async Task EnsureDefaultCentreSettingsAsync(AppDbContext context, IConfiguration configuration)
     {
         var id = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
         if (await context.CentreSettings.AnyAsync(s => s.Id == id)) return;
@@ -1107,7 +1107,7 @@ public static class DbInitializer
         context.CentreSettings.Add(new CentreSettings
         {
             Id = id,
-            CentreName = "Music Tuition Portal (Demo)",
+            CentreName = CentreBrandingDefaults.CentreName(configuration),
             Timezone = "Asia/Kuala_Lumpur",
             Currency = "MYR",
             DefaultMonthlyFee = 300m,

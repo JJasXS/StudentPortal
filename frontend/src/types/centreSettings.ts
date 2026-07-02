@@ -1,3 +1,5 @@
+import { envCentreName } from '@/utils/envBranding';
+
 export interface CentreSettings {
   centreName: string;
   timezone: string;
@@ -15,7 +17,7 @@ export interface CentreSettings {
 }
 
 export const DEFAULT_CENTRE_SETTINGS: CentreSettings = {
-  centreName: 'Harmony Music Centre',
+  centreName: envCentreName(),
   timezone: 'Asia/Kuala_Lumpur',
   currency: 'MYR',
   defaultMonthlyFee: 300,
