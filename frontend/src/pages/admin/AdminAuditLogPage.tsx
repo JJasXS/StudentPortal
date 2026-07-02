@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/Button';
 import { Input, Label, Select } from '@/components/ui/Input';
 import { formatDateDDMMYYYY } from '@/utils/dateFormat';
 import { formatAuditAction, loadAuditLogs, AUDIT_ACTION_LABELS } from '@/utils/auditLog';
-import { AUDIT_ENTITY_TYPES, type AuditLogEntry } from '@/types/auditLog';
+import type { AuditLogEntry } from '@/types/auditLog';
 
 const ACTION_OPTIONS = [...new Set(Object.keys(AUDIT_ACTION_LABELS))].sort();
 
@@ -17,7 +17,6 @@ export default function AdminAuditLogPage() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [actionFilter, setActionFilter] = useState('');
-  const [entityFilter, setEntityFilter] = useState('');
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
 
@@ -26,19 +25,18 @@ export default function AdminAuditLogPage() {
     loadAuditLogs({
       search,
       action: actionFilter || undefined,
-      entityType: entityFilter || undefined,
       from: fromDate || undefined,
       to: toDate || undefined,
     })
       .then(setEntries)
       .finally(() => setLoading(false));
-  }, [search, actionFilter, entityFilter, fromDate, toDate]);
+  }, [search, actionFilter, fromDate, toDate]);
 
   useEffect(() => {
     refresh();
   }, [refresh]);
 
-  const hasFilters = Boolean(search.trim() || actionFilter || entityFilter || fromDate || toDate);
+  const hasFilters = Boolean(search.trim() || actionFilter || fromDate || toDate);
   const filtered = useMemo(() => entries, [entries]);
 
   return (
@@ -54,7 +52,7 @@ export default function AdminAuditLogPage() {
             <SearchBox
               value={search}
               onChange={setSearch}
-              placeholder="Search actor, action, entity…"
+              placeholder="Search actor, action, details…"
               className="max-w-none flex-1 lg:min-w-[220px]"
             />
             <div className="grid gap-3 sm:grid-cols-2 lg:flex lg:items-end lg:gap-3">
@@ -69,21 +67,6 @@ export default function AdminAuditLogPage() {
                   {ACTION_OPTIONS.map((a) => (
                     <option key={a} value={a}>
                       {formatAuditAction(a)}
-                    </option>
-                  ))}
-                </Select>
-              </div>
-              <div className="sm:min-w-[140px]">
-                <Label htmlFor="audit-entity">Entity</Label>
-                <Select
-                  id="audit-entity"
-                  value={entityFilter}
-                  onChange={(e) => setEntityFilter(e.target.value)}
-                >
-                  <option value="">All types</option>
-                  {AUDIT_ENTITY_TYPES.map((t) => (
-                    <option key={t} value={t}>
-                      {t}
                     </option>
                   ))}
                 </Select>
@@ -115,7 +98,6 @@ export default function AdminAuditLogPage() {
                 onClick={() => {
                   setSearch('');
                   setActionFilter('');
-                  setEntityFilter('');
                   setFromDate('');
                   setToDate('');
                 }}
@@ -133,30 +115,26 @@ export default function AdminAuditLogPage() {
             columns={[
               {
                 key: 'createdAt',
-                header: 'When',
+                header: 'Date',
                 sortable: true,
                 sortType: 'date',
+                colWidth: '6.5rem',
                 getSortValue: (e) => e.createdAt,
                 render: (e) => (
-                  <span className="whitespace-nowrap text-slate-700">
-                    {formatDateDDMMYYYY(e.createdAt)}{' '}
-                    <span className="text-slate-400">
-                      {new Date(e.createdAt).toLocaleTimeString('en-MY', {
-                        hour: '2-digit',
-                        minute: '2-digit',
-                      })}
-                    </span>
-                  </span>
+                  <span className="text-slate-700">{formatDateDDMMYYYY(e.createdAt)}</span>
                 ),
               },
               {
                 key: 'actor',
                 header: 'Who',
+                colWidth: '9rem',
                 render: (e) => (
-                  <div>
-                    <p className="font-medium text-slate-900">{e.actorName ?? '—'}</p>
-                    {e.actorRole && <p className="text-xs text-slate-500">{e.actorRole}</p>}
-                  </div>
+                  <span className="text-slate-800">
+                    {e.actorName ?? '—'}
+                    {e.actorRole && (
+                      <span className="text-slate-400"> · {e.actorRole}</span>
+                    )}
+                  </span>
                 ),
               },
               {
@@ -164,25 +142,16 @@ export default function AdminAuditLogPage() {
                 header: 'Action',
                 sortable: true,
                 sortType: 'text',
+                colWidth: '10rem',
                 getSortValue: (e) => e.action,
                 render: (e) => (
                   <span className="font-medium text-slate-800">{formatAuditAction(e.action)}</span>
                 ),
               },
               {
-                key: 'entity',
-                header: 'Entity',
-                render: (e) => (
-                  <div>
-                    <p className="text-slate-700">{e.entityLabel ?? e.entityType}</p>
-                    <p className="text-xs text-slate-500">{e.entityType}</p>
-                  </div>
-                ),
-              },
-              {
                 key: 'details',
                 header: 'Details',
-                className: 'max-w-xs whitespace-normal',
+                className: 'max-w-md whitespace-normal text-xs text-slate-600',
                 render: (e) => e.details ?? '—',
               },
             ]}

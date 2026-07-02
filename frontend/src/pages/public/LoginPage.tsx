@@ -17,8 +17,12 @@ export default function LoginPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const addingAccount = searchParams.get('addAccount') === '1';
-  const [email, setEmail] = useState('admin@demo.com');
-  const [password, setPassword] = useState('Admin@123');
+  const [email, setEmail] = useState(
+    () => import.meta.env.VITE_DEMO_LOGIN_EMAIL || 'admin@demo.com'
+  );
+  const [password, setPassword] = useState(
+    () => import.meta.env.VITE_DEMO_LOGIN_PASSWORD || 'Admin@123'
+  );
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
