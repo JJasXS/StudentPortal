@@ -33,7 +33,17 @@ export function SqlAccountChildEnrollmentsList({
   }
 
   if (error) {
-    return <EmptyState title="Could not load classes" description={error} />;
+    return (
+      <section className="space-y-3">
+        <h2 className="text-base font-semibold text-slate-900">{heading}</h2>
+        <EmptyState
+          icon={BookOpen}
+          title="Could not load classes"
+          description={error}
+          compact
+        />
+      </section>
+    );
   }
 
   if (enrollments.length === 0) {
@@ -41,8 +51,10 @@ export function SqlAccountChildEnrollmentsList({
       <section className="space-y-3">
         <h2 className="text-base font-semibold text-slate-900">{heading}</h2>
         <EmptyState
-          title="No classes enrolled yet"
-          description={`${branchName} has no active sales order lines in SQL Account.`}
+          icon={BookOpen}
+          title="No class available"
+          description={`${branchName} has no enrolled classes yet.`}
+          compact
         />
       </section>
     );

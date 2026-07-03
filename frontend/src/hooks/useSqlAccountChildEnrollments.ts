@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
+import axios from 'axios';
 import { parentsApi } from '@/api/resources';
 import type { SqlAccountChildEnrollment } from '@/types/sqlAccount';
+import { getApiErrorMessage } from '@/utils/apiError';
 
 const useApi = import.meta.env.VITE_USE_MOCK !== 'true';
 
@@ -25,7 +27,8 @@ const mockEnrollments: SqlAccountChildEnrollment[] = [
 
 export function useSqlAccountChildEnrollments(branchName: string | null, enabled: boolean) {
   const [enrollments, setEnrollments] = useState<SqlAccountChildEnrollment[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(enabled && Boolean(branchName?.trim()));
+  const [hasFetched, setHasFetched] = useState(false);
   const [error, setError] = useState('');
   const [refreshKey, setRefreshKey] = useState(0);
 
@@ -34,15 +37,17 @@ export function useSqlAccountChildEnrollments(branchName: string | null, enabled
       setEnrollments([]);
       setError('');
       setLoading(false);
+      setHasFetched(false);
       return;
     }
 
     let cancelled = false;
     const branch = branchName.trim();
+    setLoading(true);
+    setError('');
+    setHasFetched(false);
 
     (async () => {
-      setLoading(true);
-      setError('');
       try {
         if (!useApi) {
           if (!cancelled) setEnrollments(mockEnrollments);
@@ -51,13 +56,24 @@ export function useSqlAccountChildEnrollments(branchName: string | null, enabled
 
         const data = await parentsApi.getChildEnrollments(branch);
         if (!cancelled) setEnrollments(data.enrollments);
-      } catch {
+      } catch (err) {
         if (!cancelled) {
-          setError('Could not load enrolled classes from SQL Account.');
-          setEnrollments([]);
+          // Missing branch or no sales orders — show empty state, not an error screen.
+          if (axios.isAxiosError(err) && err.response?.status === 404) {
+            setEnrollments([]);
+            setError('');
+          } else {
+            setError(
+              getApiErrorMessage(err, 'Could not load enrolled classes from SQL Account.')
+            );
+            setEnrollments([]);
+          }
         }
       } finally {
-        if (!cancelled) setLoading(false);
+        if (!cancelled) {
+          setLoading(false);
+          setHasFetched(true);
+        }
       }
     })();
 
@@ -68,5 +84,10 @@ export function useSqlAccountChildEnrollments(branchName: string | null, enabled
 
   const reload = useCallback(() => setRefreshKey((key) => key + 1), []);
 
-  return { enrollments, loading, error, reload };
+  return {
+    enrollments,
+    loading: enabled && Boolean(branchName?.trim()) && (loading || !hasFetched),
+    error,
+    reload,
+  };
 }

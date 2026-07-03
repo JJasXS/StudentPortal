@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
-import { ChevronLeft } from 'lucide-react';
+import { ChevronLeft, Users } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { PageHeader } from '@/components/PageHeader';
 import { CourseClassLessonNotesExplorer } from '@/components/student/CourseClassLessonNotesExplorer';
@@ -10,6 +10,7 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { SkeletonCard } from '@/components/ui/Skeleton';
 import { useSqlAccountChildren } from '@/hooks/useSqlAccountChildren';
 import { useSqlAccountChildEnrollments } from '@/hooks/useSqlAccountChildEnrollments';
+import type { SqlAccountChild } from '@/types/sqlAccount';
 import { mockLessonNotes } from '@/utils/mockData';
 import { resolveLearnerStudentId } from '@/utils/learnerCourses';
 import { learnerCoursesPath } from '@/utils/learnerPortal';
@@ -17,14 +18,13 @@ import { learnerCoursesPath } from '@/utils/learnerPortal';
 export default function LearnerCoursesPage() {
   const { user, isLoading: authLoading } = useAuth();
   const isParent = user?.role === 'Parent';
-  const parentReady = isParent && !authLoading;
   const coursesBasePath = learnerCoursesPath(user?.role);
   const [searchParams, setSearchParams] = useSearchParams();
   const { courseId } = useParams();
   const selectedBranchKey = searchParams.get('child');
   const activeChildKey = resolveActiveChildKey(selectedBranchKey, courseId);
 
-  const { children, loading, error } = useSqlAccountChildren(parentReady);
+  const { children, loading, hasFetched, error, reload } = useSqlAccountChildren(isParent);
 
   const selectedChild = useMemo(
     () => children.find((c) => branchKey(c) === activeChildKey) ?? null,
@@ -39,8 +39,10 @@ export default function LearnerCoursesPage() {
     error: enrollmentsError,
   } = useSqlAccountChildEnrollments(
     enrollmentsBranchName,
-    parentReady && Boolean(activeChildKey)
+    isParent && Boolean(activeChildKey)
   );
+
+  const childrenLoading = isParent && (authLoading || loading || !hasFetched);
 
   const mockStudentId = useMemo(
     () => resolveLearnerStudentId(user?.email, user?.id),
@@ -53,6 +55,11 @@ export default function LearnerCoursesPage() {
     const childLabel = selectedChild
       ? displayBranchName(selectedChild)
       : activeChildKey || 'Child';
+
+    const displayChild: SqlAccountChild | null = selectedChild
+      ?? (activeChildKey
+        ? { branchName: activeChildKey, attention: null, email: null, phone: null }
+        : null);
 
     return (
       <div className="mx-auto max-w-4xl">
@@ -76,16 +83,13 @@ export default function LearnerCoursesPage() {
               All children
             </button>
 
-            {selectedChild ? (
-              <SqlAccountBranchCard child={selectedChild} selected />
-            ) : loading ? (
-              <SkeletonCard />
-            ) : (
-              <EmptyState
-                title="Child not found"
-                description={`"${activeChildKey}" is not linked to your SQL Account record.`}
-              />
-            )}
+            {displayChild ? (
+              loading && !selectedChild ? (
+                <SkeletonCard />
+              ) : (
+                <SqlAccountBranchCard child={displayChild} selected />
+              )
+            ) : null}
 
             <SqlAccountChildEnrollmentsList
               branchName={childLabel}
@@ -97,17 +101,23 @@ export default function LearnerCoursesPage() {
           </div>
         ) : (
           <>
-            {loading ? (
+            {childrenLoading ? (
               <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
                 <SkeletonCard />
                 <SkeletonCard />
               </div>
             ) : error ? (
-              <EmptyState title="Could not load children" description={error} />
+              <EmptyState
+                icon={Users}
+                title="Could not load children"
+                description={error}
+                actions={[{ label: 'Try again', onClick: reload }]}
+              />
             ) : children.length === 0 ? (
               <EmptyState
+                icon={Users}
                 title="No children found"
-                description="Your SQL Account record has no branch names yet. Contact the centre if this looks wrong."
+                description="Sign in with a parent email linked in SQL Account (AR_CUSTOMER udf_email), e.g. parent@gmail.com."
               />
             ) : (
               <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">

@@ -5,6 +5,9 @@ export function getApiErrorMessage(error: unknown, fallback = 'Request failed'):
   if (axios.isAxiosError(error)) {
     const message = error.response?.data?.message;
     if (typeof message === 'string' && message.trim()) return message;
+    if (error.response?.status === 403) {
+      return 'This page is for parent accounts only. Sign in with a parent email from SQL Account.';
+    }
     if (error.response?.status === 404) {
       return 'API endpoint not found. Restart the backend after pulling latest changes.';
     }

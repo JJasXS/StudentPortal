@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { parentsApi } from '@/api/resources';
 import type { SqlAccountChild } from '@/types/sqlAccount';
+import { getApiErrorMessage } from '@/utils/apiError';
 
 const useApi = import.meta.env.VITE_USE_MOCK !== 'true';
 
@@ -12,7 +13,8 @@ const mockChildren: SqlAccountChild[] = [
 export function useSqlAccountChildren(enabled: boolean) {
   const [children, setChildren] = useState<SqlAccountChild[]>([]);
   const [parentName, setParentName] = useState('');
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(enabled);
+  const [hasFetched, setHasFetched] = useState(false);
   const [error, setError] = useState('');
   const [refreshKey, setRefreshKey] = useState(0);
 
@@ -20,15 +22,18 @@ export function useSqlAccountChildren(enabled: boolean) {
     if (!enabled) {
       setChildren([]);
       setParentName('');
+      setError('');
       setLoading(false);
+      setHasFetched(false);
       return;
     }
 
     let cancelled = false;
+    setLoading(true);
+    setError('');
+    setHasFetched(false);
 
     (async () => {
-      setLoading(true);
-      setError('');
       try {
         if (!useApi) {
           if (!cancelled) {
@@ -43,13 +48,18 @@ export function useSqlAccountChildren(enabled: boolean) {
           setParentName(data.parentName);
           setChildren(data.children);
         }
-      } catch {
+      } catch (err) {
         if (!cancelled) {
-          setError('Could not load children from SQL Account.');
+          setError(
+            getApiErrorMessage(err, 'Could not load children from SQL Account.')
+          );
           setChildren([]);
         }
       } finally {
-        if (!cancelled) setLoading(false);
+        if (!cancelled) {
+          setLoading(false);
+          setHasFetched(true);
+        }
       }
     })();
 
@@ -60,5 +70,5 @@ export function useSqlAccountChildren(enabled: boolean) {
 
   const reload = useCallback(() => setRefreshKey((key) => key + 1), []);
 
-  return { children, parentName, loading, error, reload };
+  return { children, parentName, loading, hasFetched, error, reload };
 }
