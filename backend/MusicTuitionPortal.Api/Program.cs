@@ -18,10 +18,20 @@ builder.Services.AddControllers()
 var jwtSettings = builder.Configuration.GetSection("Jwt").Get<JwtSettings>() ?? new JwtSettings();
 builder.Services.AddSingleton(jwtSettings);
 
+var authSettings = builder.Configuration.GetSection("Auth").Get<AuthSettings>() ?? new AuthSettings();
+builder.Services.AddSingleton(authSettings);
+
 var billplzSettings = builder.Configuration.GetSection("Billplz").Get<BillplzSettings>() ?? new BillplzSettings();
 builder.Services.AddSingleton(billplzSettings);
 builder.Services.AddHttpClient("Billplz");
 builder.Services.AddScoped<BillplzService>();
+
+var sqlAccountSettings = builder.Configuration.GetSection("SqlAccount").Get<SqlAccountSettings>() ?? new SqlAccountSettings();
+builder.Services.AddSingleton(sqlAccountSettings);
+builder.Services.AddHttpClient("SqlAccount");
+builder.Services.AddScoped<SqlAccountLocalDbService>();
+builder.Services.AddScoped<SqlAccountService>();
+builder.Services.AddScoped<SqlAccountSalesOrderService>();
 
 builder.Services.AddDbContext<AppDbContext>(options =>
 {
@@ -115,12 +125,19 @@ builder.Services.AddCors(options =>
 var app = builder.Build();
 
 var billplz = app.Services.GetRequiredService<BillplzSettings>();
-var startupLog = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("Startup.Billplz");
+var sqlAccount = app.Services.GetRequiredService<SqlAccountSettings>();
+var startupLog = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("Startup");
 if (billplz.IsConfigured)
     startupLog.LogInformation("Billplz FPX payments enabled ({Mode}).", billplz.Sandbox ? "sandbox" : "live");
 else
     startupLog.LogWarning(
         "Billplz not configured — parent online pay disabled. Set Billplz__ApiKey and Billplz__CollectionId in .env.");
+
+if (sqlAccount.IsConfigured)
+    startupLog.LogInformation("SQL Account API configured ({Database}).", sqlAccount.DatabasePath ?? "PORTAL.FDB");
+else
+    startupLog.LogWarning(
+        "SQL Account not configured — customer view disabled. Set SqlAccount__AccessKey and SqlAccount__SecretKey in .env.");
 
 try
 {

@@ -17,22 +17,21 @@ public static class DbInitializer
         await EnsureCentreSettingsTableAsync(context);
         await EnsureCentreSettingsColumnsAsync(context);
         await EnsurePasswordResetsTableAsync(context);
+        await EnsureLoginOtpsTableAsync(context);
         await EnsureDefaultCentreSettingsAsync(context, scope.ServiceProvider.GetRequiredService<IConfiguration>());
         await EnsureInvoiceCourseColumnsAsync(context);
         await EnsureInvoiceBillingColumnsAsync(context);
         await EnsureAuditLogsTableAsync(context);
         await EnsureNotificationsTableAsync(context);
-        await EnsureDemoNotificationsAsync(context);
-        await EnsureDemoAuditLogsAsync(context);
 
         if (await context.Users.AnyAsync())
         {
             await EnsureDemoStudentsAsync(context);
             await EnsureDemoParentsAsync(context);
             await EnsureDemoTeachersAsync(context);
-            return;
         }
-
+        else
+        {
         var adminId = Guid.Parse("11111111-1111-1111-1111-111111111111");
         var teacher1Id = Guid.Parse("22222222-2222-2222-2222-222222222221");
         var teacher2Id = Guid.Parse("22222222-2222-2222-2222-222222222222");
@@ -706,6 +705,10 @@ public static class DbInitializer
         await EnsureDemoStudentsAsync(context);
         await EnsureDemoParentsAsync(context);
         await EnsureDemoTeachersAsync(context);
+        }
+
+        await EnsureDemoNotificationsAsync(context);
+        await EnsureDemoAuditLogsAsync(context);
     }
 
     /// <summary>Adds STU-003…STU-009 when DB was seeded before extra demo students existed.</summary>
@@ -930,6 +933,18 @@ public static class DbInitializer
                 Id TEXT NOT NULL PRIMARY KEY,
                 UserId TEXT NOT NULL,
                 Token TEXT NOT NULL,
+                ExpiresAt TEXT NOT NULL,
+                CreatedAt TEXT NOT NULL
+            )");
+    }
+
+    private static async Task EnsureLoginOtpsTableAsync(AppDbContext context)
+    {
+        await context.Database.ExecuteSqlRawAsync(@"
+            CREATE TABLE IF NOT EXISTS LoginOtps (
+                Id TEXT NOT NULL PRIMARY KEY,
+                Email TEXT NOT NULL,
+                Code TEXT NOT NULL,
                 ExpiresAt TEXT NOT NULL,
                 CreatedAt TEXT NOT NULL
             )");

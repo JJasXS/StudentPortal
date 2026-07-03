@@ -44,6 +44,18 @@ export const studentsApi = {
 export const parentsApi = {
   getAll: () => apiClient.get<ParentProfile[]>('/parents').then((r) => r.data),
   getById: (id: string) => apiClient.get<ParentProfile>(`/parents/${id}`).then((r) => r.data),
+  getMySqlAccountChildren: () =>
+    apiClient
+      .get<{ parentName: string; children: import('@/types/sqlAccount').SqlAccountChild[] }>(
+        '/parents/me/sql-account-children'
+      )
+      .then((r) => r.data),
+  getChildEnrollments: (branchName: string) =>
+    apiClient
+      .get<import('@/types/sqlAccount').SqlAccountChildEnrollments>(
+        `/parents/me/sql-account-children/${encodeURIComponent(branchName)}/enrollments`
+      )
+      .then((r) => r.data),
   create: (data: Partial<ParentProfile> & { password?: string; email?: string; fullName?: string }) =>
     apiClient.post<ParentProfile>('/parents', data).then((r) => r.data),
   update: (id: string, data: Partial<ParentProfile>) =>
@@ -209,4 +221,13 @@ export const auditLogsApi = {
     entityLabel?: string;
     details?: string;
   }) => apiClient.post('/audit-logs', data),
+};
+
+export const sqlAccountApi = {
+  getStatus: () =>
+    apiClient.get<import('@/types/sqlAccount').SqlAccountStatus>('/sqlaccount/status').then((r) => r.data),
+  getParentChildren: () =>
+    apiClient
+      .get<import('@/types/sqlAccount').SqlAccountParent[]>('/sqlaccount/parent-children')
+      .then((r) => r.data),
 };

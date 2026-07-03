@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Calendar, Megaphone } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
+import { useLearnerContext } from '@/hooks/useLearnerContext';
 import { PageHeader } from '@/components/PageHeader';
 import { StatCard } from '@/components/StatCard';
 import { SkeletonCard, SkeletonStatCards } from '@/components/ui/Skeleton';
@@ -15,16 +16,17 @@ import type { StudentClassCardData } from '@/components/student/StudentClassCard
 
 export default function StudentDashboard() {
   const { user } = useAuth();
+  const { studentUserId, loading: learnerLoading } = useLearnerContext();
   const mockStudentId = useMemo(
-    () => resolveLearnerStudentId(user?.email, user?.id),
-    [user?.email, user?.id]
+    () => studentUserId ?? resolveLearnerStudentId(user?.email, user?.id),
+    [studentUserId, user?.email, user?.id]
   );
   const [stats, setStats] = useState({ classes: 0, announcements: 0 });
   const [myClasses, setMyClasses] = useState<StudentClassCardData[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!mockStudentId) return;
+    if (!mockStudentId || learnerLoading) return;
 
     setLoading(true);
     announcementsApi
@@ -58,7 +60,7 @@ export default function StudentDashboard() {
         );
       })
       .finally(() => setLoading(false));
-  }, [mockStudentId]);
+  }, [mockStudentId, learnerLoading]);
 
   const nextLesson = useMemo(() => findNextLesson(myClasses), [myClasses]);
 

@@ -23,6 +23,7 @@ public class AppDbContext : DbContext
     public DbSet<Invoice> Invoices => Set<Invoice>();
     public DbSet<CentreSettings> CentreSettings => Set<CentreSettings>();
     public DbSet<PasswordReset> PasswordResets => Set<PasswordReset>();
+    public DbSet<LoginOtp> LoginOtps => Set<LoginOtp>();
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
     public DbSet<Notification> Notifications => Set<Notification>();
 

@@ -10,12 +10,256 @@ public class AuthService
 {
     private readonly AppDbContext _context;
     private readonly JwtSettings _jwtSettings;
+    private readonly SqlAccountService _sqlAccount;
+    private readonly AuthSettings _authSettings;
+    private readonly ILogger<AuthService> _logger;
 
-    public AuthService(AppDbContext context, JwtSettings jwtSettings)
+    public AuthService(
+        AppDbContext context,
+        JwtSettings jwtSettings,
+        SqlAccountService sqlAccount,
+        AuthSettings authSettings,
+        ILogger<AuthService> logger)
     {
         _context = context;
         _jwtSettings = jwtSettings;
+        _sqlAccount = sqlAccount;
+        _authSettings = authSettings;
+        _logger = logger;
     }
+
+    public async Task<LoginMethodResponse> GetLoginMethodAsync(string email)
+    {
+        var normalized = NormalizeEmail(email);
+        if (string.IsNullOrEmpty(normalized))
+            throw new InvalidOperationException("Email is required.");
+
+        var user = await _context.Users.FirstOrDefaultAsync(u => u.Email.ToLower() == normalized && u.IsActive);
+
+        if (user?.Role is Roles.Teacher)
+            return new LoginMethodResponse("password", false);
+
+        if (user?.Role is Roles.Student)
+            return new LoginMethodResponse("password", false);
+
+        // SY_USER / dev admin: passwordless udf-email even if a portal Admin row already exists
+        if (await IsSqlAccountAdminEmailAsync(normalized))
+            return new LoginMethodResponse("udf_email", true);
+
+        if (await IsSqlAccountParentEmailAsync(normalized) || _authSettings.IsDevParentEmail(normalized))
+            return new LoginMethodResponse("udf_email", true);
+
+        if (user?.Role is Roles.Admin)
+            return new LoginMethodResponse("password", false);
+
+        throw new InvalidOperationException(
+            "This email is not found in SQL Account (SY_USER or AR_CUSTOMER udf_email). Contact the centre for access.");
+    }
+
+    /// <summary>Sign in when email matches SY_USER or AR_CUSTOMER udf_email (OTP bypassed for now).</summary>
+    public async Task<LoginResponse?> LoginWithUdfEmailAsync(string email)
+    {
+        var normalized = NormalizeEmail(email);
+        if (string.IsNullOrEmpty(normalized))
+            throw new InvalidOperationException("Email is required.");
+
+        if (await IsSqlAccountAdminEmailAsync(normalized))
+        {
+            var adminUser = await EnsureAdminUserForEmailAsync(normalized);
+            if (adminUser == null || !Roles.CanSignIn(adminUser.Role))
+                return null;
+
+            var adminToken = JwtHelper.GenerateToken(adminUser, _jwtSettings);
+            return new LoginResponse(adminToken, MapUser(adminUser));
+        }
+
+        if (!await IsSqlAccountParentEmailAsync(normalized) && !_authSettings.IsDevParentEmail(normalized))
+            return null;
+
+        var user = await EnsureParentUserForEmailAsync(normalized);
+        if (user == null || !Roles.CanSignIn(user.Role))
+            return null;
+
+        var token = JwtHelper.GenerateToken(user, _jwtSettings);
+        return new LoginResponse(token, MapUser(user));
+    }
+
+    public async Task<RequestLoginOtpResponse> RequestLoginOtpAsync(string email)
+    {
+        var normalized = NormalizeEmail(email);
+        var method = await GetLoginMethodAsync(email);
+        if (method.Method != "otp")
+            throw new InvalidOperationException("This account uses password sign-in.");
+
+        var code = Random.Shared.Next(100000, 999999).ToString();
+        var existing = await _context.LoginOtps.Where(o => o.Email == normalized).ToListAsync();
+        if (existing.Count > 0)
+            _context.LoginOtps.RemoveRange(existing);
+
+        _context.LoginOtps.Add(new LoginOtp
+        {
+            Id = Guid.NewGuid(),
+            Email = normalized,
+            Code = code,
+            ExpiresAt = DateTime.UtcNow.AddMinutes(10),
+            CreatedAt = DateTime.UtcNow
+        });
+        await _context.SaveChangesAsync();
+
+        if (!_authSettings.BypassOtp)
+            _logger.LogInformation("Login OTP issued for {Email}", normalized);
+
+        return new RequestLoginOtpResponse(
+            _authSettings.BypassOtp
+                ? "OTP bypass enabled for testing — enter any code or use 000000."
+                : "A one-time code has been sent to your email.",
+            _authSettings.BypassOtp,
+            _authSettings.BypassOtp ? code : null);
+    }
+
+    public async Task<LoginResponse?> VerifyLoginOtpAsync(string email, string otp)
+    {
+        var normalized = NormalizeEmail(email);
+        if (string.IsNullOrWhiteSpace(otp))
+            throw new InvalidOperationException("OTP is required.");
+
+        if (!_authSettings.BypassOtp)
+        {
+            var record = await _context.LoginOtps
+                .Where(o => o.Email == normalized && o.Code == otp.Trim())
+                .OrderByDescending(o => o.CreatedAt)
+                .FirstOrDefaultAsync();
+
+            if (record == null || record.ExpiresAt < DateTime.UtcNow)
+                return null;
+
+            _context.LoginOtps.Remove(record);
+            await _context.SaveChangesAsync();
+        }
+
+        var user = await EnsureParentUserForEmailAsync(normalized);
+        if (user == null || !Roles.CanSignIn(user.Role))
+            return null;
+
+        var token = JwtHelper.GenerateToken(user, _jwtSettings);
+        return new LoginResponse(token, MapUser(user));
+    }
+
+    private async Task<bool> IsSqlAccountAdminEmailAsync(string normalizedEmail)
+    {
+        if (_authSettings.IsDevAdminEmail(normalizedEmail))
+            return true;
+
+        var admin = await _sqlAccount.FindAdminByUdfEmailAsync(normalizedEmail);
+        return admin != null;
+    }
+
+    private async Task<bool> IsSqlAccountParentEmailAsync(string normalizedEmail)
+    {
+        if (_authSettings.IsDevParentEmail(normalizedEmail))
+            return true;
+
+        if (!_sqlAccount.IsConfigured)
+            return false;
+
+        var customer = await _sqlAccount.FindCustomerByUdfEmailAsync(normalizedEmail);
+        return customer != null;
+    }
+
+    private async Task<User?> EnsureParentUserForEmailAsync(string normalizedEmail)
+    {
+        var user = await _context.Users
+            .Include(u => u.ParentProfile)
+            .FirstOrDefaultAsync(u => u.Email.ToLower() == normalizedEmail);
+
+        if (user != null)
+        {
+            if (user.Role == Roles.Parent)
+                return user.IsActive ? user : null;
+
+            if (user.Role == Roles.Student || user.Role is Roles.Admin or Roles.Teacher)
+                throw new InvalidOperationException("This email is not a parent login.");
+        }
+
+        var customer = _sqlAccount.IsConfigured
+            ? await _sqlAccount.FindCustomerByUdfEmailAsync(normalizedEmail)
+            : null;
+
+        if (customer == null && !_authSettings.IsDevParentEmail(normalizedEmail))
+            return null;
+
+        var displayEmail = customer?.ParentEmail?.Trim() ?? normalizedEmail;
+        var fullName = customer?.ParentName
+            ?? (_authSettings.IsDevParentEmail(normalizedEmail) ? displayEmail.Split('@')[0] : displayEmail);
+
+        user = new User
+        {
+            Id = Guid.NewGuid(),
+            FullName = fullName,
+            Email = displayEmail,
+            PasswordHash = PasswordHelper.Hash(Guid.NewGuid().ToString("N")),
+            Role = Roles.Parent,
+            IsActive = true
+        };
+        var profile = new ParentProfile
+        {
+            Id = Guid.NewGuid(),
+            UserId = user.Id,
+            Relationship = "Guardian"
+        };
+        _context.Users.Add(user);
+        _context.ParentProfiles.Add(profile);
+        await _context.SaveChangesAsync();
+        return user;
+    }
+
+    private async Task<User?> EnsureAdminUserForEmailAsync(string normalizedEmail)
+    {
+        var user = await _context.Users.FirstOrDefaultAsync(u => u.Email.ToLower() == normalizedEmail);
+
+        if (user != null)
+        {
+            if (user.Role == Roles.Admin)
+                return user.IsActive ? user : null;
+
+            if (user.Role == Roles.Parent)
+            {
+                user.Role = Roles.Admin;
+                user.UpdatedAt = DateTime.UtcNow;
+                await _context.SaveChangesAsync();
+                return user.IsActive ? user : null;
+            }
+
+            if (user.Role is Roles.Teacher or Roles.Student)
+                throw new InvalidOperationException("This email is not an admin login.");
+
+            return null;
+        }
+
+        var erpAdmin = await _sqlAccount.FindAdminByUdfEmailAsync(normalizedEmail);
+        if (erpAdmin == null && !_authSettings.IsDevAdminEmail(normalizedEmail))
+            return null;
+
+        var displayEmail = erpAdmin?.Email.Trim() ?? normalizedEmail;
+        var fullName = erpAdmin?.UserName
+            ?? (_authSettings.IsDevAdminEmail(normalizedEmail) ? displayEmail.Split('@')[0] : displayEmail);
+
+        user = new User
+        {
+            Id = Guid.NewGuid(),
+            FullName = fullName,
+            Email = displayEmail,
+            PasswordHash = PasswordHelper.Hash(Guid.NewGuid().ToString("N")),
+            Role = Roles.Admin,
+            IsActive = true
+        };
+        _context.Users.Add(user);
+        await _context.SaveChangesAsync();
+        return user;
+    }
+
+    private static string NormalizeEmail(string email) =>
+        email.Trim().ToLowerInvariant();
 
     public async Task<LoginResponse?> LoginAsync(LoginRequest request)
     {
@@ -24,8 +268,7 @@ public class AuthService
             return null;
 
         if (!Roles.CanSignIn(user.Role))
-            throw new InvalidOperationException(
-                "This account cannot sign in here. Use a student account — each learner has their own login.");
+            throw new InvalidOperationException("This account cannot sign in here.");
 
         var token = JwtHelper.GenerateToken(user, _jwtSettings);
         return new LoginResponse(token, MapUser(user));
@@ -454,10 +697,112 @@ public class ParentService
 {
     private readonly AppDbContext _context;
     private readonly AuditLogService _audit;
-    public ParentService(AppDbContext context, AuditLogService audit)
+    private readonly SqlAccountService _sqlAccount;
+    private readonly SqlAccountSalesOrderService _salesOrders;
+    private readonly AuthSettings _authSettings;
+
+    public ParentService(
+        AppDbContext context,
+        AuditLogService audit,
+        SqlAccountService sqlAccount,
+        SqlAccountSalesOrderService salesOrders,
+        AuthSettings authSettings)
     {
         _context = context;
         _audit = audit;
+        _sqlAccount = sqlAccount;
+        _salesOrders = salesOrders;
+        _authSettings = authSettings;
+    }
+
+    public async Task<SqlAccountMyChildrenDto> GetSqlAccountChildrenForEmailAsync(
+        string email,
+        CancellationToken cancellationToken = default)
+    {
+        var normalized = email.Trim().ToLowerInvariant();
+
+        var customer = await _sqlAccount.FindCustomerByUdfEmailAsync(normalized, cancellationToken);
+        if (customer != null && customer.Children.Count > 0)
+        {
+            return new SqlAccountMyChildrenDto(customer.ParentName, customer.Children);
+        }
+
+        if (_authSettings.IsDevParentEmail(normalized))
+        {
+            var devCode = _authSettings.GetDevParentCustomerCode(normalized);
+            if (!string.IsNullOrWhiteSpace(devCode))
+            {
+                var byCode = await _sqlAccount.FindCustomerByCodeAsync(devCode, cancellationToken);
+                if (byCode != null && byCode.Children.Count > 0)
+                {
+                    return new SqlAccountMyChildrenDto(byCode.ParentName, byCode.Children);
+                }
+            }
+
+            var devBranches = _authSettings.GetDevParentBranches();
+            if (devBranches.Count > 0)
+            {
+                return new SqlAccountMyChildrenDto(
+                    normalized.Split('@')[0],
+                    devBranches);
+            }
+        }
+
+        if (customer != null)
+            return new SqlAccountMyChildrenDto(customer.ParentName, customer.Children);
+
+        return new SqlAccountMyChildrenDto(string.Empty, Array.Empty<SqlAccountChildDto>());
+    }
+
+    public async Task<SqlAccountChildEnrollmentsDto?> GetSqlAccountChildEnrollmentsForEmailAsync(
+        string email,
+        string branchName,
+        CancellationToken cancellationToken = default)
+    {
+        var normalizedBranch = branchName.Trim();
+        if (string.IsNullOrWhiteSpace(normalizedBranch))
+            return null;
+
+        var children = await GetSqlAccountChildrenForEmailAsync(email, cancellationToken);
+        var isChild = children.Children.Any(c =>
+            string.Equals(c.BranchName, normalizedBranch, StringComparison.OrdinalIgnoreCase));
+        if (!isChild)
+            return null;
+
+        var customerCode = await ResolveCustomerCodeForEmailAsync(email, cancellationToken);
+        if (string.IsNullOrWhiteSpace(customerCode))
+            return null;
+
+        var enrollments = await _salesOrders.GetChildEnrollmentsAsync(
+            customerCode,
+            normalizedBranch,
+            cancellationToken);
+
+        return new SqlAccountChildEnrollmentsDto(customerCode, normalizedBranch, enrollments);
+    }
+
+    private async Task<string?> ResolveCustomerCodeForEmailAsync(
+        string email,
+        CancellationToken cancellationToken)
+    {
+        var normalized = email.Trim().ToLowerInvariant();
+        var customer = await _sqlAccount.FindCustomerByUdfEmailAsync(normalized, cancellationToken);
+        if (!string.IsNullOrWhiteSpace(customer?.CustomerCode))
+            return customer.CustomerCode;
+
+        if (_authSettings.IsDevParentEmail(normalized))
+        {
+            var devCode = _authSettings.GetDevParentCustomerCode(normalized);
+            if (!string.IsNullOrWhiteSpace(devCode))
+            {
+                var byCode = await _sqlAccount.FindCustomerByCodeAsync(devCode, cancellationToken);
+                if (!string.IsNullOrWhiteSpace(byCode?.CustomerCode))
+                    return byCode.CustomerCode;
+                return devCode;
+            }
+        }
+
+        return customer?.CustomerCode;
     }
 
     public async Task<List<ParentDto>> GetAllAsync()

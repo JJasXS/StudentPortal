@@ -242,6 +242,15 @@ public class PasswordReset
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }
 
+public class LoginOtp
+{
+    public Guid Id { get; set; }
+    public string Email { get; set; } = string.Empty;
+    public string Code { get; set; } = string.Empty;
+    public DateTime ExpiresAt { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+}
+
 public class AuditLog
 {
     public Guid Id { get; set; }
@@ -278,8 +287,8 @@ public static class Roles
 
     public static readonly string[] All = [Admin, Teacher, Student, Parent];
 
-    public static readonly string[] PortalSignIn = [Admin, Teacher, Student];
+    public static readonly string[] PortalSignIn = [Admin, Teacher, Student, Parent];
 
     public static bool CanSignIn(string role) =>
-        role is Admin or Teacher or Student;
+        role is Admin or Teacher or Student or Parent;
 }

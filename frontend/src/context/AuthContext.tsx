@@ -11,6 +11,8 @@ interface AuthContextType {
   user: User | null;
   isLoading: boolean;
   login: (email: string, password: string) => Promise<void>;
+  loginWithOtp: (email: string, otp: string) => Promise<void>;
+  loginWithUdfEmail: (email: string) => Promise<void>;
   setSession: (token: string, user: User) => void;
   logout: () => void;
   updateUser: (user: User) => void;
@@ -62,19 +64,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     init();
   }, []);
 
+  const persistSession = (response: { token: string; user: User }) => {
+    if (!canSignIn(response.user.role)) {
+      throw new Error('This account cannot sign in here.');
+    }
+    localStorage.setItem(TOKEN_KEY, response.token);
+    localStorage.setItem(USER_KEY, JSON.stringify(response.user));
+    setUser(response.user);
+    saveCurrentAccount();
+  };
+
   const login = async (email: string, password: string) => {
     if (useApi) {
       try {
         const response = await authApi.login(email, password);
-        if (!canSignIn(response.user.role)) {
-          throw new Error(
-            'This account cannot sign in here. Use a student account — each learner has their own login.'
-          );
-        }
-        localStorage.setItem(TOKEN_KEY, response.token);
-        localStorage.setItem(USER_KEY, JSON.stringify(response.user));
-        setUser(response.user);
-        saveCurrentAccount();
+        persistSession(response);
       } catch (err: unknown) {
         const apiMessage = (err as { response?: { data?: { message?: string } } }).response?.data
           ?.message;
@@ -90,14 +94,40 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const found = mockUsers.find((u) => u.email === email);
     if (!found) throw new Error('Invalid email or password');
     if (!canSignIn(found.role)) {
-      throw new Error(
-        'This account cannot sign in here. Use a student account — each learner has their own login.'
-      );
+      throw new Error('This account cannot sign in here.');
     }
     localStorage.setItem(TOKEN_KEY, 'mock-token');
     localStorage.setItem(USER_KEY, JSON.stringify(found));
     setUser(found);
     saveCurrentAccount();
+  };
+
+  const loginWithUdfEmail = async (email: string) => {
+    if (!useApi) {
+      throw new Error('SQL Account login requires the API backend.');
+    }
+    try {
+      const response = await authApi.loginWithUdfEmail(email);
+      persistSession(response);
+    } catch (err: unknown) {
+      const apiMessage = (err as { response?: { data?: { message?: string } } }).response?.data
+        ?.message;
+      throw new Error(apiMessage ?? (err instanceof Error ? err.message : 'Login failed'));
+    }
+  };
+
+  const loginWithOtp = async (email: string, otp: string) => {
+    if (!useApi) {
+      throw new Error('OTP login requires the API backend.');
+    }
+    try {
+      const response = await authApi.verifyLoginOtp(email, otp);
+      persistSession(response);
+    } catch (err: unknown) {
+      const apiMessage = (err as { response?: { data?: { message?: string } } }).response?.data
+        ?.message;
+      throw new Error(apiMessage ?? (err instanceof Error ? err.message : 'OTP verification failed'));
+    }
   };
 
   const setSession = (token: string, sessionUser: User) => {
@@ -118,7 +148,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, isLoading, login, setSession, logout, updateUser }}>
+    <AuthContext.Provider
+      value={{ user, isLoading, login, loginWithOtp, loginWithUdfEmail, setSession, logout, updateUser }}
+    >
       {children}
     </AuthContext.Provider>
   );

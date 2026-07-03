@@ -46,6 +46,22 @@ interface CourseClassLessonNotesExplorerProps {
   compact?: boolean;
   /** Sync course / class / month / note selection to the URL (full page). */
   urlSync?: boolean;
+  /** Base path for URL navigation (e.g. /student/courses or /parent/children). */
+  coursesBasePath?: string;
+  /** Query params to keep on in-app navigation (e.g. parent child selection). */
+  preserveSearchParams?: string[];
+}
+
+function appendSearchParams(path: string, source: URLSearchParams, keys: string[]): string {
+  if (!keys.length) return path;
+  const [pathname, existingQuery] = path.split('?');
+  const params = new URLSearchParams(existingQuery);
+  for (const key of keys) {
+    const value = source.get(key);
+    if (value) params.set(key, value);
+  }
+  const query = params.toString();
+  return query ? `${pathname}?${query}` : pathname;
 }
 
 function formatClassSchedule(classId: string) {
@@ -98,10 +114,18 @@ export function CourseClassLessonNotesExplorer({
   showViewAllLink = false,
   compact = false,
   urlSync = false,
+  coursesBasePath = '/student/courses',
+  preserveSearchParams = [],
 }: CourseClassLessonNotesExplorerProps) {
   const navigate = useNavigate();
   const { courseId: urlCourseId, classId: urlClassId } = useParams();
   const [searchParams, setSearchParams] = useSearchParams();
+
+  const coursesUrl = (options: Parameters<typeof studentCoursesUrl>[0] = {}) =>
+    appendSearchParams(studentCoursesUrl(options, coursesBasePath), searchParams, preserveSearchParams);
+
+  const coursesHome = () =>
+    appendSearchParams(coursesBasePath, searchParams, preserveSearchParams);
 
   const [localCourseId, setLocalCourseId] = useState<string | null>(null);
   const [localClassId, setLocalClassId] = useState<string | null>(null);
@@ -154,16 +178,16 @@ export function CourseClassLessonNotesExplorer({
   useEffect(() => {
     if (!urlSync || courseGroups.length === 0) return;
     if (urlCourseId && !courseGroups.some((g) => g.courseId === urlCourseId)) {
-      navigate('/student/courses', { replace: true });
+      navigate(coursesHome(), { replace: true });
       return;
     }
     if (urlCourseId && urlClassId && selectedCourse) {
       const valid = selectedCourse.classes.some((c) => c.classId === urlClassId);
       if (!valid) {
-        navigate(studentCoursesUrl({ courseId: urlCourseId }), { replace: true });
+        navigate(coursesUrl({ courseId: urlCourseId }), { replace: true });
       }
     }
-  }, [urlSync, urlCourseId, urlClassId, courseGroups, selectedCourse, navigate]);
+  }, [urlSync, urlCourseId, urlClassId, courseGroups, selectedCourse, navigate, coursesBasePath, searchParams, preserveSearchParams]);
 
   const classNotes = useMemo(() => {
     if (!selectedClassName) return [];
@@ -172,7 +196,7 @@ export function CourseClassLessonNotesExplorer({
 
   const goCourses = () => {
     if (urlSync) {
-      navigate('/student/courses');
+      navigate(coursesHome());
       return;
     }
     setLocalCourseId(null);
@@ -183,7 +207,7 @@ export function CourseClassLessonNotesExplorer({
 
   const goClasses = (targetCourseId: string) => {
     if (urlSync) {
-      navigate(studentCoursesUrl({ courseId: targetCourseId }));
+      navigate(coursesUrl({ courseId: targetCourseId }));
       return;
     }
     setLocalClassId(null);
@@ -193,7 +217,7 @@ export function CourseClassLessonNotesExplorer({
 
   const openClass = (targetCourseId: string, targetClassId: string) => {
     if (urlSync) {
-      navigate(studentCoursesUrl({ courseId: targetCourseId, classId: targetClassId }));
+      navigate(coursesUrl({ courseId: targetCourseId, classId: targetClassId }));
       return;
     }
     setLocalCourseId(targetCourseId);
@@ -204,7 +228,7 @@ export function CourseClassLessonNotesExplorer({
 
   const openCourse = (group: LearnerCourseGroup) => {
     if (urlSync) {
-      navigate(studentCoursesUrl({ courseId: group.courseId }));
+      navigate(coursesUrl({ courseId: group.courseId }));
       return;
     }
     setLocalCourseId(group.courseId);
@@ -263,7 +287,7 @@ export function CourseClassLessonNotesExplorer({
     {
       label: 'Courses',
       ...(urlSync
-        ? { href: '/student/courses' }
+        ? { href: coursesHome() }
         : { onClick: step !== 'courses' ? goCourses : undefined }),
     },
   ];
@@ -272,7 +296,7 @@ export function CourseClassLessonNotesExplorer({
       label: selectedCourse.courseName,
       ...(step === 'notes'
         ? urlSync
-          ? { href: studentCoursesUrl({ courseId: selectedCourse.courseId }) }
+          ? { href: coursesUrl({ courseId: selectedCourse.courseId }) }
           : { onClick: () => goClasses(selectedCourse.courseId) }
         : {}),
     });
@@ -314,7 +338,7 @@ export function CourseClassLessonNotesExplorer({
           </div>
           {showViewAllLink && step === 'courses' && (
             <Link
-              to="/student/courses"
+              to={coursesHome()}
               className="shrink-0 text-sm font-medium text-primary-600 hover:underline"
             >
               View all

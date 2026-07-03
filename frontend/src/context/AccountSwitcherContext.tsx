@@ -36,7 +36,7 @@ export function AccountSwitcherProvider({ children }: { children: ReactNode }) {
       setSession(account.token, account.user);
       saveCurrentAccount();
       setOpen(false);
-      navigate(dashboardPathForRole(account.user.role as 'Admin' | 'Teacher' | 'Student'));
+      navigate(dashboardPathForRole(account.user.role as 'Admin' | 'Teacher' | 'Student' | 'Parent'));
     },
     [navigate, setSession]
   );

@@ -2,6 +2,12 @@ namespace MusicTuitionPortal.Api.DTOs;
 
 public record UserDto(Guid Id, string FullName, string Email, string? PhoneNumber, string Role, bool IsActive, DateTime CreatedAt);
 public record LoginRequest(string Email, string Password);
+public record LoginMethodRequest(string Email);
+public record LoginMethodResponse(string Method, bool BypassOtp);
+public record UdfEmailLoginRequest(string Email);
+public record RequestLoginOtpRequest(string Email);
+public record RequestLoginOtpResponse(string Message, bool BypassOtp, string? OtpCode);
+public record VerifyLoginOtpRequest(string Email, string Otp);
 public record ForgotPasswordRequest(string Email);
 public record ResetPasswordRequest(string Email, string ResetCode, string NewPassword);
 public record RegisterRequest(string FullName, string Email, string Password, string Role, string? PhoneNumber);
@@ -135,3 +141,27 @@ public record GenerateSessionsResultDto(int CreatedCount, int SkippedCount, List
 public record NotificationDto(
     Guid Id, Guid UserId, string Title, string Message, string Category,
     string? LinkPath, bool IsRead, DateTime CreatedAt);
+
+public record SqlAccountChildDto(string BranchName, string? Attention, string? Email, string? Phone);
+
+public record SqlAccountParentDto(
+    string CustomerCode, string ParentName, string? ParentEmail, IReadOnlyList<SqlAccountChildDto> Children);
+
+public record SqlAccountStatusDto(bool Configured, bool Connected, string? DatabasePath);
+
+public record SqlAccountMyChildrenDto(string ParentName, IReadOnlyList<SqlAccountChildDto> Children);
+
+public record SqlAccountChildEnrollmentDto(
+    string DocNo,
+    string? DocDate,
+    string ClassName,
+    string? ItemCode,
+    string? Qty,
+    string? UnitPrice,
+    string? Amount,
+    string? DeliveryDate);
+
+public record SqlAccountChildEnrollmentsDto(
+    string CustomerCode,
+    string BranchName,
+    IReadOnlyList<SqlAccountChildEnrollmentDto> Enrollments);

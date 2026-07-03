@@ -15,23 +15,26 @@ import {
   BookOpenCheck,
   CalendarOff,
   RefreshCw,
+  Database,
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { useCentreBranding } from '@/context/CentreBrandingContext';
 import { CentreMarkInline } from '@/components/branding/CentreMark';
 import { cn } from '@/utils/cn';
-import { isStudentPortalRole } from '@/utils/learnerPortal';
+import { isStudentPortalRole, learnerPortalPath } from '@/utils/learnerPortal';
 import type { UserRole } from '@/types';
 
 interface NavItem {
   label: string;
   path: string;
   icon: React.ComponentType<{ className?: string }>;
+  parentLabel?: string;
 }
 
 const adminNav: NavItem[] = [
   { label: 'Dashboard', path: '/admin/dashboard', icon: LayoutDashboard },
   { label: 'Students & Parents', path: '/admin/students', icon: GraduationCap },
+  { label: 'SQL Account', path: '/admin/sql-account', icon: Database },
   { label: 'Staff Management', path: '/admin/teachers', icon: UserCircle },
   { label: 'Calendar & Courses', path: '/admin/calendar', icon: CalendarDays },
   { label: 'Homework', path: '/admin/homework', icon: BookOpenCheck },
@@ -54,7 +57,7 @@ const teacherNav: NavItem[] = [
 const learnerNav: NavItem[] = [
   { label: 'Dashboard', path: '/student/dashboard', icon: LayoutDashboard },
   { label: 'Schedule', path: '/student/schedule', icon: CalendarDays },
-  { label: 'My Courses', path: '/student/courses', icon: GraduationCap },
+  { label: 'My Courses', path: '/student/courses', icon: GraduationCap, parentLabel: 'My Children' },
   { label: 'Homework', path: '/student/homework', icon: BookOpenCheck },
   { label: 'Leave', path: '/student/leave', icon: CalendarOff },
   { label: 'Notifications', path: '/student/notifications', icon: Bell },
@@ -75,7 +78,13 @@ interface SidebarProps {
 export default function Sidebar({ role, open, onClose }: SidebarProps) {
   const { logout } = useAuth();
   const { centreName } = useCentreBranding();
-  const items = isStudentPortalRole(role) ? learnerNav : navByRole[role as Exclude<UserRole, 'Parent'>];
+  const items = isStudentPortalRole(role)
+    ? learnerNav.map((item) => ({
+        ...item,
+        label: role === 'Parent' && item.parentLabel ? item.parentLabel : item.label,
+        path: learnerPortalPath(item.path, role),
+      }))
+    : navByRole[role as Exclude<UserRole, 'Parent'>];
 
   const handleLogout = () => {
     onClose();

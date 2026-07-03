@@ -6,6 +6,29 @@ export const authApi = {
     const { data } = await apiClient.post<LoginResponse>('/auth/login', { email, password });
     return data;
   },
+  getLoginMethod: async (email: string): Promise<{ method: 'password' | 'udf_email' | 'otp'; bypassOtp: boolean }> => {
+    const { data } = await apiClient.post<{ method: 'password' | 'udf_email' | 'otp'; bypassOtp: boolean }>(
+      '/auth/login/method',
+      { email }
+    );
+    return data;
+  },
+  loginWithUdfEmail: async (email: string): Promise<LoginResponse> => {
+    const { data } = await apiClient.post<LoginResponse>('/auth/login/udf-email', { email });
+    return data;
+  },
+  requestLoginOtp: async (email: string) => {
+    const { data } = await apiClient.post<{
+      message: string;
+      bypassOtp: boolean;
+      otpCode?: string;
+    }>('/auth/login/otp/request', { email });
+    return data;
+  },
+  verifyLoginOtp: async (email: string, otp: string): Promise<LoginResponse> => {
+    const { data } = await apiClient.post<LoginResponse>('/auth/login/otp/verify', { email, otp });
+    return data;
+  },
   register: async (payload: Record<string, string>): Promise<LoginResponse> => {
     const { data } = await apiClient.post<LoginResponse>('/auth/register', payload);
     return data;

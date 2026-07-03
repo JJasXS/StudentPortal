@@ -22,24 +22,95 @@ public class AuthController : ControllerBase
         {
             var result = await _authService.LoginAsync(request);
             if (result == null) return Unauthorized(new { message = "Invalid email or password." });
-            return Ok(new
-            {
-                token = result.Token,
-                user = new
-                {
-                    id = result.User.Id.ToString(),
-                    fullName = result.User.FullName,
-                    email = result.User.Email,
-                    phoneNumber = result.User.PhoneNumber,
-                    role = result.User.Role
-                }
-            });
+            return Ok(MapLogin(result));
         }
         catch (InvalidOperationException ex)
         {
             return StatusCode(403, new { message = ex.Message });
         }
     }
+
+    [HttpPost("login/method")]
+    [AllowAnonymous]
+    public async Task<IActionResult> GetLoginMethod([FromBody] LoginMethodRequest request)
+    {
+        try
+        {
+            var method = await _authService.GetLoginMethodAsync(request.Email);
+            return Ok(new { method = method.Method, bypassOtp = method.BypassOtp });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+    }
+
+    [HttpPost("login/udf-email")]
+    [AllowAnonymous]
+    public async Task<IActionResult> LoginWithUdfEmail([FromBody] UdfEmailLoginRequest request)
+    {
+        try
+        {
+            var result = await _authService.LoginWithUdfEmailAsync(request.Email);
+            if (result == null)
+                return Unauthorized(new { message = "Email not found in SQL Account (SY_USER or AR_CUSTOMER udf_email)." });
+            return Ok(MapLogin(result));
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+    }
+
+    [HttpPost("login/otp/request")]
+    [AllowAnonymous]
+    public async Task<IActionResult> RequestLoginOtp([FromBody] RequestLoginOtpRequest request)
+    {
+        try
+        {
+            var result = await _authService.RequestLoginOtpAsync(request.Email);
+            return Ok(new
+            {
+                message = result.Message,
+                bypassOtp = result.BypassOtp,
+                otpCode = result.OtpCode
+            });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+    }
+
+    [HttpPost("login/otp/verify")]
+    [AllowAnonymous]
+    public async Task<IActionResult> VerifyLoginOtp([FromBody] VerifyLoginOtpRequest request)
+    {
+        try
+        {
+            var result = await _authService.VerifyLoginOtpAsync(request.Email, request.Otp);
+            if (result == null)
+                return Unauthorized(new { message = "Invalid or expired OTP." });
+            return Ok(MapLogin(result));
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+    }
+
+    private static object MapLogin(LoginResponse result) => new
+    {
+        token = result.Token,
+        user = new
+        {
+            id = result.User.Id.ToString(),
+            fullName = result.User.FullName,
+            email = result.User.Email,
+            phoneNumber = result.User.PhoneNumber,
+            role = result.User.Role
+        }
+    };
 
     [HttpPost("register")]
     [AllowAnonymous]
@@ -306,6 +377,64 @@ public class ParentsController : ControllerBase
 
     [HttpGet]
     public async Task<IActionResult> GetAll() => Ok(MapList(await _service.GetAllAsync()));
+
+    [HttpGet("me/sql-account-children")]
+    [Authorize(Roles = "Parent")]
+    public async Task<IActionResult> GetMySqlAccountChildren(CancellationToken cancellationToken)
+    {
+        var email = User.FindFirst(System.Security.Claims.ClaimTypes.Email)?.Value;
+        if (string.IsNullOrWhiteSpace(email))
+            return Unauthorized(new { message = "Email not found in token." });
+
+        var result = await _service.GetSqlAccountChildrenForEmailAsync(email, cancellationToken);
+        return Ok(new
+        {
+            parentName = result.ParentName,
+            children = result.Children.Select(c => new
+            {
+                branchName = c.BranchName,
+                attention = c.Attention,
+                email = c.Email,
+                phone = c.Phone,
+            }),
+        });
+    }
+
+    [HttpGet("me/sql-account-children/{branchName}/enrollments")]
+    [Authorize(Roles = "Parent")]
+    public async Task<IActionResult> GetMySqlAccountChildEnrollments(
+        string branchName,
+        CancellationToken cancellationToken)
+    {
+        var email = User.FindFirst(System.Security.Claims.ClaimTypes.Email)?.Value;
+        if (string.IsNullOrWhiteSpace(email))
+            return Unauthorized(new { message = "Email not found in token." });
+
+        var result = await _service.GetSqlAccountChildEnrollmentsForEmailAsync(
+            email,
+            branchName,
+            cancellationToken);
+
+        if (result == null)
+            return NotFound(new { message = "Child branch not found for this parent." });
+
+        return Ok(new
+        {
+            customerCode = result.CustomerCode,
+            branchName = result.BranchName,
+            enrollments = result.Enrollments.Select(e => new
+            {
+                docNo = e.DocNo,
+                docDate = e.DocDate,
+                className = e.ClassName,
+                itemCode = e.ItemCode,
+                qty = e.Qty,
+                unitPrice = e.UnitPrice,
+                amount = e.Amount,
+                deliveryDate = e.DeliveryDate,
+            }),
+        });
+    }
 
     [HttpGet("{id:guid}")]
     public async Task<IActionResult> GetById(Guid id)

@@ -24,7 +24,7 @@ export default function ProtectedRoute({ allowedRoles }: ProtectedRouteProps) {
     if (isStudentPortalRole(user.role) && allowedRoles.includes('Student')) {
       return <Outlet />;
     }
-    if (user.role === 'Admin' || user.role === 'Teacher' || user.role === 'Student') {
+    if (user.role === 'Admin' || user.role === 'Teacher' || user.role === 'Student' || user.role === 'Parent') {
       return <Navigate to={dashboardPathForRole(user.role)} replace />;
     }
     return <Navigate to="/login" replace />;

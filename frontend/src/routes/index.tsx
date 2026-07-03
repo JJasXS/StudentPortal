@@ -19,6 +19,7 @@ import AdminAuditLogPage from '@/pages/admin/AdminAuditLogPage';
 import AdminCalendarPage from '@/pages/admin/AdminCalendarPage';
 import AdminHomeworkPage from '@/pages/admin/AdminHomeworkPage';
 import AdminLeavePage from '@/pages/admin/AdminLeavePage';
+import SqlAccountCustomersPage from '@/pages/admin/SqlAccountCustomersPage';
 import SettingsPage from '@/pages/admin/SettingsPage';
 import TeacherDashboard from '@/pages/teacher/TeacherDashboard';
 import TeacherClassesPage from '@/pages/teacher/TeacherClassesPage';
@@ -38,8 +39,8 @@ import LearnerCoursesPage from '@/pages/shared/LearnerCoursesPage';
 import LearnerLessonNotesPage from '@/pages/shared/LearnerLessonNotesPage';
 import LearnerNotificationsPage from '@/pages/shared/LearnerNotificationsPage';
 import AnnouncementDetailPage from '@/pages/shared/AnnouncementDetailPage';
-import { dashboardPathForRole, studentDashboardPath } from '@/utils/learnerPortal';
-import type { UserRole } from '@/types';
+import { ParentStudentPathRedirect } from '@/components/ParentStudentPathRedirect';
+import { dashboardPathForRole } from '@/utils/learnerPortal';
 
 function LegacyTeacherAttendanceRedirect() {
   const { classId } = useParams<{ classId: string }>();
@@ -50,13 +51,7 @@ function LegacyTeacherAttendanceRedirect() {
 function RoleRedirect() {
   const { user } = useAuth();
   if (!user) return <Navigate to="/login" replace />;
-  const map: Record<UserRole, string> = {
-    Admin: dashboardPathForRole('Admin'),
-    Teacher: dashboardPathForRole('Teacher'),
-    Student: studentDashboardPath(),
-    Parent: '/login',
-  };
-  return <Navigate to={map[user.role]} replace />;
+  return <Navigate to={dashboardPathForRole(user.role)} replace />;
 }
 
 export default function AppRoutes() {
@@ -75,6 +70,7 @@ export default function AppRoutes() {
           <Route element={<ProtectedRoute allowedRoles={['Admin']} />}>
             <Route path="/admin/dashboard" element={<AdminDashboard />} />
             <Route path="/admin/students" element={<StudentsManagement />} />
+            <Route path="/admin/sql-account" element={<SqlAccountCustomersPage />} />
             <Route path="/admin/parents" element={<Navigate to="/admin/students" replace />} />
             <Route path="/admin/teachers" element={<TeachersManagement />} />
             <Route path="/admin/courses" element={<Navigate to="/admin/calendar" replace />} />
@@ -126,33 +122,47 @@ export default function AppRoutes() {
           </Route>
 
           <Route element={<ProtectedRoute allowedRoles={['Student']} />}>
-            <Route path="/student/dashboard" element={<StudentDashboard />} />
-            <Route path="/student/schedule" element={<LearnerSchedulePage />} />
-            <Route path="/student/courses/:courseId/:classId" element={<LearnerCoursesPage />} />
-            <Route path="/student/courses/:courseId" element={<LearnerCoursesPage />} />
-            <Route path="/student/courses" element={<LearnerCoursesPage />} />
-            <Route path="/student/lesson-notes" element={<LearnerLessonNotesPage />} />
-            <Route path="/student/homework" element={<StudentHomeworkPage />} />
-            <Route path="/student/homework/:classId" element={<StudentHomeworkClassPage />} />
-            <Route path="/student/leave" element={<StudentLeavePage />} />
-            <Route path="/student/notifications" element={<LearnerNotificationsPage />} />
+            <Route element={<ParentStudentPathRedirect />}>
+              <Route path="/student/dashboard" element={<StudentDashboard />} />
+              <Route path="/student/schedule" element={<LearnerSchedulePage />} />
+              <Route path="/student/courses/:courseId/:classId" element={<LearnerCoursesPage />} />
+              <Route path="/student/courses/:courseId" element={<LearnerCoursesPage />} />
+              <Route path="/student/courses" element={<LearnerCoursesPage />} />
+              <Route path="/student/lesson-notes" element={<LearnerLessonNotesPage />} />
+              <Route path="/student/homework" element={<StudentHomeworkPage />} />
+              <Route path="/student/homework/:classId" element={<StudentHomeworkClassPage />} />
+              <Route path="/student/leave" element={<StudentLeavePage />} />
+              <Route path="/student/notifications" element={<LearnerNotificationsPage />} />
+              <Route
+                path="/student/announcements/:announcementId"
+                element={<AnnouncementDetailPage mode="viewer" audience="Student" />}
+              />
+              <Route path="/student/classes" element={<Navigate to="/student/courses" replace />} />
+              <Route path="/student/attendance" element={<Navigate to="/student/schedule" replace />} />
+              <Route path="/student/announcements" element={<Navigate to="/student/notifications" replace />} />
+            </Route>
+          </Route>
+
+          <Route element={<ProtectedRoute allowedRoles={['Parent']} />}>
+            <Route path="/parent/dashboard" element={<StudentDashboard />} />
+            <Route path="/parent/schedule" element={<LearnerSchedulePage />} />
+            <Route path="/parent/children/:courseId/:classId" element={<LearnerCoursesPage />} />
+            <Route path="/parent/children/:courseId" element={<LearnerCoursesPage />} />
+            <Route path="/parent/children" element={<LearnerCoursesPage />} />
+            <Route path="/parent/lesson-notes" element={<LearnerLessonNotesPage />} />
+            <Route path="/parent/homework" element={<StudentHomeworkPage />} />
+            <Route path="/parent/homework/:classId" element={<StudentHomeworkClassPage />} />
+            <Route path="/parent/leave" element={<StudentLeavePage />} />
+            <Route path="/parent/notifications" element={<LearnerNotificationsPage />} />
             <Route
-              path="/student/announcements/:announcementId"
+              path="/parent/announcements/:announcementId"
               element={<AnnouncementDetailPage mode="viewer" audience="Student" />}
             />
-            <Route path="/student/classes" element={<Navigate to="/student/courses" replace />} />
-            <Route path="/student/attendance" element={<Navigate to="/student/schedule" replace />} />
-            <Route path="/student/announcements" element={<Navigate to="/student/notifications" replace />} />
-            {/* Legacy parent URLs → student portal */}
-            <Route path="/parent/dashboard" element={<Navigate to="/student/dashboard" replace />} />
-            <Route path="/parent/children" element={<Navigate to="/student/dashboard" replace />} />
-            <Route path="/parent/progress" element={<Navigate to="/student/dashboard" replace />} />
-            <Route path="/parent/notifications" element={<Navigate to="/student/notifications" replace />} />
-            <Route path="/parent/classes" element={<Navigate to="/student/schedule" replace />} />
-            <Route path="/parent/attendance" element={<Navigate to="/student/schedule" replace />} />
-            <Route path="/parent/lesson-notes" element={<Navigate to="/student/lesson-notes" replace />} />
-            <Route path="/parent/announcements" element={<Navigate to="/student/notifications" replace />} />
-            <Route path="/parent/invoices" element={<Navigate to="/student/dashboard" replace />} />
+            <Route path="/parent/classes" element={<Navigate to="/parent/schedule" replace />} />
+            <Route path="/parent/attendance" element={<Navigate to="/parent/schedule" replace />} />
+            <Route path="/parent/announcements" element={<Navigate to="/parent/notifications" replace />} />
+            <Route path="/parent/progress" element={<Navigate to="/parent/dashboard" replace />} />
+            <Route path="/parent/invoices" element={<Navigate to="/parent/dashboard" replace />} />
           </Route>
         </Route>
       </Route>

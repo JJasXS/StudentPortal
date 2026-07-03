@@ -109,10 +109,13 @@ export interface StudentCoursesUrlOptions {
   noteId?: string;
 }
 
-/** Build `/student/courses` path with optional course, class, month, and note params. */
-export function studentCoursesUrl(options: StudentCoursesUrlOptions = {}): string {
+/** Build learner courses path with optional course, class, month, and note params. */
+export function studentCoursesUrl(
+  options: StudentCoursesUrlOptions = {},
+  basePath = '/student/courses'
+): string {
   const { courseId, classId, month, noteId } = options;
-  let path = '/student/courses';
+  let path = basePath;
   if (courseId) {
     path += `/${encodeURIComponent(courseId)}`;
     if (classId) path += `/${encodeURIComponent(classId)}`;

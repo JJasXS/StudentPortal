@@ -5,7 +5,7 @@ $root = Split-Path -Parent $MyInvocation.MyCommand.Path
 
 if (-not (Test-Path "$root\.env") -and (Test-Path "$root\.env.example")) {
     Copy-Item "$root\.env.example" "$root\.env"
-    Write-Host "Created .env from .env.example — edit Billplz keys before paying online." -ForegroundColor Yellow
+    Write-Host "Created .env from .env.example - edit Billplz keys before paying online." -ForegroundColor Yellow
 }
 
 Set-Location "$root\frontend"
