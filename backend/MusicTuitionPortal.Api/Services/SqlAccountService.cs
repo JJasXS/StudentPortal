@@ -121,7 +121,7 @@ public class SqlAccountService
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "SQL Account udf_email lookup failed for {Email}", normalized);
+            _logger.LogWarning(ex, "SQL Account parent branch email lookup failed for {Email}", normalized);
         }
 
         return await _localDb.FindCustomerByUdfEmailAsync(normalized, cancellationToken);
@@ -405,8 +405,12 @@ public class SqlAccountService
     {
         var code = GetString(customer, "code") ?? string.Empty;
         var parentName = GetString(customer, "companyname") ?? string.Empty;
-        var parentEmail = GetString(customer, "udf_email") ?? GetString(customer, "udf_emaill");
         var children = ParseBranches(customer);
+        var parentEmail = children
+            .Select(c => c.Email)
+            .FirstOrDefault(e => !string.IsNullOrWhiteSpace(e))
+            ?? GetString(customer, "udf_email")
+            ?? GetString(customer, "udf_emaill");
 
         return new SqlAccountParentDto(code, parentName, parentEmail, children);
     }

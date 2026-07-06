@@ -38,7 +38,12 @@ if (args.Contains("--create-assign-log")
     || args.Contains("--migrate-assign-log-from-sqlite")
     || args.Contains("--create-portal-tables")
     || args.Contains("--migrate-classenddate")
-    || args.Contains("--migrate-portal-schedule"))
+    || args.Contains("--migrate-portal-schedule")
+    || args.Contains("--restore-so-udf-dates")
+    || args.Contains("--migrate-udf-classdate-to-bcd")
+    || args.Contains("--sync-parent-email-to-branches")
+    || args.Contains("--probe-domain")
+    || args.Contains("--probe-sodtl-values"))
 {
     await using var assignConnection = new FbConnection(builder.ToString());
     await assignConnection.OpenAsync();
@@ -54,9 +59,38 @@ if (args.Contains("--create-assign-log")
         return await MigratePortalScheduleAsync(assignConnection);
     }
 
+    if (args.Contains("--restore-so-udf-dates") || args.Contains("--migrate-udf-classdate-to-bcd"))
+    {
+        return await MigrateUdfClassDatesToBcdAsync(assignConnection);
+    }
+
+    if (args.Contains("--sync-parent-email-to-branches"))
+    {
+        return await SyncParentEmailToBranchesAsync(assignConnection);
+    }
+
     if (args.Contains("--migrate-classenddate"))
     {
         await MigrateClassEndDateColumnAsync(assignConnection);
+        return 0;
+    }
+
+    if (args.Contains("--probe-sodtl-values"))
+    {
+        await ProbeSodtlUdfValuesAsync(assignConnection);
+        return 0;
+    }
+
+    if (args.Contains("--probe-domain"))
+    {
+        if (args.Contains("--list-classdate-domains"))
+        {
+            await ListClassDateDomainsAsync(assignConnection);
+            return 0;
+        }
+
+        var domain = GetArgValue(args, "--domain") ?? "RDB$4828";
+        await ProbeDomainAsync(assignConnection, domain);
         return 0;
     }
 
@@ -221,30 +255,210 @@ static async Task<int> RunUdfUpdateAsync(
     return 0;
 }
 
-static async Task MigrateClassDateColumnAsync(FbConnection connection)
+static async Task MigrateClassDateColumnAsync(FbConnection connection) =>
+    await MigrateUdfClassDatesToBcdAsync(connection);
+
+static long ToClassDateBcd(DateTime value) =>
+    value.Year * 100000000L + value.Month * 1000000L + value.Day * 10000L + value.Hour * 100L + value.Minute;
+
+static long ToClassEndDateBcd(DateTime value) =>
+    value.Year * 10000L + value.Month * 100L + value.Day;
+
+static async Task ProbeSodtlUdfValuesAsync(FbConnection connection)
 {
-    var type = await GetUdfFieldTypeAsync(connection, "UDF_CLASSDATE");
-    if (type == 35)
+    const string tablesSql = """
+        SELECT TRIM(RDB$RELATION_NAME) FROM RDB$RELATIONS
+        WHERE RDB$SYSTEM_FLAG = 0 AND (TRIM(RDB$RELATION_NAME) CONTAINING 'UDF' OR TRIM(RDB$RELATION_NAME) LIKE 'SY%')
+        ORDER BY 1
+        """;
+    await using (var tablesCmd = new FbCommand(tablesSql, connection))
+    await using (var tr = await tablesCmd.ExecuteReaderAsync())
     {
-        Console.WriteLine("UDF_CLASSDATE is already TIMESTAMP — skipping migration.");
-        return;
+        Console.WriteLine("=== Tables SY%/UDF ===");
+        while (await tr.ReadAsync())
+            Console.WriteLine(tr.GetString(0));
     }
 
-    if (type >= 0)
+    const string sql = """
+        SELECT FIRST 5 B.DOCKEY, B.SEQ, B.UNITPRICE, B.UDF_CLASSTIME, B.UDF_CLASSDATE, B.UDF_CLASSENDDATE
+        FROM SL_SODTL B
+        WHERE B.UDF_CLASSDATE IS NOT NULL
+        ORDER BY B.DOCKEY DESC
+        """;
+    await using var cmd = new FbCommand(sql, connection);
+    await using var reader = await cmd.ExecuteReaderAsync();
+    while (await reader.ReadAsync())
     {
-        Console.WriteLine($"Dropping UDF_CLASSDATE (was type {type}, {DescribeFieldType(type)})...");
+        for (var i = 0; i < reader.FieldCount; i++)
+        {
+            var v = reader.GetValue(i);
+            Console.WriteLine($"{reader.GetName(i)}={v} ({v?.GetType().Name})");
+        }
+        Console.WriteLine("---");
+    }
+}
+
+static async Task ListClassDateDomainsAsync(FbConnection connection)
+{
+    const string sql = """
+        SELECT TRIM(RF.RDB$RELATION_NAME), TRIM(RF.RDB$FIELD_NAME), TRIM(RF.RDB$FIELD_SOURCE),
+               F.RDB$FIELD_PRECISION, F.RDB$FIELD_SCALE, F.RDB$FIELD_SUB_TYPE
+        FROM RDB$RELATION_FIELDS RF
+        JOIN RDB$FIELDS F ON RF.RDB$FIELD_SOURCE = F.RDB$FIELD_NAME
+        WHERE TRIM(RF.RDB$FIELD_NAME) CONTAINING 'CLASSDATE'
+           OR TRIM(RF.RDB$FIELD_NAME) CONTAINING 'CLASSEND'
+        ORDER BY 1, 2
+        """;
+    await using var cmd = new FbCommand(sql, connection);
+    await using var reader = await cmd.ExecuteReaderAsync();
+    while (await reader.ReadAsync())
+    {
+        Console.WriteLine($"{reader.GetString(0)}.{reader.GetString(1)} domain={reader.GetString(2)} prec={reader[3]} scale={reader[4]} sub={reader[5]}");
+    }
+}
+
+static async Task ProbeDomainAsync(FbConnection connection, string domain)
+{
+    const string sql = """
+        SELECT F.RDB$FIELD_NAME, F.RDB$FIELD_TYPE, F.RDB$FIELD_PRECISION, F.RDB$FIELD_SCALE, F.RDB$FIELD_SUB_TYPE
+        FROM RDB$FIELDS F
+        WHERE TRIM(F.RDB$FIELD_NAME) = @domain
+        """;
+    await using var cmd = new FbCommand(sql, connection);
+    cmd.Parameters.AddWithValue("@domain", domain.Trim());
+    await using var reader = await cmd.ExecuteReaderAsync();
+    while (await reader.ReadAsync())
+    {
+        Console.WriteLine($"domain={reader.GetString(0).Trim()} type={reader.GetInt16(1)} prec={reader[2]} scale={reader[3]} sub={reader[4]}");
+    }
+
+    const string usedSql = """
+        SELECT TRIM(RF.RDB$RELATION_NAME), TRIM(RF.RDB$FIELD_NAME)
+        FROM RDB$RELATION_FIELDS RF
+        WHERE TRIM(RF.RDB$FIELD_SOURCE) = @domain
+        ORDER BY 1, 2
+        """;
+    await using var usedCmd = new FbCommand(usedSql, connection);
+    usedCmd.Parameters.AddWithValue("@domain", domain.Trim());
+    await using var usedReader = await usedCmd.ExecuteReaderAsync();
+    Console.WriteLine("Used by:");
+    while (await usedReader.ReadAsync())
+        Console.WriteLine($"  {usedReader.GetString(0)}.{usedReader.GetString(1)}");
+}
+
+static async Task<(short Precision, short Scale, short SubType)?> GetSodtlColumnMetaAsync(
+    FbConnection connection, string fieldName)
+{
+    const string sql = """
+        SELECT F.RDB$FIELD_PRECISION, F.RDB$FIELD_SCALE, F.RDB$FIELD_SUB_TYPE
+        FROM RDB$RELATION_FIELDS RF
+        JOIN RDB$FIELDS F ON RF.RDB$FIELD_SOURCE = F.RDB$FIELD_NAME
+        WHERE RF.RDB$RELATION_NAME = 'SL_SODTL' AND TRIM(RF.RDB$FIELD_NAME) = @name
+        """;
+    await using var cmd = new FbCommand(sql, connection);
+    cmd.Parameters.AddWithValue("@name", fieldName.Trim());
+    await using var reader = await cmd.ExecuteReaderAsync();
+    if (!await reader.ReadAsync())
+        return null;
+    return (
+        reader.IsDBNull(0) ? (short)0 : reader.GetInt16(0),
+        reader.IsDBNull(1) ? (short)0 : reader.GetInt16(1),
+        reader.IsDBNull(2) ? (short)0 : reader.GetInt16(2));
+}
+
+static async Task<string?> GetSodtlColumnDomainAsync(FbConnection connection, string fieldName)
+{
+    const string sql = """
+        SELECT TRIM(RF.RDB$FIELD_SOURCE)
+        FROM RDB$RELATION_FIELDS RF
+        WHERE RF.RDB$RELATION_NAME = 'SL_SODTL' AND TRIM(RF.RDB$FIELD_NAME) = @name
+        """;
+    await using var cmd = new FbCommand(sql, connection);
+    cmd.Parameters.AddWithValue("@name", fieldName.Trim());
+    return (await cmd.ExecuteScalarAsync())?.ToString()?.Trim();
+}
+
+static async Task<int> MigrateUdfClassDatesToBcdAsync(FbConnection connection)
+{
+    await EnsurePortalSoLineScheduleTableAsync(connection);
+
+    var meta = await GetSodtlColumnMetaAsync(connection, "UDF_CLASSDATE");
+    if (meta is { SubType: 2, Precision: 18, Scale: -4 })
+    {
+        Console.WriteLine("UDF_CLASSDATE already DECIMAL(18,4) FMTBcd — backfilling.");
+        return await BackfillSodtlUdfDatesFromPortalAsync(connection);
+    }
+
+    if (await SodtlColumnExistsAsync(connection, "UDF_CLASSDATE"))
+    {
+        Console.WriteLine($"Converting UDF_CLASSDATE (scale={meta?.Scale ?? 0}) to DECIMAL(18,4) FMTBcd...");
         await using var drop = new FbCommand("ALTER TABLE SL_SODTL DROP UDF_CLASSDATE", connection);
         await drop.ExecuteNonQueryAsync();
     }
-    else
+
+    if (await SodtlColumnExistsAsync(connection, "UDF_CLASSENDDATE"))
     {
-        Console.WriteLine("UDF_CLASSDATE not found — creating new column.");
+        await using var drop = new FbCommand("ALTER TABLE SL_SODTL DROP UDF_CLASSENDDATE", connection);
+        await drop.ExecuteNonQueryAsync();
     }
 
-    Console.WriteLine("Adding UDF_CLASSDATE as TIMESTAMP...");
-    await using var add = new FbCommand("ALTER TABLE SL_SODTL ADD UDF_CLASSDATE TIMESTAMP", connection);
-    await add.ExecuteNonQueryAsync();
-    Console.WriteLine("Migration complete.");
+    var unitPriceDomain = await GetSodtlColumnDomainAsync(connection, "UNITPRICE");
+    Console.WriteLine("Adding SL_SODTL.UDF_CLASSDATE DECIMAL(18,4) (FMTBcd, scale -4)...");
+    await using (var add = new FbCommand("ALTER TABLE SL_SODTL ADD UDF_CLASSDATE DECIMAL(18,4)", connection))
+        await add.ExecuteNonQueryAsync();
+    Console.WriteLine("Adding SL_SODTL.UDF_CLASSENDDATE DECIMAL(18,4)...");
+    await using (var add = new FbCommand("ALTER TABLE SL_SODTL ADD UDF_CLASSENDDATE DECIMAL(18,4)", connection))
+        await add.ExecuteNonQueryAsync();
+    if (!string.IsNullOrWhiteSpace(unitPriceDomain))
+        Console.WriteLine($"(UNITPRICE domain {unitPriceDomain} not used — datetime values overflow its scale.)");
+
+    return await BackfillSodtlUdfDatesFromPortalAsync(connection);
+}
+
+static async Task<int> BackfillSodtlUdfDatesFromPortalAsync(FbConnection connection)
+{
+    const string selectSql = """
+        SELECT DOCKEY, SEQ, CLASSSTARTDATETIME, CLASSENDDATE
+        FROM PORTAL_SO_LINE_SCHEDULE
+        """;
+
+    var rows = new List<(int DocKey, int Seq, DateTime ClassStart, DateTime? ClassEnd)>();
+    await using (var select = new FbCommand(selectSql, connection))
+    await using (var reader = await select.ExecuteReaderAsync())
+    {
+        while (await reader.ReadAsync())
+        {
+            rows.Add((
+                Convert.ToInt32(reader["DOCKEY"]),
+                Convert.ToInt32(reader["SEQ"]),
+                Convert.ToDateTime(reader["CLASSSTARTDATETIME"]),
+                reader["CLASSENDDATE"] is DBNull ? null : Convert.ToDateTime(reader["CLASSENDDATE"])));
+        }
+    }
+
+    const string updateSql = """
+        UPDATE SL_SODTL
+        SET UDF_CLASSDATE = @classStart, UDF_CLASSENDDATE = @classEnd
+        WHERE DOCKEY = @docKey AND SEQ = @seq
+        """;
+
+    var updated = 0;
+    foreach (var (docKey, seq, classStart, classEnd) in rows)
+    {
+        await using var update = new FbCommand(updateSql, connection);
+        update.Parameters.AddWithValue("@docKey", docKey);
+        update.Parameters.AddWithValue("@seq", seq);
+        update.Parameters.Add(new FbParameter("@classStart", FbDbType.Decimal) { Value = ToClassDateBcd(classStart) });
+        update.Parameters.Add(new FbParameter("@classEnd", FbDbType.Decimal)
+        {
+            Value = classEnd.HasValue ? ToClassEndDateBcd(classEnd.Value) : DBNull.Value
+        });
+        updated += await update.ExecuteNonQueryAsync();
+    }
+
+    Console.WriteLine($"Backfilled UDF_CLASSDATE/UDF_CLASSENDDATE (BCD) on {updated} SL_SODTL row(s).");
+    Console.WriteLine("Close and reopen SQL Account desktop, then open the sales order again.");
+    return 0;
 }
 
 static DateTime BuildClassDateTime(string dayOfWeek, decimal udfClassTime)
@@ -511,10 +725,12 @@ static async Task<int> ProbeUdfFieldsAsync()
     await connection.OpenAsync();
 
     const string sql = """
-        SELECT TRIM(RF.RDB$FIELD_NAME), F.RDB$FIELD_TYPE
+        SELECT TRIM(RF.RDB$FIELD_NAME), TRIM(RF.RDB$FIELD_SOURCE), F.RDB$FIELD_TYPE, F.RDB$FIELD_PRECISION, F.RDB$FIELD_SCALE, F.RDB$FIELD_SUB_TYPE
         FROM RDB$RELATION_FIELDS RF
         JOIN RDB$FIELDS F ON RF.RDB$FIELD_SOURCE = F.RDB$FIELD_NAME
-        WHERE RF.RDB$RELATION_NAME = 'SL_SODTL' AND RF.RDB$FIELD_NAME CONTAINING 'UDF'
+        WHERE RF.RDB$RELATION_NAME = 'SL_SODTL'
+          AND (TRIM(RF.RDB$FIELD_NAME) CONTAINING 'UDF'
+               OR TRIM(RF.RDB$FIELD_NAME) IN ('UNITPRICE', 'AMOUNT', 'QTY'))
         ORDER BY 1
         """;
 
@@ -523,8 +739,12 @@ static async Task<int> ProbeUdfFieldsAsync()
     while (await reader.ReadAsync())
     {
         var name = reader.GetString(0).Trim();
-        var type = reader.GetInt16(1);
-        Console.WriteLine($"{name} Firebird type={type} ({DescribeFieldType(type)})");
+        var domain = reader.GetString(1).Trim();
+        var type = reader.GetInt16(2);
+        var prec = reader.IsDBNull(3) ? "null" : reader.GetInt16(3).ToString();
+        var scale = reader.IsDBNull(4) ? "null" : reader.GetInt16(4).ToString();
+        var sub = reader.IsDBNull(5) ? "null" : reader.GetInt16(5).ToString();
+        Console.WriteLine($"{name} domain={domain} type={type} ({DescribeFieldType(type)}) prec={prec} scale={scale} sub={sub}");
     }
 
     return 0;
@@ -907,6 +1127,87 @@ static async Task MigrateClassEndDateColumnAsync(FbConnection connection)
     Console.WriteLine("Added UDF_CLASSENDDATE to SL_SODTL.");
 }
 
+static async Task<int> SyncParentEmailToBranchesAsync(FbConnection connection)
+{
+    var emailColumn = await ResolveCustomerEmailColumnAsync(connection);
+    if (emailColumn == null)
+    {
+        Console.WriteLine("AR_CUSTOMER has no UDF_EMAIL / UDF_EMAILL column — nothing to copy.");
+        return 1;
+    }
+
+    Console.WriteLine($"Using AR_CUSTOMER.{emailColumn} as parent login email source.");
+
+    var updateSql = $"""
+        UPDATE AR_CUSTOMERBRANCH B
+        SET EMAIL = (
+            SELECT TRIM(A.{emailColumn})
+            FROM AR_CUSTOMER A
+            WHERE A.CODE = B.CODE
+        )
+        WHERE EXISTS (
+            SELECT 1
+            FROM AR_CUSTOMER A
+            WHERE A.CODE = B.CODE
+              AND A.{emailColumn} IS NOT NULL
+              AND TRIM(A.{emailColumn}) <> ''
+        )
+          AND B.BRANCHTYPE <> 'B'
+          AND TRIM(B.BRANCHNAME) <> 'BILLING'
+        """;
+
+    await using var update = new FbCommand(updateSql, connection);
+    var updated = await update.ExecuteNonQueryAsync();
+    Console.WriteLine($"Copied AR_CUSTOMER.{emailColumn} to AR_CUSTOMERBRANCH.EMAIL on {updated} child branch row(s).");
+
+    var verifySql = $"""
+        SELECT A.CODE, A.COMPANYNAME, TRIM(A.{emailColumn}) AS PARENT_EMAIL, B.BRANCHNAME, TRIM(B.EMAIL) AS BRANCH_EMAIL
+        FROM AR_CUSTOMER A
+        INNER JOIN AR_CUSTOMERBRANCH B ON A.CODE = B.CODE
+        WHERE A.{emailColumn} IS NOT NULL
+          AND TRIM(A.{emailColumn}) <> ''
+          AND B.BRANCHTYPE <> 'B'
+          AND TRIM(B.BRANCHNAME) <> 'BILLING'
+        ORDER BY A.CODE, B.BRANCHNAME
+        """;
+
+    await using var verify = new FbCommand(verifySql, connection);
+    await using var reader = await verify.ExecuteReaderAsync();
+    while (await reader.ReadAsync())
+    {
+        var code = reader["CODE"]?.ToString()?.Trim();
+        var udf = reader["PARENT_EMAIL"]?.ToString()?.Trim();
+        var branch = reader["BRANCHNAME"]?.ToString()?.Trim();
+        var email = reader["BRANCH_EMAIL"]?.ToString()?.Trim();
+        var match = string.Equals(udf, email, StringComparison.OrdinalIgnoreCase) ? "OK" : "MISMATCH";
+        Console.WriteLine($"{match} {code} / {branch}: PARENT={udf} BRANCH={email}");
+    }
+
+    return 0;
+}
+
+static async Task<string?> ResolveCustomerEmailColumnAsync(FbConnection connection)
+{
+    if (await CustomerColumnExistsAsync(connection, "UDF_EMAIL"))
+        return "UDF_EMAIL";
+    if (await CustomerColumnExistsAsync(connection, "UDF_EMAILL"))
+        return "UDF_EMAILL";
+    return null;
+}
+
+static async Task<bool> CustomerColumnExistsAsync(FbConnection connection, string columnName)
+{
+    const string sql = """
+        SELECT 1
+        FROM RDB$RELATION_FIELDS
+        WHERE RDB$RELATION_NAME = 'AR_CUSTOMER'
+          AND TRIM(RDB$FIELD_NAME) = @name
+        """;
+    await using var cmd = new FbCommand(sql, connection);
+    cmd.Parameters.AddWithValue("@name", columnName.Trim());
+    return await cmd.ExecuteScalarAsync() != null;
+}
+
 static async Task<int> MigratePortalScheduleAsync(FbConnection connection)
 {
     await EnsurePortalSoLineScheduleTableAsync(connection);
@@ -926,28 +1227,13 @@ static async Task<int> MigratePortalScheduleAsync(FbConnection connection)
         await using var copy = new FbCommand(copySql, connection);
         var copied = await copy.ExecuteNonQueryAsync();
         Console.WriteLine($"Copied {copied} row(s) from SL_SODTL UDF date fields to PORTAL_SO_LINE_SCHEDULE.");
-
-        Console.WriteLine("Dropping SL_SODTL.UDF_CLASSDATE...");
-        await using var dropStart = new FbCommand("ALTER TABLE SL_SODTL DROP UDF_CLASSDATE", connection);
-        await dropStart.ExecuteNonQueryAsync();
     }
     else
     {
-        Console.WriteLine("SL_SODTL.UDF_CLASSDATE not found — skip copy/drop.");
+        Console.WriteLine("SL_SODTL.UDF_CLASSDATE not found — portal copy skipped.");
     }
 
-    if (await SodtlColumnExistsAsync(connection, "UDF_CLASSENDDATE"))
-    {
-        Console.WriteLine("Dropping SL_SODTL.UDF_CLASSENDDATE...");
-        await using var dropEnd = new FbCommand("ALTER TABLE SL_SODTL DROP UDF_CLASSENDDATE", connection);
-        await dropEnd.ExecuteNonQueryAsync();
-    }
-    else
-    {
-        Console.WriteLine("SL_SODTL.UDF_CLASSENDDATE not found — skip drop.");
-    }
-
-    Console.WriteLine("Portal schedule migration complete.");
+    Console.WriteLine("Portal schedule migration complete (SL_SODTL date UDFs kept for SQL Account desktop).");
     return 0;
 }
 
@@ -1018,6 +1304,7 @@ static async Task UpsertPortalScheduleAsync(
         });
         updateCmd.Parameters.AddWithValue("@updatedAt", now);
         await updateCmd.ExecuteNonQueryAsync();
+        await SyncSodtlUdfClassDatesAsync(connection, docKey, seq, classStart, classEnd);
         return;
     }
 
@@ -1036,6 +1323,33 @@ static async Task UpsertPortalScheduleAsync(
     insertCmd.Parameters.AddWithValue("@createdAt", now);
     insertCmd.Parameters.AddWithValue("@updatedAt", now);
     await insertCmd.ExecuteNonQueryAsync();
+    await SyncSodtlUdfClassDatesAsync(connection, docKey, seq, classStart, classEnd);
+}
+
+static async Task SyncSodtlUdfClassDatesAsync(
+    FbConnection connection,
+    int docKey,
+    int seq,
+    DateTime classStart,
+    DateTime? classEnd)
+{
+    if (!await SodtlColumnExistsAsync(connection, "UDF_CLASSDATE"))
+        return;
+
+    const string sql = """
+        UPDATE SL_SODTL
+        SET UDF_CLASSDATE = @classStart, UDF_CLASSENDDATE = @classEnd
+        WHERE DOCKEY = @docKey AND SEQ = @seq
+        """;
+    await using var cmd = new FbCommand(sql, connection);
+    cmd.Parameters.AddWithValue("@docKey", docKey);
+    cmd.Parameters.AddWithValue("@seq", seq);
+    cmd.Parameters.Add(new FbParameter("@classStart", FbDbType.Decimal) { Value = ToClassDateBcd(classStart) });
+    cmd.Parameters.Add(new FbParameter("@classEnd", FbDbType.Decimal)
+    {
+        Value = classEnd.HasValue ? ToClassEndDateBcd(classEnd.Value) : DBNull.Value
+    });
+    await cmd.ExecuteNonQueryAsync();
 }
 
 readonly record struct SyTeacher(string Name, string Email);

@@ -53,7 +53,7 @@ public class AuthController : ControllerBase
         {
             var result = await _authService.LoginWithUdfEmailAsync(request.Email);
             if (result == null)
-                return Unauthorized(new { message = "Email not found in SQL Account (SY_USER email or AR_CUSTOMER udf_email)." });
+                return Unauthorized(new { message = "Email not found in SQL Account (SY_USER email or AR_CUSTOMERBRANCH email)." });
             return Ok(MapLogin(result));
         }
         catch (InvalidOperationException ex)

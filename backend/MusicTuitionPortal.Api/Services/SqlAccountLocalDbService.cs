@@ -124,12 +124,23 @@ public class SqlAccountLocalDbService
             await using var connection = OpenConnection();
             await connection.OpenAsync(cancellationToken);
 
-            const string sql = """
+            var hasSchedule = await PortalFirebirdSchema.TableExistsAsync(
+                connection, "PORTAL_SO_LINE_SCHEDULE", cancellationToken);
+            var scheduleJoin = hasSchedule
+                ? "LEFT JOIN PORTAL_SO_LINE_SCHEDULE S ON S.DOCKEY = B.DOCKEY AND S.SEQ = B.SEQ"
+                : string.Empty;
+            var scheduleCols = hasSchedule
+                ? "S.CLASSSTARTDATETIME, S.CLASSENDDATE"
+                : "CAST(NULL AS TIMESTAMP) AS CLASSSTARTDATETIME, CAST(NULL AS TIMESTAMP) AS CLASSENDDATE";
+
+            var sql = $"""
                 SELECT A.DOCKEY, B.SEQ, A.DOCNO, A.DOCDATE,
                        B.ITEMCODE, B.DESCRIPTION, B.QTY, B.UNITPRICE, B.AMOUNT, B.DELIVERYDATE,
-                       B.UDF_CLASSDATE, B.UDF_CLASSDAY, B.UDF_CLASSTIME, B.UDF_STUDENTNAME, B.UDF_CONDUCTEDBY
+                       B.UDF_CLASSDAY, B.UDF_CLASSTIME, B.UDF_STUDENTNAME, B.UDF_CONDUCTEDBY,
+                       {scheduleCols}
                 FROM SL_SO A
                 INNER JOIN SL_SODTL B ON A.DOCKEY = B.DOCKEY
+                {scheduleJoin}
                 WHERE A.CODE = @code
                   AND A.BRANCHNAME = @branch
                   AND (A.CANCELLED IS NULL OR A.CANCELLED = FALSE)
@@ -148,6 +159,11 @@ public class SqlAccountLocalDbService
                 var itemCode = ReadString(reader, "ITEMCODE");
                 var className = !string.IsNullOrWhiteSpace(description) ? description : itemCode ?? "Class";
 
+                var deliveryDate = FormatDate(ReadValue(reader, "DELIVERYDATE"));
+                var classEnd = ReadClassDateTime(reader, "CLASSENDDATE");
+                if (classEnd.HasValue)
+                    deliveryDate = classEnd.Value.ToString("yyyy-MM-dd");
+
                 results.Add(new SqlAccountChildEnrollmentDto(
                     Convert.ToInt32(reader["DOCKEY"]),
                     Convert.ToInt32(reader["SEQ"]),
@@ -158,12 +174,13 @@ public class SqlAccountLocalDbService
                     ReadString(reader, "QTY"),
                     ReadString(reader, "UNITPRICE"),
                     ReadString(reader, "AMOUNT"),
-                    FormatDate(ReadValue(reader, "DELIVERYDATE")),
+                    deliveryDate,
                     ReadString(reader, "UDF_CLASSDAY"),
                     TimeHelper.FormatUdfClassTime(ReadValue(reader, "UDF_CLASSTIME")),
                     ReadString(reader, "UDF_STUDENTNAME"),
                     ReadString(reader, "UDF_CONDUCTEDBY"),
-                    ClassDate: SqlAccountUdfClassDateHelper.FormatStoredValue(ReadValue(reader, "UDF_CLASSDATE"))));
+                    ClassDate: SqlAccountUdfClassDateHelper.FormatStoredValue(
+                        ReadValue(reader, "CLASSSTARTDATETIME"))));
             }
 
             return results;
@@ -225,27 +242,33 @@ public class SqlAccountLocalDbService
         DateTime? classDateTime,
         CancellationToken cancellationToken = default)
     {
-        if (!CanWriteLocalDb || itemCodes.Count == 0)
+        if (!CanWriteLocalDb || itemCodes.Count == 0 || !classDateTime.HasValue)
             return 0;
 
         await using var connection = OpenConnection();
         await connection.OpenAsync(cancellationToken);
+        await PortalFirebirdSchema.EnsurePortalSoLineScheduleTableAsync(connection, cancellationToken);
 
         const string sql = """
-            UPDATE SL_SODTL SET UDF_CLASSDATE = @classDate
-            WHERE TRIM(ITEMCODE) = @itemCode
-              AND DOCKEY IN (
-                SELECT A.DOCKEY FROM SL_SO A
-                WHERE A.CANCELLED IS NULL OR A.CANCELLED = FALSE
-              )
+            UPDATE PORTAL_SO_LINE_SCHEDULE S
+            SET S.CLASSSTARTDATETIME = @classStart, S.UPDATEDAT = @updatedAt
+            WHERE EXISTS (
+                SELECT 1 FROM SL_SODTL B
+                INNER JOIN SL_SO A ON A.DOCKEY = B.DOCKEY
+                WHERE B.DOCKEY = S.DOCKEY AND B.SEQ = S.SEQ
+                  AND TRIM(B.ITEMCODE) = @itemCode
+                  AND (A.CANCELLED IS NULL OR A.CANCELLED = FALSE)
+            )
             """;
 
         var updated = 0;
+        var now = DateTime.UtcNow;
         foreach (var itemCode in itemCodes.Where(c => !string.IsNullOrWhiteSpace(c)).Distinct(StringComparer.OrdinalIgnoreCase))
         {
             await using var command = new FbCommand(sql, connection);
             command.Parameters.AddWithValue("@itemCode", itemCode.Trim());
-            AddClassDateParameter(command, classDateTime);
+            command.Parameters.Add(new FbParameter("@classStart", FbDbType.TimeStamp) { Value = classDateTime.Value });
+            command.Parameters.AddWithValue("@updatedAt", now);
             updated += await command.ExecuteNonQueryAsync(cancellationToken);
         }
 
@@ -260,28 +283,34 @@ public class SqlAccountLocalDbService
     {
         if (!CanWriteLocalDb
             || string.IsNullOrWhiteSpace(dayOfWeek)
-            || string.IsNullOrWhiteSpace(teacherName))
+            || string.IsNullOrWhiteSpace(teacherName)
+            || !classDateTime.HasValue)
         {
             return 0;
         }
 
         await using var connection = OpenConnection();
         await connection.OpenAsync(cancellationToken);
+        await PortalFirebirdSchema.EnsurePortalSoLineScheduleTableAsync(connection, cancellationToken);
 
         const string sql = """
-            UPDATE SL_SODTL B SET B.UDF_CLASSDATE = @classDate
-            WHERE B.DOCKEY IN (
-                SELECT A.DOCKEY FROM SL_SO A
-                WHERE A.CANCELLED IS NULL OR A.CANCELLED = FALSE
-              )
-              AND TRIM(B.UDF_CLASSDAY) = @day
-              AND TRIM(B.UDF_CONDUCTEDBY) = @teacher
+            UPDATE PORTAL_SO_LINE_SCHEDULE S
+            SET S.CLASSSTARTDATETIME = @classStart, S.UPDATEDAT = @updatedAt
+            WHERE EXISTS (
+                SELECT 1 FROM SL_SODTL B
+                INNER JOIN SL_SO A ON A.DOCKEY = B.DOCKEY
+                WHERE B.DOCKEY = S.DOCKEY AND B.SEQ = S.SEQ
+                  AND (A.CANCELLED IS NULL OR A.CANCELLED = FALSE)
+                  AND TRIM(B.UDF_CLASSDAY) = @day
+                  AND TRIM(B.UDF_CONDUCTEDBY) = @teacher
+            )
             """;
 
         await using var command = new FbCommand(sql, connection);
         command.Parameters.AddWithValue("@day", dayOfWeek.Trim());
         command.Parameters.AddWithValue("@teacher", teacherName.Trim());
-        AddClassDateParameter(command, classDateTime);
+        command.Parameters.Add(new FbParameter("@classStart", FbDbType.TimeStamp) { Value = classDateTime.Value });
+        command.Parameters.AddWithValue("@updatedAt", DateTime.UtcNow);
 
         return await command.ExecuteNonQueryAsync(cancellationToken);
     }
@@ -297,15 +326,21 @@ public class SqlAccountLocalDbService
             await using var connection = OpenConnection();
             await connection.OpenAsync(cancellationToken);
 
+            var hasSchedule = await PortalFirebirdSchema.TableExistsAsync(
+                connection, "PORTAL_SO_LINE_SCHEDULE", cancellationToken);
+            if (!hasSchedule)
+                return Array.Empty<SqlAccountErpCalendarLineDto>();
+
             const string sql = """
                 SELECT A.CODE, A.BRANCHNAME, B.DOCKEY, B.SEQ, B.ITEMCODE, B.DESCRIPTION,
-                       B.UDF_CLASSDATE, B.UDF_CLASSDAY, B.UDF_CLASSTIME,
+                       S.CLASSSTARTDATETIME, B.UDF_CLASSDAY, B.UDF_CLASSTIME,
                        B.UDF_STUDENTNAME, B.UDF_CONDUCTEDBY
                 FROM SL_SO A
                 INNER JOIN SL_SODTL B ON A.DOCKEY = B.DOCKEY
+                INNER JOIN PORTAL_SO_LINE_SCHEDULE S ON S.DOCKEY = B.DOCKEY AND S.SEQ = B.SEQ
                 WHERE (A.CANCELLED IS NULL OR A.CANCELLED = FALSE)
-                  AND B.UDF_CLASSDATE IS NOT NULL
-                ORDER BY B.UDF_CLASSDATE, A.CODE, A.BRANCHNAME, B.SEQ
+                  AND S.CLASSSTARTDATETIME IS NOT NULL
+                ORDER BY S.CLASSSTARTDATETIME, A.CODE, A.BRANCHNAME, B.SEQ
                 """;
 
             var results = new List<SqlAccountErpCalendarLineDto>();
@@ -320,7 +355,7 @@ public class SqlAccountLocalDbService
                     ReadString(reader, "BRANCHNAME") ?? string.Empty,
                     ReadString(reader, "ITEMCODE"),
                     ReadString(reader, "DESCRIPTION"),
-                    ReadClassDateTime(reader, "UDF_CLASSDATE"),
+                    ReadClassDateTime(reader, "CLASSSTARTDATETIME"),
                     ReadString(reader, "UDF_CLASSDAY"),
                     TimeHelper.FormatUdfClassTime(ReadValue(reader, "UDF_CLASSTIME")),
                     ReadString(reader, "UDF_STUDENTNAME"),
@@ -351,10 +386,11 @@ public class SqlAccountLocalDbService
 
             const string sql = """
                 SELECT A.CODE, A.BRANCHNAME, B.DOCKEY, B.SEQ, B.ITEMCODE, B.DESCRIPTION,
-                       B.UDF_CLASSDATE, B.UDF_CLASSDAY, B.UDF_CLASSTIME,
+                       S.CLASSSTARTDATETIME, B.UDF_CLASSDAY, B.UDF_CLASSTIME,
                        B.UDF_STUDENTNAME, B.UDF_CONDUCTEDBY
                 FROM SL_SO A
                 INNER JOIN SL_SODTL B ON A.DOCKEY = B.DOCKEY
+                LEFT JOIN PORTAL_SO_LINE_SCHEDULE S ON S.DOCKEY = B.DOCKEY AND S.SEQ = B.SEQ
                 WHERE (A.CANCELLED IS NULL OR A.CANCELLED = FALSE)
                   AND B.DOCKEY = @docKey
                   AND B.SEQ = @seq
@@ -374,7 +410,7 @@ public class SqlAccountLocalDbService
                 ReadString(reader, "BRANCHNAME") ?? string.Empty,
                 ReadString(reader, "ITEMCODE"),
                 ReadString(reader, "DESCRIPTION"),
-                ReadClassDateTime(reader, "UDF_CLASSDATE"),
+                ReadClassDateTime(reader, "CLASSSTARTDATETIME"),
                 ReadString(reader, "UDF_CLASSDAY"),
                 TimeHelper.FormatUdfClassTime(ReadValue(reader, "UDF_CLASSTIME")),
                 ReadString(reader, "UDF_STUDENTNAME"),
@@ -393,23 +429,52 @@ public class SqlAccountLocalDbService
         DateTime? classDateTime,
         CancellationToken cancellationToken = default)
     {
-        if (!CanWriteLocalDb)
+        if (!CanWriteLocalDb || !classDateTime.HasValue)
             return 0;
 
         await using var connection = OpenConnection();
         await connection.OpenAsync(cancellationToken);
+        await PortalFirebirdSchema.EnsurePortalSoLineScheduleTableAsync(connection, cancellationToken);
 
-        const string sql = """
-            UPDATE SL_SODTL SET UDF_CLASSDATE = @classDate
+        const string existsSql = """
+            SELECT 1 FROM PORTAL_SO_LINE_SCHEDULE
             WHERE DOCKEY = @docKey AND SEQ = @seq
             """;
+        await using var existsCmd = new FbCommand(existsSql, connection);
+        existsCmd.Parameters.AddWithValue("@docKey", docKey);
+        existsCmd.Parameters.AddWithValue("@seq", seq);
+        var exists = await existsCmd.ExecuteScalarAsync(cancellationToken);
+        var now = DateTime.UtcNow;
 
-        await using var command = new FbCommand(sql, connection);
-        command.Parameters.AddWithValue("@docKey", docKey);
-        command.Parameters.AddWithValue("@seq", seq);
-        AddClassDateParameter(command, classDateTime);
+        if (exists != null)
+        {
+            const string updateSql = """
+                UPDATE PORTAL_SO_LINE_SCHEDULE
+                SET CLASSSTARTDATETIME = @classStart, UPDATEDAT = @updatedAt
+                WHERE DOCKEY = @docKey AND SEQ = @seq
+                """;
+            await using var updateCmd = new FbCommand(updateSql, connection);
+            updateCmd.Parameters.AddWithValue("@docKey", docKey);
+            updateCmd.Parameters.AddWithValue("@seq", seq);
+            updateCmd.Parameters.Add(new FbParameter("@classStart", FbDbType.TimeStamp) { Value = classDateTime.Value });
+            updateCmd.Parameters.AddWithValue("@updatedAt", now);
+            return await updateCmd.ExecuteNonQueryAsync(cancellationToken);
+        }
 
-        return await command.ExecuteNonQueryAsync(cancellationToken);
+        const string insertSql = """
+            INSERT INTO PORTAL_SO_LINE_SCHEDULE (
+                DOCKEY, SEQ, CLASSSTARTDATETIME, CLASSENDDATE, CREATEDAT, UPDATEDAT
+            ) VALUES (
+                @docKey, @seq, @classStart, NULL, @createdAt, @updatedAt
+            )
+            """;
+        await using var insertCmd = new FbCommand(insertSql, connection);
+        insertCmd.Parameters.AddWithValue("@docKey", docKey);
+        insertCmd.Parameters.AddWithValue("@seq", seq);
+        insertCmd.Parameters.Add(new FbParameter("@classStart", FbDbType.TimeStamp) { Value = classDateTime.Value });
+        insertCmd.Parameters.AddWithValue("@createdAt", now);
+        insertCmd.Parameters.AddWithValue("@updatedAt", now);
+        return await insertCmd.ExecuteNonQueryAsync(cancellationToken);
     }
 
     public async Task EnsureClassAssignmentChangeLogsTableAsync(CancellationToken cancellationToken = default)
@@ -699,13 +764,6 @@ public class SqlAccountLocalDbService
         }
     }
 
-    private static void AddClassDateParameter(FbCommand command, DateTime? classDateTime)
-    {
-        command.Parameters.Add(classDateTime.HasValue
-            ? new FbParameter("@classDate", FbDbType.TimeStamp) { Value = classDateTime.Value }
-            : new FbParameter("@classDate", FbDbType.TimeStamp) { Value = DBNull.Value });
-    }
-
     private static string? ReadValue(FbDataReader reader, string column)
     {
         try
@@ -867,7 +925,17 @@ public class SqlAccountLocalDbService
         }
 
         return grouped.Values
-            .Select(pair => pair.Parent with { Children = pair.Children })
+            .Select(pair =>
+            {
+                var parentEmail = pair.Children
+                    .Select(c => c.Email)
+                    .FirstOrDefault(e => !string.IsNullOrWhiteSpace(e));
+                return pair.Parent with
+                {
+                    ParentEmail = string.IsNullOrWhiteSpace(parentEmail) ? null : parentEmail.Trim(),
+                    Children = pair.Children,
+                };
+            })
             .Where(p => p.Children.Count > 0)
             .OrderBy(p => p.ParentName, StringComparer.OrdinalIgnoreCase)
             .ToList();

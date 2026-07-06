@@ -179,18 +179,57 @@ public class SqlAccountController : ControllerBase
         try
         {
             var created = await _enrollmentWriter.AssignCourseAsync(request, cancellationToken);
+            var first = created.FirstOrDefault();
             return Ok(new
             {
-                docKey = created.DocKey,
-                seq = created.Seq,
-                docNo = created.DocNo,
-                className = created.ClassName,
-                itemCode = created.ItemCode,
-                classDay = created.ClassDay,
-                classTime = created.ClassTime,
-                classDate = created.ClassDate,
-                studentName = created.StudentName,
-                conductedBy = created.ConductedBy,
+                docKey = first?.DocKey ?? 0,
+                docNo = first?.DocNo ?? string.Empty,
+                lineCount = created.Count,
+                lines = created.Select(e => new
+                {
+                    docKey = e.DocKey,
+                    seq = e.Seq,
+                    docNo = e.DocNo,
+                    className = e.ClassName,
+                    itemCode = e.ItemCode,
+                    classDay = e.ClassDay,
+                    classTime = e.ClassTime,
+                    classDate = e.ClassDate,
+                    studentName = e.StudentName,
+                    conductedBy = e.ConductedBy,
+                }),
+            });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+    }
+
+    [HttpPatch("child-enrollments/{docKey:int}/{seq:int}/schedule")]
+    public async Task<IActionResult> UpdateEnrollmentSchedule(
+        int docKey,
+        int seq,
+        [FromBody] UpdateSqlAccountEnrollmentScheduleRequest request,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var updated = await _enrollmentWriter.UpdateEnrollmentScheduleAsync(
+                docKey, seq, request, cancellationToken);
+            return Ok(new
+            {
+                docKey = updated.DocKey,
+                seq = updated.Seq,
+                docNo = updated.DocNo,
+                className = updated.ClassName,
+                itemCode = updated.ItemCode,
+                classDay = updated.ClassDay,
+                classTime = updated.ClassTime,
+                classDate = updated.ClassDate,
+                studentName = updated.StudentName,
+                conductedBy = updated.ConductedBy,
+                deliveryDate = updated.DeliveryDate,
             });
         }
         catch (InvalidOperationException ex)

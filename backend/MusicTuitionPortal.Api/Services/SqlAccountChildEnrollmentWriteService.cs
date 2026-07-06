@@ -11,6 +11,7 @@ public class SqlAccountChildEnrollmentWriteService
 {
     private readonly SqlAccountLocalDbService _localDb;
     private readonly SqlAccountSalesOrderService _salesOrders;
+    private readonly PortalSoLineScheduleService _schedules;
     private readonly AppDbContext _context;
     private readonly PortalClassSessionService _portalSessions;
     private readonly ILogger<SqlAccountChildEnrollmentWriteService> _logger;
@@ -18,18 +19,99 @@ public class SqlAccountChildEnrollmentWriteService
     public SqlAccountChildEnrollmentWriteService(
         SqlAccountLocalDbService localDb,
         SqlAccountSalesOrderService salesOrders,
+        PortalSoLineScheduleService schedules,
         AppDbContext context,
         PortalClassSessionService portalSessions,
         ILogger<SqlAccountChildEnrollmentWriteService> logger)
     {
         _localDb = localDb;
         _salesOrders = salesOrders;
+        _schedules = schedules;
         _context = context;
         _portalSessions = portalSessions;
         _logger = logger;
     }
 
-    public async Task<SqlAccountChildEnrollmentDto> AssignCourseAsync(
+    public async Task<SqlAccountChildEnrollmentDto> UpdateEnrollmentScheduleAsync(
+        int docKey,
+        int seq,
+        UpdateSqlAccountEnrollmentScheduleRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        if (!_localDb.CanWriteLocalDb)
+            throw new InvalidOperationException("SQL Account database is not available for writes.");
+
+        var customerCode = request.CustomerCode.Trim();
+        var branchName = request.BranchName.Trim();
+
+        if (!DateTime.TryParse(request.StartDate, out var startDate))
+            throw new InvalidOperationException("Invalid start date.");
+        if (!DateTime.TryParse(request.EndDate, out var endDate))
+            throw new InvalidOperationException("Invalid end date.");
+        startDate = startDate.Date;
+        endDate = endDate.Date;
+        if (endDate < startDate)
+            throw new InvalidOperationException("End date must be on or after start date.");
+
+        await using var connection = _localDb.OpenConnection();
+        await connection.OpenAsync(cancellationToken);
+        await PortalFirebirdSchema.EnsureAllTablesAsync(connection, cancellationToken);
+
+        const string lineSql = """
+            SELECT B.UDF_CLASSTIME
+            FROM SL_SO A
+            INNER JOIN SL_SODTL B ON A.DOCKEY = B.DOCKEY
+            WHERE B.DOCKEY = @docKey
+              AND B.SEQ = @seq
+              AND A.CODE = @code
+              AND A.BRANCHNAME = @branch
+              AND (A.CANCELLED IS NULL OR A.CANCELLED = FALSE)
+            """;
+
+        object? udfClassTime;
+        await using (var lineCmd = new FbCommand(lineSql, connection))
+        {
+            lineCmd.Parameters.AddWithValue("@docKey", docKey);
+            lineCmd.Parameters.AddWithValue("@seq", seq);
+            lineCmd.Parameters.AddWithValue("@code", customerCode);
+            lineCmd.Parameters.AddWithValue("@branch", branchName);
+            udfClassTime = await lineCmd.ExecuteScalarAsync(cancellationToken);
+            if (udfClassTime is null or DBNull)
+                throw new InvalidOperationException("Sales order line not found for this child.");
+        }
+
+        var startTime = TimeHelper.ParseUdfClassTimeToTimeSpan(udfClassTime) ?? new TimeSpan(10, 0, 0);
+        var classDateTime = startDate.Add(startTime);
+
+        const string updateDtlSql = """
+            UPDATE SL_SODTL SET DELIVERYDATE = @endDate
+            WHERE DOCKEY = @docKey AND SEQ = @seq
+            """;
+        await using (var updateDtl = new FbCommand(updateDtlSql, connection))
+        {
+            updateDtl.Parameters.AddWithValue("@docKey", docKey);
+            updateDtl.Parameters.AddWithValue("@seq", seq);
+            updateDtl.Parameters.Add(new FbParameter("@endDate", FbDbType.TimeStamp) { Value = endDate });
+            await updateDtl.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        await _schedules.UpsertOnConnectionAsync(connection, docKey, seq, classDateTime, endDate, cancellationToken);
+
+        _logger.LogInformation(
+            "Updated portal schedule for SO line {DocKey}/{Seq} ({Customer}/{Branch}) {Start:yyyy-MM-dd}–{End:yyyy-MM-dd}",
+            docKey, seq, customerCode, branchName, classDateTime.Date, endDate);
+
+        await _portalSessions.SyncOccurrencesAsync(cancellationToken);
+
+        var enrollments = await _salesOrders.GetChildEnrollmentsAsync(customerCode, branchName, cancellationToken);
+        var updated = enrollments.FirstOrDefault(e => e.DocKey == docKey && e.Seq == seq);
+        if (updated == null)
+            throw new InvalidOperationException("Schedule saved but enrollment could not be reloaded.");
+
+        return updated;
+    }
+
+    public async Task<IReadOnlyList<SqlAccountChildEnrollmentDto>> AssignCourseAsync(
         CreateSqlAccountChildEnrollmentRequest request,
         CancellationToken cancellationToken = default)
     {
@@ -38,7 +120,12 @@ public class SqlAccountChildEnrollmentWriteService
 
         var customerCode = request.CustomerCode.Trim();
         var branchName = request.BranchName.Trim();
-        var itemCode = request.ItemCode.Trim();
+        var inputLines = request.Lines?
+            .Where(l => !string.IsNullOrWhiteSpace(l.ItemCode))
+            .ToList() ?? [];
+
+        if (inputLines.Count == 0)
+            throw new InvalidOperationException("Add at least one class line.");
 
         var parent = (await _localDb.GetParentChildrenAsync(cancellationToken))
             .FirstOrDefault(p => string.Equals(p.CustomerCode, customerCode, StringComparison.OrdinalIgnoreCase));
@@ -50,40 +137,81 @@ public class SqlAccountChildEnrollmentWriteService
         if (child == null)
             throw new InvalidOperationException($"Branch {branchName} not found for customer {customerCode}.");
 
-        var link = await _context.ItemCodeClassLinks
-            .Include(l => l.PortalClass)
-            .ThenInclude(c => c.TeacherUser)
-            .FirstOrDefaultAsync(l => l.ItemCode == itemCode, cancellationToken);
-        if (link?.PortalClass == null)
-            throw new InvalidOperationException($"Item code {itemCode} is not linked to a portal class.");
-
-        if (!DateTime.TryParse(request.StartDate, out var startDate))
-            throw new InvalidOperationException("Invalid start date.");
-        if (!DateTime.TryParse(request.EndDate, out var endDate))
-            throw new InvalidOperationException("Invalid end date.");
-        startDate = startDate.Date;
-        endDate = endDate.Date;
-        if (endDate < startDate)
-            throw new InvalidOperationException("End date must be on or after start date.");
-
-        var teacherUser = await _context.Users.FirstOrDefaultAsync(
-            u => u.Id == request.TeacherUserId && u.IsActive,
-            cancellationToken);
-        if (teacherUser == null || teacherUser.Role != Roles.Teacher)
-            throw new InvalidOperationException("Selected teacher is not valid.");
-
-        var portalClass = link.PortalClass;
         var studentName = !string.IsNullOrWhiteSpace(child.Attention)
             ? child.Attention!.Trim()
             : branchName;
-        var teacherName = await ResolveErpTeacherNameAsync(teacherUser, cancellationToken);
-        var itemDescriptions = await _localDb.GetItemDescriptionsByCodeAsync([itemCode], cancellationToken);
-        if (!itemDescriptions.TryGetValue(itemCode, out var description) || string.IsNullOrWhiteSpace(description))
-            throw new InvalidOperationException($"Item code {itemCode} was not found in ST_ITEM.");
-        var classDay = portalClass.DayOfWeek;
-        var udfTime = ToUdfClassTimeDecimal(portalClass.StartTime);
-        var classDateTime = startDate.Add(portalClass.StartTime);
-        var unitPrice = 350m;
+
+        var itemCodes = inputLines.Select(l => l.ItemCode.Trim()).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        var itemDescriptions = await _localDb.GetItemDescriptionsByCodeAsync(itemCodes, cancellationToken);
+        var links = await _context.ItemCodeClassLinks
+            .Include(l => l.PortalClass)
+            .Where(l => itemCodes.Contains(l.ItemCode))
+            .ToListAsync(cancellationToken);
+        var linksByCode = links.ToDictionary(l => l.ItemCode, l => l, StringComparer.OrdinalIgnoreCase);
+
+        var teacherIds = inputLines.Select(l => l.TeacherUserId).Distinct().ToList();
+        var teachers = await _context.Users
+            .Where(u => teacherIds.Contains(u.Id) && u.IsActive && u.Role == Roles.Teacher)
+            .ToDictionaryAsync(u => u.Id, cancellationToken);
+        if (teachers.Count != teacherIds.Count)
+            throw new InvalidOperationException("One or more selected teachers are not valid.");
+
+        var staff = await _localDb.GetStaffTeachersAsync(cancellationToken);
+        var resolvedLines = new List<CreateSalesOrderLineRequest>();
+        foreach (var input in inputLines)
+        {
+            var itemCode = input.ItemCode.Trim();
+            if (!itemDescriptions.TryGetValue(itemCode, out var description) || string.IsNullOrWhiteSpace(description))
+                throw new InvalidOperationException($"Item code {itemCode} was not found in ST_ITEM.");
+
+            if (!teachers.TryGetValue(input.TeacherUserId, out var teacherUser))
+                throw new InvalidOperationException("Selected teacher is not valid.");
+
+            if (!DateTime.TryParse(input.StartDate, out var lineStart))
+                throw new InvalidOperationException($"Invalid start date for {itemCode}.");
+            if (!DateTime.TryParse(input.EndDate, out var lineEnd))
+                throw new InvalidOperationException($"Invalid end date for {itemCode}.");
+            lineStart = lineStart.Date;
+            lineEnd = lineEnd.Date;
+            if (lineEnd < lineStart)
+                throw new InvalidOperationException($"End date must be on or after start date for {itemCode}.");
+
+            var classDays = (input.ClassDays ?? Array.Empty<string>())
+                .Select(NormalizeClassDayName)
+                .Where(d => d != null)
+                .Cast<string>()
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(d => ClassDayOrder(d))
+                .ToList();
+            if (classDays.Count == 0)
+                throw new InvalidOperationException($"Select at least one weekday for {itemCode}.");
+
+            linksByCode.TryGetValue(itemCode, out var link);
+            var classStartTime = link?.PortalClass?.StartTime ?? new TimeSpan(10, 0, 0);
+            var teacherName = ResolveErpTeacherName(teacherUser, staff);
+            var udfTime = ToUdfClassTimeDecimal(classStartTime);
+
+            foreach (var classDay in classDays)
+            {
+                var firstSessionDate = FirstSessionDateOnOrAfter(lineStart, lineEnd, classDay);
+                if (firstSessionDate == null)
+                {
+                    throw new InvalidOperationException(
+                        $"No {classDay} between {lineStart:yyyy-MM-dd} and {lineEnd:yyyy-MM-dd} for {itemCode}.");
+                }
+
+                var classDateTime = firstSessionDate.Value.Add(classStartTime);
+                resolvedLines.Add(new CreateSalesOrderLineRequest(
+                    itemCode,
+                    description,
+                    classDay,
+                    udfTime,
+                    studentName,
+                    teacherName,
+                    classDateTime,
+                    lineEnd));
+            }
+        }
 
         if (_salesOrders.CanCreateViaApi)
         {
@@ -94,25 +222,20 @@ public class SqlAccountChildEnrollmentWriteService
                 if (customerMatch != null && !string.IsNullOrWhiteSpace(customerMatch.ParentName))
                     companyName = customerMatch.ParentName;
 
-                var created = await _salesOrders.CreateSalesOrderAsync(
+                var created = await _salesOrders.CreateSalesOrderWithLinesAsync(
                     customerCode,
                     companyName,
                     branchName,
-                    new CreateSalesOrderLineRequest(
-                        itemCode,
-                        description,
-                        classDay,
-                        udfTime,
-                        studentName,
-                        teacherName,
-                        classDateTime,
-                        endDate,
-                        unitPrice),
+                    resolvedLines,
                     cancellationToken);
 
                 _logger.LogInformation(
-                    "Created sales order {DocNo} ({DocKey}) via SQL Account API for {Customer}/{Branch} item {ItemCode}",
-                    created.DocNo, created.DocKey, customerCode, branchName, itemCode);
+                    "Created sales order {DocNo} ({DocKey}) with {LineCount} line(s) via SQL Account API for {Customer}/{Branch}",
+                    created.FirstOrDefault()?.DocNo,
+                    created.FirstOrDefault()?.DocKey,
+                    created.Count,
+                    customerCode,
+                    branchName);
 
                 await _portalSessions.SyncOccurrencesAsync(cancellationToken);
                 return created;
@@ -127,49 +250,33 @@ public class SqlAccountChildEnrollmentWriteService
             }
         }
 
-        return await AssignCourseViaLocalDbAsync(
+        return await AssignCoursesViaLocalDbAsync(
             customerCode,
             branchName,
-            itemCode,
-            description,
-            studentName,
-            teacherName,
-            classDay,
-            udfTime,
-            classDateTime,
-            endDate,
-            unitPrice,
+            resolvedLines,
             parent.ParentName,
             cancellationToken);
     }
 
-    private async Task<SqlAccountChildEnrollmentDto> AssignCourseViaLocalDbAsync(
+    private async Task<IReadOnlyList<SqlAccountChildEnrollmentDto>> AssignCoursesViaLocalDbAsync(
         string customerCode,
         string branchName,
-        string itemCode,
-        string description,
-        string studentName,
-        string teacherName,
-        string classDay,
-        decimal udfTime,
-        DateTime classDateTime,
-        DateTime endDate,
-        decimal unitPrice,
+        IReadOnlyList<CreateSalesOrderLineRequest> lines,
         string parentName,
         CancellationToken cancellationToken)
     {
         await using var connection = _localDb.OpenConnection();
         await connection.OpenAsync(cancellationToken);
-        await PortalFirebirdSchema.EnsureUdfClassEndDateAsync(connection, cancellationToken);
+        await PortalFirebirdSchema.EnsureAllTablesAsync(connection, cancellationToken);
 
         var companyName = await ReadCustomerNameAsync(connection, customerCode, cancellationToken)
             ?? parentName;
 
         var docKey = await NextIntAsync(connection, "SELECT MAX(DOCKEY) FROM SL_SO", cancellationToken) + 1;
-        var dtlKey = await NextIntAsync(connection, "SELECT MAX(DTLKEY) FROM SL_SODTL", cancellationToken) + 1;
+        var nextDtlKey = await NextIntAsync(connection, "SELECT MAX(DTLKEY) FROM SL_SODTL", cancellationToken);
         var docNo = await NextDocNoAsync(connection, cancellationToken);
         var today = DateTime.Today;
-        var amount = unitPrice;
+        var totalAmount = lines.Sum(l => l.UnitPrice);
 
         const string insertSo = """
             INSERT INTO SL_SO (
@@ -192,7 +299,7 @@ public class SqlAccountChildEnrollmentWriteService
             cmd.Parameters.AddWithValue("@docDate", today);
             cmd.Parameters.AddWithValue("@code", customerCode);
             cmd.Parameters.AddWithValue("@companyName", companyName);
-            cmd.Parameters.AddWithValue("@docAmt", amount);
+            cmd.Parameters.AddWithValue("@docAmt", totalAmount);
             cmd.Parameters.AddWithValue("@branchName", branchName);
             await cmd.ExecuteNonQueryAsync(cancellationToken);
         }
@@ -202,53 +309,70 @@ public class SqlAccountChildEnrollmentWriteService
                 DTLKEY, DOCKEY, SEQ, ITEMCODE, LOCATION, PROJECT, DESCRIPTION,
                 QTY, UOM, RATE, SQTY, UNITPRICE, DELIVERYDATE, AMOUNT, LOCALAMOUNT,
                 TAXINCLUSIVE, PRINTABLE, TRANSFERABLE,
-                UDF_CLASSDAY, UDF_CLASSTIME, UDF_STUDENTNAME, UDF_CONDUCTEDBY,
-                UDF_CLASSDATE, UDF_CLASSENDDATE
+                UDF_CLASSDAY, UDF_CLASSTIME, UDF_STUDENTNAME, UDF_CONDUCTEDBY
             ) VALUES (
-                @dtlKey, @docKey, 1000, @itemCode, '----', '----', @description,
+                @dtlKey, @docKey, @seq, @itemCode, '----', '----', @description,
                 1, 'UNIT', 1, 1, @unitPrice, @deliveryDate, @amount, @amount,
                 FALSE, TRUE, TRUE,
-                @classDay, @udfTime, @studentName, @teacherName,
-                @classDate, @classEndDate
+                @classDay, @udfTime, @studentName, @teacherName
             )
             """;
 
-        await using (var cmd = new FbCommand(insertDtl, connection))
+        var createdLines = new List<SqlAccountChildEnrollmentDto>();
+        for (var i = 0; i < lines.Count; i++)
         {
-            cmd.Parameters.AddWithValue("@dtlKey", dtlKey);
-            cmd.Parameters.AddWithValue("@docKey", docKey);
-            cmd.Parameters.AddWithValue("@itemCode", itemCode);
-            cmd.Parameters.AddWithValue("@description", description);
-            cmd.Parameters.AddWithValue("@unitPrice", unitPrice);
-            cmd.Parameters.AddWithValue("@deliveryDate", endDate);
-            cmd.Parameters.AddWithValue("@amount", amount);
-            cmd.Parameters.AddWithValue("@classDay", classDay);
-            cmd.Parameters.AddWithValue("@udfTime", udfTime);
-            cmd.Parameters.AddWithValue("@studentName", studentName);
-            cmd.Parameters.AddWithValue("@teacherName", teacherName);
-            cmd.Parameters.Add(new FbParameter("@classDate", FbDbType.TimeStamp) { Value = classDateTime });
-            cmd.Parameters.Add(new FbParameter("@classEndDate", FbDbType.TimeStamp) { Value = endDate });
-            await cmd.ExecuteNonQueryAsync(cancellationToken);
+            var line = lines[i];
+            var seq = (i + 1) * 1000;
+            var dtlKey = nextDtlKey + i + 1;
+            var amount = line.UnitPrice;
+
+            await using (var cmd = new FbCommand(insertDtl, connection))
+            {
+                cmd.Parameters.AddWithValue("@dtlKey", dtlKey);
+                cmd.Parameters.AddWithValue("@docKey", docKey);
+                cmd.Parameters.AddWithValue("@seq", seq);
+                cmd.Parameters.AddWithValue("@itemCode", line.ItemCode);
+                cmd.Parameters.AddWithValue("@description", line.Description);
+                cmd.Parameters.AddWithValue("@unitPrice", line.UnitPrice);
+                cmd.Parameters.AddWithValue("@deliveryDate", line.DeliveryDate);
+                cmd.Parameters.AddWithValue("@amount", amount);
+                cmd.Parameters.AddWithValue("@classDay", line.ClassDay);
+                cmd.Parameters.AddWithValue("@udfTime", line.UdfClassTime);
+                cmd.Parameters.AddWithValue("@studentName", line.StudentName);
+                cmd.Parameters.AddWithValue("@teacherName", line.ConductedBy);
+                await cmd.ExecuteNonQueryAsync(cancellationToken);
+            }
+
+            await _schedules.UpsertOnConnectionAsync(
+                connection, docKey, seq, line.ClassDateTime, line.DeliveryDate, cancellationToken);
+
+            createdLines.Add(new SqlAccountChildEnrollmentDto(
+                docKey,
+                seq,
+                docNo,
+                today.ToString("yyyy-MM-dd"),
+                line.Description,
+                line.ItemCode,
+                "1",
+                line.UnitPrice.ToString("0.00"),
+                amount.ToString("0.00"),
+                line.DeliveryDate.ToString("yyyy-MM-dd"),
+                line.ClassDay,
+                TimeHelper.FormatUdfClassTime(line.UdfClassTime),
+                line.StudentName,
+                line.ConductedBy,
+                ClassDate: line.ClassDateTime.ToString("yyyy-MM-dd HH:mm")));
         }
 
         _logger.LogInformation(
-            "Created sales order {DocNo} ({DocKey}) via local DB for {Customer}/{Branch} item {ItemCode} {Start:yyyy-MM-dd}–{End:yyyy-MM-dd}",
-            docNo, docKey, customerCode, branchName, itemCode, classDateTime.Date, endDate);
+            "Created sales order {DocNo} ({DocKey}) with {LineCount} line(s) via local DB for {Customer}/{Branch}",
+            docNo, docKey, lines.Count, customerCode, branchName);
 
         await _portalSessions.SyncOccurrencesAsync(cancellationToken);
 
         var enrollments = await _salesOrders.GetChildEnrollmentsAsync(customerCode, branchName, cancellationToken);
-        var created = enrollments.FirstOrDefault(e => e.DocKey == docKey && e.Seq == 1000);
-        if (created == null)
-        {
-            return new SqlAccountChildEnrollmentDto(
-                docKey, 1000, docNo, today.ToString("yyyy-MM-dd"), description, itemCode,
-                "1", unitPrice.ToString("0.00"), amount.ToString("0.00"), endDate.ToString("yyyy-MM-dd"),
-                classDay, TimeHelper.FormatUdfClassTime(udfTime), studentName, teacherName,
-                ClassDate: classDateTime.ToString("yyyy-MM-dd HH:mm"));
-        }
-
-        return created;
+        var fromDb = enrollments.Where(e => e.DocKey == docKey).ToList();
+        return fromDb.Count > 0 ? fromDb : createdLines;
     }
 
     private static decimal ToUdfClassTimeDecimal(TimeSpan time) =>
@@ -286,14 +410,60 @@ public class SqlAccountChildEnrollmentWriteService
         return (await cmd.ExecuteScalarAsync(cancellationToken))?.ToString()?.Trim();
     }
 
-    private async Task<string> ResolveErpTeacherNameAsync(User teacherUser, CancellationToken cancellationToken)
+    private static string ResolveErpTeacherName(
+        User teacherUser,
+        IReadOnlyList<SqlAccountStaffUserMatch> staff)
     {
-        var staff = await _localDb.GetStaffTeachersAsync(cancellationToken);
         var match = staff.FirstOrDefault(s =>
             string.Equals(s.Email, teacherUser.Email, StringComparison.OrdinalIgnoreCase));
         if (match != null && !string.IsNullOrWhiteSpace(match.UserName))
             return match.UserName.Trim();
 
         return teacherUser.FullName.Trim();
+    }
+
+    private static readonly Dictionary<string, DayOfWeek> ClassDayMap = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["Monday"] = DayOfWeek.Monday,
+        ["Mon"] = DayOfWeek.Monday,
+        ["Tuesday"] = DayOfWeek.Tuesday,
+        ["Tue"] = DayOfWeek.Tuesday,
+        ["Wednesday"] = DayOfWeek.Wednesday,
+        ["Wed"] = DayOfWeek.Wednesday,
+        ["Thursday"] = DayOfWeek.Thursday,
+        ["Thu"] = DayOfWeek.Thursday,
+        ["Friday"] = DayOfWeek.Friday,
+        ["Fri"] = DayOfWeek.Friday,
+        ["Saturday"] = DayOfWeek.Saturday,
+        ["Sat"] = DayOfWeek.Saturday,
+        ["Sunday"] = DayOfWeek.Sunday,
+        ["Sun"] = DayOfWeek.Sunday,
+    };
+
+    private static string? NormalizeClassDayName(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return null;
+
+        var trimmed = value.Trim();
+        if (!ClassDayMap.TryGetValue(trimmed, out var dayOfWeek))
+            return null;
+
+        return dayOfWeek.ToString();
+    }
+
+    private static int ClassDayOrder(string dayName) =>
+        ClassDayMap.TryGetValue(dayName, out var day) ? (int)day : 99;
+
+    private static DateTime? FirstSessionDateOnOrAfter(DateTime start, DateTime end, string classDay)
+    {
+        if (!ClassDayMap.TryGetValue(classDay, out var targetDay))
+            return null;
+
+        var date = start;
+        while (date.DayOfWeek != targetDay && date <= end)
+            date = date.AddDays(1);
+
+        return date <= end ? date : null;
     }
 }

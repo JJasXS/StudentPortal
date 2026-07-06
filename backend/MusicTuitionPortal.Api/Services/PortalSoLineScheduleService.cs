@@ -76,6 +76,8 @@ public class PortalSoLineScheduleService
             });
             updateCmd.Parameters.AddWithValue("@updatedAt", now);
             await updateCmd.ExecuteNonQueryAsync(cancellationToken);
+            await PortalFirebirdSchema.SyncSodtlUdfClassDatesAsync(
+                connection, docKey, seq, classStart, classEnd, cancellationToken);
             return;
         }
 
@@ -97,6 +99,8 @@ public class PortalSoLineScheduleService
         insertCmd.Parameters.AddWithValue("@createdAt", now);
         insertCmd.Parameters.AddWithValue("@updatedAt", now);
         await insertCmd.ExecuteNonQueryAsync(cancellationToken);
+        await PortalFirebirdSchema.SyncSodtlUdfClassDatesAsync(
+            connection, docKey, seq, classStart, classEnd, cancellationToken);
     }
 
     public async Task<PortalSoLineSchedule?> GetAsync(

@@ -1,12 +1,12 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
-import { ChevronRight, RefreshCw, Users } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { MoreVertical, RefreshCw, Users } from 'lucide-react';
 import { PageHeader } from '@/components/PageHeader';
 import { SearchBox } from '@/components/SearchBox';
 import { Card, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { sqlAccountApi } from '@/api/resources';
-import type { SqlAccountParent } from '@/types/sqlAccount';
+import type { SqlAccountChild, SqlAccountParent } from '@/types/sqlAccount';
 import { cn } from '@/utils/cn';
 import { getApiErrorMessage } from '@/utils/apiError';
 
@@ -22,6 +22,90 @@ const mockParents: SqlAccountParent[] = [
     ],
   },
 ];
+
+type StudentListRow = {
+  id: string;
+  studentName: string;
+  branchName: string;
+  customerCode: string;
+  parentName: string;
+  parentEmail?: string | null;
+};
+
+function studentDisplayName(child: SqlAccountChild): string {
+  const attention = child.attention?.trim();
+  return attention || child.branchName;
+}
+
+function flattenStudents(parents: SqlAccountParent[]): StudentListRow[] {
+  const rows: StudentListRow[] = [];
+  for (const parent of parents) {
+    for (const child of parent.children) {
+      rows.push({
+        id: `${parent.customerCode}|${child.branchName}`,
+        studentName: studentDisplayName(child),
+        branchName: child.branchName,
+        customerCode: parent.customerCode,
+        parentName: parent.parentName,
+        parentEmail: parent.parentEmail,
+      });
+    }
+  }
+  return rows.sort((a, b) => a.studentName.localeCompare(b.studentName, undefined, { sensitivity: 'base' }));
+}
+
+function StudentActionsMenu({
+  customerCode,
+  branchName,
+}: {
+  customerCode: string;
+  branchName: string;
+}) {
+  const navigate = useNavigate();
+  const [open, setOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handleClick = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [open]);
+
+  const manageHref = `/admin/parents/${encodeURIComponent(customerCode)}?branch=${encodeURIComponent(branchName)}&tab=assign`;
+
+  return (
+    <div className="relative" ref={menuRef}>
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        aria-label="Student actions"
+        onClick={() => setOpen((v) => !v)}
+      >
+        <MoreVertical className="h-4 w-4" />
+      </Button>
+      {open && (
+        <div className="absolute right-0 top-full z-20 mt-1 min-w-[11rem] rounded-lg border border-slate-200 bg-white py-1 shadow-lg">
+          <button
+            type="button"
+            className="block w-full px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"
+            onClick={() => {
+              setOpen(false);
+              void navigate(manageHref);
+            }}
+          >
+            Manage student
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function AdminParentsPage() {
   const [parents, setParents] = useState<SqlAccountParent[]>([]);
@@ -48,7 +132,7 @@ export default function AdminParentsPage() {
 
       setParents(await sqlAccountApi.getParentChildren());
     } catch (err) {
-      setError(getApiErrorMessage(err, 'Could not load parents from SQL Account.'));
+      setError(getApiErrorMessage(err, 'Could not load students from SQL Account.'));
       setParents(isMock ? mockParents : []);
     } finally {
       setLoading(false);
@@ -59,32 +143,28 @@ export default function AdminParentsPage() {
     void load();
   }, [load]);
 
+  const students = useMemo(() => flattenStudents(parents), [parents]);
+
   const filtered = useMemo(() => {
     const term = search.trim().toLowerCase();
-    if (!term) return parents;
+    if (!term) return students;
 
-    return parents.filter((parent) => {
-      const parentMatch =
-        parent.parentName.toLowerCase().includes(term) ||
-        parent.customerCode.toLowerCase().includes(term) ||
-        (parent.parentEmail?.toLowerCase().includes(term) ?? false);
-      const childMatch = parent.children.some((child) =>
-        child.branchName.toLowerCase().includes(term)
-      );
-      return parentMatch || childMatch;
-    });
-  }, [parents, search]);
-
-  const totalChildren = useMemo(
-    () => filtered.reduce((sum, parent) => sum + parent.children.length, 0),
-    [filtered]
-  );
+    return students.filter((row) =>
+      [
+        row.studentName,
+        row.branchName,
+        row.customerCode,
+        row.parentName,
+        row.parentEmail ?? '',
+      ].some((value) => value.toLowerCase().includes(term))
+    );
+  }, [students, search]);
 
   return (
     <div>
       <PageHeader
-        title="Parents"
-        description="View-only list from SQL Account (AR_CUSTOMER). Click a parent to see their children (BRANCHNAME)."
+        title="Students"
+        description="All students from SQL Account (AR_CUSTOMERBRANCH). Use the menu to manage enrollments and schedules."
         actions={
           <div className="flex flex-wrap items-center gap-2">
             <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600">
@@ -108,44 +188,43 @@ export default function AdminParentsPage() {
         <SearchBox
           value={search}
           onChange={setSearch}
-          placeholder="Search parent, code, email, or child branch..."
+          placeholder="Search student, branch, parent, or code..."
           className="max-w-md"
         />
         <div className="flex items-center gap-2 text-sm text-slate-500">
           <Users className="h-4 w-4" />
-          {loading ? 'Loading…' : `${filtered.length} parents · ${totalChildren} children`}
+          {loading ? 'Loading…' : `${filtered.length} students`}
         </div>
       </div>
 
       <Card>
         <CardContent className="divide-y divide-slate-100 p-0">
           {loading ? (
-            <div className="px-6 py-10 text-center text-sm text-slate-500">Loading parents…</div>
+            <div className="px-6 py-10 text-center text-sm text-slate-500">Loading students…</div>
           ) : filtered.length === 0 ? (
             <div className="px-6 py-10 text-center text-sm text-slate-500">
-              {search ? 'No parents match your search.' : 'No parents found in SQL Account.'}
+              {search ? 'No students match your search.' : 'No students found in SQL Account.'}
             </div>
           ) : (
-            filtered.map((parent) => (
-              <Link
-                key={parent.customerCode || parent.parentName}
-                to={`/admin/parents/${encodeURIComponent(parent.customerCode)}`}
-                className="flex items-center gap-3 px-4 py-4 transition hover:bg-slate-50 sm:px-6"
+            filtered.map((row) => (
+              <div
+                key={row.id}
+                className="flex items-center gap-3 px-4 py-4 sm:px-6"
               >
                 <div className="min-w-0 flex-1">
-                  <p className="font-medium text-slate-900">{parent.parentName}</p>
+                  <p className="font-medium text-slate-900">{row.studentName}</p>
                   <p className="text-sm text-slate-500">
-                    {parent.customerCode}
-                    {parent.parentEmail ? ` · ${parent.parentEmail}` : ''}
+                    Branch {row.branchName} · {row.parentName} ({row.customerCode})
                   </p>
-                  <p className="mt-0.5 text-xs text-slate-400">
-                    {parent.children.length} {parent.children.length === 1 ? 'child' : 'children'}
-                    {parent.children.length > 0 &&
-                      ` · ${parent.children.map((c) => c.branchName).join(', ')}`}
-                  </p>
+                  {row.parentEmail && (
+                    <p className="mt-0.5 text-xs text-slate-400">{row.parentEmail}</p>
+                  )}
                 </div>
-                <ChevronRight className="h-5 w-5 shrink-0 text-slate-400" />
-              </Link>
+                <StudentActionsMenu
+                  customerCode={row.customerCode}
+                  branchName={row.branchName}
+                />
+              </div>
             ))
           )}
         </CardContent>

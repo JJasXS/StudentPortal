@@ -336,9 +336,25 @@ export const sqlAccountApi = {
   assignChildEnrollment: (data: {
     customerCode: string;
     branchName: string;
-    itemCode: string;
-    startDate: string;
-    endDate: string;
-    teacherUserId: string;
+    lines: {
+      itemCode: string;
+      teacherUserId: string;
+      startDate: string;
+      endDate: string;
+      classDays: string[];
+    }[];
   }) => apiClient.post('/sqlaccount/child-enrollments', data).then((r) => r.data),
+  updateEnrollmentSchedule: (
+    docKey: number,
+    seq: number,
+    data: {
+      customerCode: string;
+      branchName: string;
+      startDate: string;
+      endDate: string;
+    }
+  ) =>
+    apiClient
+      .patch(`/sqlaccount/child-enrollments/${docKey}/${seq}/schedule`, data)
+      .then((r) => r.data),
 };

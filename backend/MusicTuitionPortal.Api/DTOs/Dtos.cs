@@ -255,13 +255,23 @@ public record ItemCodeClassLinkDto(
 
 public record CreateItemCodeClassLinkRequest(string ItemCode, Guid PortalClassId);
 
+public record CreateSqlAccountChildEnrollmentLineRequest(
+    string ItemCode,
+    Guid TeacherUserId,
+    string StartDate,
+    string EndDate,
+    IReadOnlyList<string> ClassDays);
+
 public record CreateSqlAccountChildEnrollmentRequest(
     string CustomerCode,
     string BranchName,
-    string ItemCode,
+    IReadOnlyList<CreateSqlAccountChildEnrollmentLineRequest> Lines);
+
+public record UpdateSqlAccountEnrollmentScheduleRequest(
+    string CustomerCode,
+    string BranchName,
     string StartDate,
-    string EndDate,
-    Guid TeacherUserId);
+    string EndDate);
 
 public record SqlAccountCourseOptionDto(
     string ItemCode,

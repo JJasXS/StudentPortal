@@ -32,7 +32,7 @@ interface NavItem {
 
 const adminNav: NavItem[] = [
   { label: 'Dashboard', path: '/admin/dashboard', icon: LayoutDashboard },
-  { label: 'Parents', path: '/admin/parents', icon: Users },
+  { label: 'Students', path: '/admin/parents', icon: Users },
   { label: 'Staff Management', path: '/admin/teachers', icon: UserCircle },
   { label: 'Calendar & Courses', path: '/admin/calendar', icon: CalendarDays },
   { label: 'Leave requests', path: '/admin/leave', icon: CalendarOff },

@@ -45,18 +45,18 @@ public class PortalClassSessionService
         await using var connection = _localDb.OpenConnection();
         await connection.OpenAsync(cancellationToken);
         await PortalFirebirdSchema.EnsureAllTablesAsync(connection, cancellationToken);
-        await PortalFirebirdSchema.EnsureUdfClassEndDateAsync(connection, cancellationToken);
 
         const string sql = """
             SELECT A.CODE, A.BRANCHNAME, B.DOCKEY, B.SEQ, B.ITEMCODE, B.DESCRIPTION,
-                   B.UDF_CLASSDATE, B.UDF_CLASSENDDATE, B.UDF_CLASSDAY, B.UDF_CLASSTIME,
+                   S.CLASSSTARTDATETIME, S.CLASSENDDATE, B.UDF_CLASSDAY, B.UDF_CLASSTIME,
                    B.UDF_STUDENTNAME, B.UDF_CONDUCTEDBY, B.DELIVERYDATE
             FROM SL_SO A
             INNER JOIN SL_SODTL B ON A.DOCKEY = B.DOCKEY
+            INNER JOIN PORTAL_SO_LINE_SCHEDULE S ON S.DOCKEY = B.DOCKEY AND S.SEQ = B.SEQ
             WHERE (A.CANCELLED IS NULL OR A.CANCELLED = FALSE)
               AND B.UDF_CLASSDAY IS NOT NULL
               AND TRIM(B.UDF_CLASSDAY) <> ''
-              AND B.UDF_CLASSDATE IS NOT NULL
+              AND S.CLASSSTARTDATETIME IS NOT NULL
             """;
 
         await using var command = new FbCommand(sql, connection);
@@ -72,9 +72,9 @@ public class PortalClassSessionService
             if (string.IsNullOrWhiteSpace(classDay) || !DayMap.TryGetValue(classDay, out var targetDay))
                 continue;
 
-            var startDate = ReadTimestamp(reader, "UDF_CLASSDATE")?.Date
+            var startDate = ReadTimestamp(reader, "CLASSSTARTDATETIME")?.Date
                 ?? DateTime.UtcNow.Date;
-            var endDate = ReadTimestamp(reader, "UDF_CLASSENDDATE")?.Date
+            var endDate = ReadTimestamp(reader, "CLASSENDDATE")?.Date
                 ?? ReadTimestamp(reader, "DELIVERYDATE")?.Date
                 ?? startDate.AddDays(84);
 

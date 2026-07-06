@@ -131,7 +131,7 @@ export default function AdminCalendarPage() {
     setMessage('');
     try {
       await calendarApi.cancelEvent(cancelTarget.id, { reason: payload.reason });
-      setMessage('Session cancelled. UDF_CLASSDATE cleared and logged.');
+      setMessage('Session cancelled. Class start date cleared and logged.');
       setCancelTarget(null);
       loadData();
     } catch {
@@ -432,7 +432,7 @@ export default function AdminCalendarPage() {
         emptyMessage={
           teacherFilter || studentFilter
             ? 'No sessions match the selected filters this month.'
-            : 'No sessions this month. Run FdbUdfUpdate or generate sessions to populate UDF_CLASSDATE.'
+            : 'No sessions this month. Run FdbUdfUpdate or generate sessions to populate the portal schedule.'
         }
       />
 

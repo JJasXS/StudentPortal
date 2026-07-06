@@ -20,19 +20,82 @@ public class SqlAccountSalesOrderService
 {
     private readonly SqlAccountService _sqlAccount;
     private readonly SqlAccountLocalDbService _localDb;
+    private readonly PortalSoLineScheduleService _schedules;
     private readonly ILogger<SqlAccountSalesOrderService> _logger;
 
     public SqlAccountSalesOrderService(
         SqlAccountService sqlAccount,
         SqlAccountLocalDbService localDb,
+        PortalSoLineScheduleService schedules,
         ILogger<SqlAccountSalesOrderService> logger)
     {
         _sqlAccount = sqlAccount;
         _localDb = localDb;
+        _schedules = schedules;
         _logger = logger;
     }
 
     public bool CanCreateViaApi => _sqlAccount.IsConfigured;
+
+    public async Task<IReadOnlyList<SqlAccountChildEnrollmentDto>> CreateSalesOrderWithLinesAsync(
+        string customerCode,
+        string companyName,
+        string branchName,
+        IReadOnlyList<CreateSalesOrderLineRequest> lines,
+        CancellationToken cancellationToken = default)
+    {
+        if (!_sqlAccount.IsConfigured)
+            throw new InvalidOperationException("SQL Account API is not configured.");
+        if (lines.Count == 0)
+            throw new InvalidOperationException("At least one sales order line is required.");
+
+        var totalAmount = lines.Sum(l => l.UnitPrice);
+        var payload = new Dictionary<string, object?>
+        {
+            ["docdate"] = DateTime.Today.ToString("yyyy-MM-dd"),
+            ["code"] = customerCode,
+            ["companyname"] = companyName,
+            ["branchname"] = branchName,
+            ["description"] = "Sales Order",
+            ["docamt"] = totalAmount.ToString("0.00"),
+            ["sdsdocdetail"] = lines.Select((line, index) => new Dictionary<string, object?>
+            {
+                ["seq"] = (index + 1) * 1000,
+                ["itemcode"] = line.ItemCode,
+                ["description"] = line.Description,
+                ["qty"] = "1",
+                ["uom"] = "UNIT",
+                ["unitprice"] = line.UnitPrice.ToString("0.00"),
+                ["amount"] = line.UnitPrice.ToString("0.00"),
+                ["deliverydate"] = line.DeliveryDate.ToString("yyyy-MM-dd"),
+                ["udf_classday"] = line.ClassDay,
+                ["udf_classtime"] = line.UdfClassTime,
+                ["udf_studentname"] = line.StudentName,
+                ["udf_conductedby"] = line.ConductedBy,
+            }).ToArray(),
+        };
+
+        var json = JsonSerializer.Serialize(payload, JsonSerializerOptions);
+        var responseBody = await _sqlAccount.PostResourceAsync("salesorder", json, cancellationToken);
+        var created = ParseCreatedSalesOrderLines(responseBody, lines);
+
+        for (var i = 0; i < created.Count; i++)
+        {
+            var enrollment = created[i];
+            var sourceLine = lines[Math.Min(i, lines.Count - 1)];
+            if (enrollment.DocKey > 0)
+            {
+                await _schedules.UpsertAsync(
+                    enrollment.DocKey,
+                    enrollment.Seq,
+                    sourceLine.ClassDateTime,
+                    sourceLine.DeliveryDate,
+                    cancellationToken);
+            }
+        }
+
+        return created;
+    }
 
     public async Task<SqlAccountChildEnrollmentDto> CreateSalesOrderAsync(
         string customerCode,
@@ -67,15 +130,25 @@ public class SqlAccountSalesOrderService
                     ["udf_classtime"] = line.UdfClassTime,
                     ["udf_studentname"] = line.StudentName,
                     ["udf_conductedby"] = line.ConductedBy,
-                    ["udf_classdate"] = line.ClassDateTime.ToString("yyyy-MM-dd HH:mm:ss"),
-                    ["udf_classenddate"] = line.DeliveryDate.ToString("yyyy-MM-dd"),
                 },
             },
         };
 
         var json = JsonSerializer.Serialize(payload, JsonSerializerOptions);
         var responseBody = await _sqlAccount.PostResourceAsync("salesorder", json, cancellationToken);
-        return ParseCreatedSalesOrder(responseBody, line);
+        var created = ParseCreatedSalesOrder(responseBody, line);
+
+        if (created.DocKey > 0)
+        {
+            await _schedules.UpsertAsync(
+                created.DocKey,
+                created.Seq,
+                line.ClassDateTime,
+                line.DeliveryDate,
+                cancellationToken);
+        }
+
+        return created;
     }
 
     private static readonly JsonSerializerOptions JsonSerializerOptions = new()
@@ -126,6 +199,61 @@ public class SqlAccountSalesOrderService
             line.ClassDateTime.ToString("yyyy-MM-dd HH:mm"));
     }
 
+    private static List<SqlAccountChildEnrollmentDto> ParseCreatedSalesOrderLines(
+        string json,
+        IReadOnlyList<CreateSalesOrderLineRequest> lines)
+    {
+        using var document = JsonDocument.Parse(json);
+        var root = document.RootElement;
+
+        if (root.ValueKind == JsonValueKind.Array && root.GetArrayLength() > 0)
+            root = root[0];
+        else if (root.TryGetProperty("data", out var data) && data.ValueKind == JsonValueKind.Object)
+            root = data;
+
+        var docKey = ParseInt(GetString(root, "dockey"));
+        var docNo = GetString(root, "docno") ?? string.Empty;
+        var docDate = GetString(root, "docdate") ?? DateTime.Today.ToString("yyyy-MM-dd");
+        var detailLines = GetDetailLines(root).ToList();
+        var results = new List<SqlAccountChildEnrollmentDto>();
+
+        for (var i = 0; i < lines.Count; i++)
+        {
+            var line = lines[i];
+            var expectedSeq = (i + 1) * 1000;
+            var detailLine = detailLines.FirstOrDefault(d => ParseInt(GetString(d, "seq")) == expectedSeq);
+            if (detailLine.ValueKind == JsonValueKind.Undefined)
+            {
+                detailLine = detailLines.FirstOrDefault(d =>
+                    string.Equals(GetString(d, "itemcode"), line.ItemCode, StringComparison.OrdinalIgnoreCase));
+            }
+
+            var hasDetail = detailLine.ValueKind != JsonValueKind.Undefined;
+            var seq = hasDetail ? ParseInt(GetString(detailLine, "seq")) : expectedSeq;
+            if (seq == 0)
+                seq = expectedSeq;
+
+            results.Add(new SqlAccountChildEnrollmentDto(
+                docKey,
+                seq,
+                docNo,
+                docDate,
+                line.Description,
+                line.ItemCode,
+                hasDetail ? GetString(detailLine, "qty") ?? "1" : "1",
+                hasDetail ? GetString(detailLine, "unitprice") ?? line.UnitPrice.ToString("0.00") : line.UnitPrice.ToString("0.00"),
+                hasDetail ? GetString(detailLine, "amount") ?? line.UnitPrice.ToString("0.00") : line.UnitPrice.ToString("0.00"),
+                line.DeliveryDate.ToString("yyyy-MM-dd"),
+                line.ClassDay,
+                TimeHelper.FormatUdfClassTime(line.UdfClassTime),
+                line.StudentName,
+                line.ConductedBy,
+                line.ClassDateTime.ToString("yyyy-MM-dd HH:mm")));
+        }
+
+        return results;
+    }
+
     public async Task<IReadOnlyList<SqlAccountChildEnrollmentDto>> GetChildEnrollmentsAsync(
         string customerCode,
         string branchName,
@@ -136,9 +264,30 @@ public class SqlAccountSalesOrderService
 
         var fromApi = await TryGetFromApiAsync(customerCode, branchName, cancellationToken);
         if (fromApi.Count > 0)
-            return fromApi;
+            return await MergePortalSchedulesAsync(fromApi, cancellationToken);
 
         return await _localDb.GetChildEnrollmentsAsync(customerCode, branchName, cancellationToken);
+    }
+
+    private async Task<IReadOnlyList<SqlAccountChildEnrollmentDto>> MergePortalSchedulesAsync(
+        List<SqlAccountChildEnrollmentDto> enrollments,
+        CancellationToken cancellationToken)
+    {
+        var scheduleMap = await _schedules.GetByLinesAsync(
+            enrollments.Select(e => (e.DocKey, e.Seq)),
+            cancellationToken);
+
+        return enrollments.Select(e =>
+        {
+            if (!scheduleMap.TryGetValue((e.DocKey, e.Seq), out var schedule))
+                return e;
+
+            return e with
+            {
+                ClassDate = schedule.ClassStartDateTime.ToString("yyyy-MM-dd HH:mm"),
+                DeliveryDate = schedule.ClassEndDate?.ToString("yyyy-MM-dd") ?? e.DeliveryDate,
+            };
+        }).ToList();
     }
 
     private async Task<List<SqlAccountChildEnrollmentDto>> TryGetFromApiAsync(

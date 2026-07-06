@@ -99,7 +99,7 @@ export default function CalendarEventEditPage() {
       });
       navigate('/admin/calendar', {
         replace: true,
-        state: { message: 'Replacement scheduled. UDF_CLASSDATE updated and logged.' },
+        state: { message: 'Replacement scheduled. Class start date updated and logged.' },
       });
     } catch {
       setError('Could not save replacement. Check the date/time and try again.');
@@ -127,7 +127,7 @@ export default function CalendarEventEditPage() {
     <div className="mx-auto max-w-lg space-y-6">
       <PageHeader
         title={title}
-        description="Set a new date and time. This updates SL_SODTL.UDF_CLASSDATE and writes a changelog row."
+        description="Set a new date and time. This updates the portal SO line schedule and writes a changelog row."
         actions={
           <Link to="/admin/calendar">
             <Button type="button" variant="outline" size="sm">

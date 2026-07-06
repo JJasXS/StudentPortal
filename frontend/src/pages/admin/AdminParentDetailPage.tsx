@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
-import { ArrowLeft, BookOpen, Plus, RefreshCw } from 'lucide-react';
+import { Link, useParams, useSearchParams } from 'react-router-dom';
+import { ArrowLeft, BookOpen, Plus, RefreshCw, Save, Trash2 } from 'lucide-react';
 import { PageHeader } from '@/components/PageHeader';
 import { Breadcrumbs } from '@/components/ui/Breadcrumbs';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
@@ -11,12 +11,10 @@ import { SqlAccountChildEnrollmentsList } from '@/components/parent/SqlAccountCh
 import { useToast } from '@/context/ToastContext';
 import { sqlAccountApi, teachersApi } from '@/api/resources';
 import type {
-  SqlAccountCalendarTeacher,
   SqlAccountChildEnrollment,
   SqlAccountCourseOption,
   SqlAccountParent,
 } from '@/types/sqlAccount';
-import type { TeacherProfile } from '@/types';
 import { getApiErrorMessage } from '@/utils/apiError';
 import { formatDateDDMMYYYY } from '@/utils/dateFormat';
 
@@ -33,33 +31,59 @@ const mockParents: SqlAccountParent[] = [
   },
 ];
 
-type Tab = 'children' | 'assign' | 'enrollments';
+type Tab = 'children' | 'assign' | 'schedule' | 'enrollments';
 
-type AssignTeacherOption = {
-  userId: string;
+type CalendarTeacher = {
+  erpUserId: string;
   fullName: string;
+  email: string;
+  portalUserId?: string | null;
 };
 
 function addWeeksStr(weeks: number): string {
   return new Date(Date.now() + weeks * 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
 }
 
-function mapCalendarTeachers(teachers: SqlAccountCalendarTeacher[]): AssignTeacherOption[] {
-  return teachers
-    .filter((t) => t.portalUserId)
-    .map((t) => ({ userId: t.portalUserId!, fullName: t.fullName }))
-    .sort((a, b) => a.fullName.localeCompare(b.fullName));
+function enrollmentKey(e: SqlAccountChildEnrollment): string {
+  return `${e.docKey}-${e.seq}`;
 }
 
-function mapPortalTeachers(teachers: TeacherProfile[]): AssignTeacherOption[] {
-  return teachers
-    .filter((t) => t.isActive !== false)
-    .map((t) => ({ userId: t.userId, fullName: t.fullName }))
-    .sort((a, b) => a.fullName.localeCompare(b.fullName));
+const WEEKDAYS = [
+  { value: 'Monday', label: 'Mon' },
+  { value: 'Tuesday', label: 'Tue' },
+  { value: 'Wednesday', label: 'Wed' },
+  { value: 'Thursday', label: 'Thu' },
+  { value: 'Friday', label: 'Fri' },
+  { value: 'Saturday', label: 'Sat' },
+  { value: 'Sunday', label: 'Sun' },
+] as const;
+
+type AssignLineRow = {
+  id: string;
+  itemCode: string;
+  teacherUserId: string;
+  startDate: string;
+  endDate: string;
+  classDays: string[];
+};
+
+function newAssignLineRow(): AssignLineRow {
+  const today = new Date().toISOString().slice(0, 10);
+  return {
+    id: crypto.randomUUID(),
+    itemCode: '',
+    teacherUserId: '',
+    startDate: today,
+    endDate: addWeeksStr(8),
+    classDays: [],
+  };
 }
 
 export default function AdminParentDetailPage() {
   const { customerCode = '' } = useParams<{ customerCode: string }>();
+  const [searchParams] = useSearchParams();
+  const initialBranch = searchParams.get('branch')?.trim() ?? '';
+  const initialTab = searchParams.get('tab')?.trim();
   const decodedCode = decodeURIComponent(customerCode);
   const isMock = import.meta.env.VITE_USE_MOCK === 'true';
   const { success: showSuccess, error: showError } = useToast();
@@ -67,18 +91,80 @@ export default function AdminParentDetailPage() {
   const [parent, setParent] = useState<SqlAccountParent | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [tab, setTab] = useState<Tab>('children');
-  const [courses, setCourses] = useState<SqlAccountCourseOption[]>([]);
-  const [teachers, setTeachers] = useState<AssignTeacherOption[]>([]);
-  const [selectedBranch, setSelectedBranch] = useState('');
-  const [selectedTeacherUserId, setSelectedTeacherUserId] = useState('');
-  const [selectedItemCode, setSelectedItemCode] = useState('');
-  const [startDate, setStartDate] = useState(() => new Date().toISOString().slice(0, 10));
-  const [endDate, setEndDate] = useState(addWeeksStr(8));
-  const [assigning, setAssigning] = useState(false);
+  const [tab, setTab] = useState<Tab>(() => {
+    if (initialTab === 'assign' || initialTab === 'schedule' || initialTab === 'enrollments' || initialTab === 'children') {
+      return initialTab;
+    }
+    return initialBranch ? 'assign' : 'children';
+  });
+
+  const [assignBranch, setAssignBranch] = useState('');
+  const [assignLines, setAssignLines] = useState<AssignLineRow[]>([newAssignLineRow()]);
+  const [classFilter, setClassFilter] = useState('');
+  const [assignSaving, setAssignSaving] = useState(false);
+  const [courseOptions, setCourseOptions] = useState<SqlAccountCourseOption[]>([]);
+  const [courseOptionsLoading, setCourseOptionsLoading] = useState(false);
+  const [erpTeachers, setErpTeachers] = useState<CalendarTeacher[]>([]);
+  const [erpTeachersLoading, setErpTeachersLoading] = useState(false);
+
+  const [scheduleBranch, setScheduleBranch] = useState('');
+  const [selectedEnrollmentKey, setSelectedEnrollmentKey] = useState('');
+  const [scheduleStartDate, setScheduleStartDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [scheduleEndDate, setScheduleEndDate] = useState(addWeeksStr(8));
+  const [scheduleSaving, setScheduleSaving] = useState(false);
+  const [scheduleEnrollments, setScheduleEnrollments] = useState<SqlAccountChildEnrollment[]>([]);
+  const [scheduleEnrollmentsLoading, setScheduleEnrollmentsLoading] = useState(false);
+
   const [enrollments, setEnrollments] = useState<SqlAccountChildEnrollment[]>([]);
   const [enrollmentsLoading, setEnrollmentsLoading] = useState(false);
   const [enrollmentBranch, setEnrollmentBranch] = useState('');
+
+  const filteredCourseOptions = useMemo(() => {
+    const q = classFilter.trim().toLowerCase();
+    if (!q) return courseOptions;
+    return courseOptions.filter(
+      (c) =>
+        c.itemCode.toLowerCase().includes(q) || c.description.toLowerCase().includes(q)
+    );
+  }, [courseOptions, classFilter]);
+
+  const validAssignLines = useMemo(
+    () =>
+      assignLines.filter(
+        (line) =>
+          line.itemCode &&
+          line.teacherUserId &&
+          line.startDate &&
+          line.endDate &&
+          line.classDays.length > 0
+      ),
+    [assignLines]
+  );
+
+  const updateAssignLine = (id: string, patch: Partial<AssignLineRow>) => {
+    setAssignLines((prev) => prev.map((line) => (line.id === id ? { ...line, ...patch } : line)));
+  };
+
+  const toggleClassDay = (id: string, day: string) => {
+    setAssignLines((prev) =>
+      prev.map((line) => {
+        if (line.id !== id) return line;
+        const has = line.classDays.includes(day);
+        return {
+          ...line,
+          classDays: has ? line.classDays.filter((d) => d !== day) : [...line.classDays, day],
+        };
+      })
+    );
+  };
+
+  const addAssignLine = () => {
+    setAssignLines((prev) => [...prev, newAssignLineRow()]);
+  };
+
+  const removeAssignLine = (id: string) => {
+    setAssignLines((prev) => (prev.length <= 1 ? prev : prev.filter((line) => line.id !== id)));
+  };
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -94,9 +180,11 @@ export default function AdminParentDetailPage() {
         return;
       }
       setParent(match);
-      if (!selectedBranch && match.children.length > 0) {
-        setSelectedBranch(match.children[0].branchName);
-        setEnrollmentBranch(match.children[0].branchName);
+      if (!assignBranch && match.children.length > 0) {
+        const first = match.children[0].branchName;
+        setAssignBranch(first);
+        setScheduleBranch(first);
+        setEnrollmentBranch(first);
       }
     } catch (err) {
       setError(getApiErrorMessage(err, 'Could not load parent.'));
@@ -104,35 +192,40 @@ export default function AdminParentDetailPage() {
     } finally {
       setLoading(false);
     }
-  }, [decodedCode, isMock, selectedBranch]);
+  }, [decodedCode, isMock, assignBranch]);
 
   const loadAssignOptions = useCallback(async () => {
     if (isMock) return;
+    setCourseOptionsLoading(true);
+    setErpTeachersLoading(true);
     try {
-      const [courseData, calendarTeachers] = await Promise.all([
+      const [courses, teachers] = await Promise.all([
         sqlAccountApi.getCourseOptions(),
-        teachersApi.getCalendarFilter().catch(() => [] as SqlAccountCalendarTeacher[]),
+        teachersApi.getCalendarFilter(),
       ]);
-
-      setCourses(courseData);
-      if (courseData.length > 0 && !selectedItemCode) {
-        setSelectedItemCode(courseData[0].itemCode);
-      }
-
-      let teacherOptions = mapCalendarTeachers(calendarTeachers);
-      if (teacherOptions.length === 0) {
-        const portalTeachers = await teachersApi.getAll();
-        teacherOptions = mapPortalTeachers(portalTeachers);
-      }
-      setTeachers(teacherOptions);
-      if (teacherOptions.length > 0 && !selectedTeacherUserId) {
-        setSelectedTeacherUserId(teacherOptions[0].userId);
-      }
+      setCourseOptions(courses);
+      setErpTeachers(teachers);
     } catch {
-      setCourses([]);
-      setTeachers([]);
+      setCourseOptions([]);
+      setErpTeachers([]);
+    } finally {
+      setCourseOptionsLoading(false);
+      setErpTeachersLoading(false);
     }
-  }, [isMock, selectedItemCode, selectedTeacherUserId]);
+  }, [isMock]);
+
+  const loadScheduleEnrollments = useCallback(async (branch: string) => {
+    if (!branch || isMock) return;
+    setScheduleEnrollmentsLoading(true);
+    try {
+      const data = await sqlAccountApi.getChildEnrollments(decodedCode, branch);
+      setScheduleEnrollments(data.enrollments);
+    } catch {
+      setScheduleEnrollments([]);
+    } finally {
+      setScheduleEnrollmentsLoading(false);
+    }
+  }, [decodedCode, isMock]);
 
   const loadEnrollments = useCallback(async (branch: string) => {
     if (!branch || isMock) return;
@@ -152,43 +245,110 @@ export default function AdminParentDetailPage() {
   }, [load]);
 
   useEffect(() => {
-    if (tab === 'assign' || tab === 'enrollments') void loadAssignOptions();
+    if (!parent || !initialBranch) return;
+    const match = parent.children.find(
+      (c) => c.branchName.toLowerCase() === initialBranch.toLowerCase()
+    );
+    if (!match) return;
+    setAssignBranch(match.branchName);
+    setScheduleBranch(match.branchName);
+    setEnrollmentBranch(match.branchName);
+  }, [parent, initialBranch]);
+
+  useEffect(() => {
+    if (tab === 'assign') void loadAssignOptions();
   }, [tab, loadAssignOptions]);
+
+  useEffect(() => {
+    if (tab === 'schedule' && scheduleBranch) void loadScheduleEnrollments(scheduleBranch);
+  }, [tab, scheduleBranch, loadScheduleEnrollments]);
 
   useEffect(() => {
     if (tab === 'enrollments' && enrollmentBranch) void loadEnrollments(enrollmentBranch);
   }, [tab, enrollmentBranch, loadEnrollments]);
 
+  useEffect(() => {
+    if (scheduleEnrollments.length === 0) {
+      setSelectedEnrollmentKey('');
+      return;
+    }
+    const stillValid = scheduleEnrollments.some((e) => enrollmentKey(e) === selectedEnrollmentKey);
+    if (!stillValid) setSelectedEnrollmentKey(enrollmentKey(scheduleEnrollments[0]));
+  }, [scheduleEnrollments, selectedEnrollmentKey]);
+
+  const selectedEnrollment = scheduleEnrollments.find(
+    (e) => enrollmentKey(e) === selectedEnrollmentKey
+  );
+
+  useEffect(() => {
+    if (!selectedEnrollment) return;
+    if (selectedEnrollment.classDate) {
+      setScheduleStartDate(selectedEnrollment.classDate.slice(0, 10));
+    }
+    if (selectedEnrollment.deliveryDate) {
+      setScheduleEndDate(selectedEnrollment.deliveryDate.slice(0, 10));
+    }
+  }, [selectedEnrollment]);
+
   const breadcrumbs = useMemo(
     () => [
-      { label: 'Parents', to: '/admin/parents' },
+      { label: 'Students', to: '/admin/parents' },
       { label: parent?.parentName ?? decodedCode },
     ],
     [parent, decodedCode]
   );
 
-  const selectedItemMeta = courses.find((c) => c.itemCode === selectedItemCode);
-
-  const handleAssign = async () => {
-    if (!parent || !selectedBranch || !selectedItemCode || !selectedTeacherUserId) return;
-    setAssigning(true);
+  const handleAssignCourse = async () => {
+    if (!parent || !assignBranch || validAssignLines.length === 0) return;
+    setAssignSaving(true);
     try {
-      await sqlAccountApi.assignChildEnrollment({
+      const result = await sqlAccountApi.assignChildEnrollment({
         customerCode: parent.customerCode,
-        branchName: selectedBranch,
-        itemCode: selectedItemCode,
-        startDate,
-        endDate,
-        teacherUserId: selectedTeacherUserId,
+        branchName: assignBranch,
+        lines: validAssignLines.map((line) => ({
+          itemCode: line.itemCode,
+          teacherUserId: line.teacherUserId,
+          startDate: line.startDate,
+          endDate: line.endDate,
+          classDays: line.classDays,
+        })),
       });
-      showSuccess('Course assigned — calendar sessions will sync from the date range.');
-      setTab('enrollments');
-      setEnrollmentBranch(selectedBranch);
-      await loadEnrollments(selectedBranch);
+      const lineCount = result.lineCount ?? validAssignLines.length;
+      showSuccess(
+        `Sales order ${result.docNo} created with ${lineCount} line${lineCount === 1 ? '' : 's'} — calendar will sync.`
+      );
+      setEnrollmentBranch(assignBranch);
+      await loadEnrollments(assignBranch);
+      if (scheduleBranch === assignBranch) {
+        await loadScheduleEnrollments(assignBranch);
+      }
+      setAssignLines([newAssignLineRow()]);
     } catch (err) {
       showError(getApiErrorMessage(err, 'Could not assign course.'));
     } finally {
-      setAssigning(false);
+      setAssignSaving(false);
+    }
+  };
+
+  const handleSaveSchedule = async () => {
+    if (!parent || !scheduleBranch || !selectedEnrollment) return;
+    setScheduleSaving(true);
+    try {
+      await sqlAccountApi.updateEnrollmentSchedule(selectedEnrollment.docKey, selectedEnrollment.seq, {
+        customerCode: parent.customerCode,
+        branchName: scheduleBranch,
+        startDate: scheduleStartDate,
+        endDate: scheduleEndDate,
+      });
+      showSuccess('Schedule dates saved — calendar sessions will sync.');
+      await loadScheduleEnrollments(scheduleBranch);
+      if (enrollmentBranch === scheduleBranch) {
+        await loadEnrollments(scheduleBranch);
+      }
+    } catch (err) {
+      showError(getApiErrorMessage(err, 'Could not save schedule dates.'));
+    } finally {
+      setScheduleSaving(false);
     }
   };
 
@@ -219,7 +379,7 @@ export default function AdminParentDetailPage() {
             <Link to="/admin/parents">
               <Button type="button" variant="outline" size="sm">
                 <ArrowLeft className="mr-1.5 h-4 w-4" />
-                All parents
+                All students
               </Button>
             </Link>
             <Button type="button" variant="outline" size="sm" onClick={() => void load()}>
@@ -232,12 +392,13 @@ export default function AdminParentDetailPage() {
 
       <Card>
         <SlidingTabs
-          tabs={['children', 'assign', 'enrollments'] as const}
+          tabs={['children', 'assign', 'schedule', 'enrollments'] as const}
           value={tab}
           onChange={(v) => setTab(v as Tab)}
           labels={{
             children: 'Children',
             assign: 'Assign course',
+            schedule: 'Schedule dates',
             enrollments: 'Enrollments',
           }}
         />
@@ -279,17 +440,185 @@ export default function AdminParentDetailPage() {
           )}
 
           {tab === 'assign' && (
-            <div className="mx-auto max-w-lg space-y-4">
+            <div className="mx-auto max-w-5xl space-y-4">
               <p className="text-sm text-slate-600">
-                Creates a SQL Account sales order (<code className="text-xs">POST /salesorder</code>) with class
-                UDF fields. Pick child, ERP teacher, and ST_ITEM class; schedule comes from the item-code link.
+                One sales order per child. Each row is a class + teacher with its own date range and
+                weekdays — sessions repeat on those days from start to end.
               </p>
               <div className="space-y-1.5">
                 <Label htmlFor="assignBranch">Child (branch)</Label>
                 <Select
                   id="assignBranch"
-                  value={selectedBranch}
-                  onChange={(e) => setSelectedBranch(e.target.value)}
+                  value={assignBranch}
+                  onChange={(e) => setAssignBranch(e.target.value)}
+                >
+                  {parent.children.map((c) => (
+                    <option key={c.branchName} value={c.branchName}>
+                      {c.branchName}
+                      {c.attention ? ` (${c.attention})` : ''}
+                    </option>
+                  ))}
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <div className="flex flex-wrap items-end justify-between gap-2">
+                  <Label htmlFor="classFilter">Course lines</Label>
+                  <Input
+                    id="classFilter"
+                    type="search"
+                    placeholder="Filter classes…"
+                    value={classFilter}
+                    onChange={(e) => setClassFilter(e.target.value)}
+                    disabled={courseOptionsLoading}
+                    className="max-w-xs"
+                  />
+                </div>
+                <div className="overflow-x-auto rounded-lg border border-slate-200">
+                  <table className="min-w-full text-sm">
+                    <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+                      <tr>
+                        <th className="px-3 py-2.5 font-medium">Class</th>
+                        <th className="px-3 py-2.5 font-medium">Teacher</th>
+                        <th className="px-3 py-2.5 font-medium">From</th>
+                        <th className="px-3 py-2.5 font-medium">To</th>
+                        <th className="px-3 py-2.5 font-medium">Days</th>
+                        <th className="w-12 px-2 py-2.5" />
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {assignLines.map((line) => (
+                        <tr key={line.id} className="align-top">
+                          <td className="px-3 py-2">
+                            <Select
+                              value={line.itemCode}
+                              onChange={(e) => updateAssignLine(line.id, { itemCode: e.target.value })}
+                              disabled={courseOptionsLoading}
+                              className="min-w-[12rem]"
+                            >
+                              <option value="">Select class…</option>
+                              {filteredCourseOptions.map((c) => (
+                                <option key={c.itemCode} value={c.itemCode}>
+                                  {c.description} ({c.itemCode})
+                                </option>
+                              ))}
+                            </Select>
+                          </td>
+                          <td className="px-3 py-2">
+                            <Select
+                              value={line.teacherUserId}
+                              onChange={(e) =>
+                                updateAssignLine(line.id, { teacherUserId: e.target.value })
+                              }
+                              disabled={erpTeachersLoading}
+                              className="min-w-[8rem]"
+                            >
+                              <option value="">Teacher…</option>
+                              {erpTeachers.map((t) => (
+                                <option
+                                  key={t.erpUserId}
+                                  value={t.portalUserId ?? ''}
+                                  disabled={!t.portalUserId}
+                                >
+                                  {t.fullName}
+                                </option>
+                              ))}
+                            </Select>
+                          </td>
+                          <td className="px-3 py-2">
+                            <Input
+                              type="date"
+                              value={line.startDate}
+                              onChange={(e) => updateAssignLine(line.id, { startDate: e.target.value })}
+                              className="min-w-[9rem]"
+                            />
+                          </td>
+                          <td className="px-3 py-2">
+                            <Input
+                              type="date"
+                              value={line.endDate}
+                              onChange={(e) => updateAssignLine(line.id, { endDate: e.target.value })}
+                              className="min-w-[9rem]"
+                            />
+                          </td>
+                          <td className="px-3 py-2">
+                            <div className="flex flex-wrap gap-1">
+                              {WEEKDAYS.map((day) => {
+                                const active = line.classDays.includes(day.value);
+                                return (
+                                  <button
+                                    key={day.value}
+                                    type="button"
+                                    onClick={() => toggleClassDay(line.id, day.value)}
+                                    className={`rounded px-2 py-1 text-xs font-medium ${
+                                      active
+                                        ? 'bg-primary-600 text-white'
+                                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                                    }`}
+                                  >
+                                    {day.label}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </td>
+                          <td className="px-2 py-2 text-center">
+                            <button
+                              type="button"
+                              className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-red-600 disabled:opacity-30"
+                              disabled={assignLines.length <= 1}
+                              onClick={() => removeAssignLine(line.id)}
+                              aria-label="Remove line"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <Button type="button" variant="outline" size="sm" onClick={addAssignLine}>
+                  <Plus className="mr-1.5 h-4 w-4" />
+                  Add line
+                </Button>
+              </div>
+              <Button
+                type="button"
+                disabled={
+                  assignSaving ||
+                  !assignBranch ||
+                  validAssignLines.length === 0 ||
+                  isMock ||
+                  courseOptionsLoading ||
+                  erpTeachersLoading
+                }
+                onClick={() => void handleAssignCourse()}
+              >
+                <Plus className="mr-1.5 h-4 w-4" />
+                {assignSaving
+                  ? 'Creating…'
+                  : validAssignLines.length > 1
+                    ? `Create SO with ${validAssignLines.length} lines`
+                    : 'Create sales order'}
+              </Button>
+              {isMock && (
+                <p className="text-xs text-amber-700">Assign course requires live API (not mock mode).</p>
+              )}
+            </div>
+          )}
+
+          {tab === 'schedule' && (
+            <div className="mx-auto max-w-lg space-y-4">
+              <p className="text-sm text-slate-600">
+                Update from/to dates on an existing sales order. Writes directly to the portal
+                database (no SQL Account API).
+              </p>
+              <div className="space-y-1.5">
+                <Label htmlFor="scheduleBranch">Child (branch)</Label>
+                <Select
+                  id="scheduleBranch"
+                  value={scheduleBranch}
+                  onChange={(e) => setScheduleBranch(e.target.value)}
                 >
                   {parent.children.map((c) => (
                     <option key={c.branchName} value={c.branchName}>
@@ -300,83 +629,72 @@ export default function AdminParentDetailPage() {
                 </Select>
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="assignTeacher">Teacher</Label>
+                <Label htmlFor="scheduleEnrollment">Enrollment</Label>
                 <Select
-                  id="assignTeacher"
-                  value={selectedTeacherUserId}
-                  onChange={(e) => setSelectedTeacherUserId(e.target.value)}
+                  id="scheduleEnrollment"
+                  value={selectedEnrollmentKey}
+                  onChange={(e) => setSelectedEnrollmentKey(e.target.value)}
+                  disabled={scheduleEnrollmentsLoading}
                 >
-                  {teachers.length === 0 ? (
-                    <option value="">No teachers available</option>
+                  {scheduleEnrollmentsLoading ? (
+                    <option value="">Loading enrollments…</option>
+                  ) : scheduleEnrollments.length === 0 ? (
+                    <option value="">No sales orders for this child</option>
                   ) : (
-                    teachers.map((t) => (
-                      <option key={t.userId} value={t.userId}>
-                        {t.fullName}
+                    scheduleEnrollments.map((e) => (
+                      <option key={enrollmentKey(e)} value={enrollmentKey(e)}>
+                        {e.docNo} — {e.className}
+                        {e.conductedBy ? ` (${e.conductedBy})` : ''}
                       </option>
                     ))
                   )}
                 </Select>
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="assignItemCode">Class</Label>
-                <Select
-                  id="assignItemCode"
-                  value={selectedItemCode}
-                  onChange={(e) => setSelectedItemCode(e.target.value)}
-                >
-                  {courses.length === 0 ? (
-                    <option value="">No items in ST_ITEM</option>
-                  ) : (
-                    courses.map((c) => (
-                      <option key={c.itemCode} value={c.itemCode}>
-                        {c.description}
-                      </option>
-                    ))
-                  )}
-                </Select>
-                {selectedItemMeta && (
+                {selectedEnrollment && (
                   <p className="text-xs text-slate-500">
-                    Schedule: {selectedItemMeta.dayOfWeek} {selectedItemMeta.startTime}–
-                    {selectedItemMeta.endTime}
+                    {selectedEnrollment.classDay && selectedEnrollment.classTime
+                      ? `${selectedEnrollment.classDay} ${selectedEnrollment.classTime}`
+                      : 'Day/time from ERP line'}
+                    {selectedEnrollment.classDate &&
+                      ` · current from ${formatDateDDMMYYYY(selectedEnrollment.classDate.slice(0, 10))}`}
                   </p>
                 )}
               </div>
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-1.5">
-                  <Label htmlFor="startDate">From date</Label>
+                  <Label htmlFor="scheduleStartDate">From date</Label>
                   <Input
-                    id="startDate"
+                    id="scheduleStartDate"
                     type="date"
-                    value={startDate}
-                    onChange={(e) => setStartDate(e.target.value)}
+                    value={scheduleStartDate}
+                    onChange={(e) => setScheduleStartDate(e.target.value)}
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <Label htmlFor="endDate">To date</Label>
+                  <Label htmlFor="scheduleEndDate">To date</Label>
                   <Input
-                    id="endDate"
+                    id="scheduleEndDate"
                     type="date"
-                    value={endDate}
-                    onChange={(e) => setEndDate(e.target.value)}
+                    value={scheduleEndDate}
+                    onChange={(e) => setScheduleEndDate(e.target.value)}
                   />
                 </div>
               </div>
               <Button
                 type="button"
                 disabled={
-                  assigning ||
-                  !selectedBranch ||
-                  !selectedTeacherUserId ||
-                  !selectedItemCode ||
-                  isMock
+                  scheduleSaving ||
+                  !scheduleBranch ||
+                  !selectedEnrollment ||
+                  isMock ||
+                  scheduleEnrollmentsLoading
                 }
-                onClick={() => void handleAssign()}
+                onClick={() => void handleSaveSchedule()}
               >
-                <Plus className="mr-1.5 h-4 w-4" />
-                {assigning ? 'Assigning…' : 'Assign course'}
+                <Save className="mr-1.5 h-4 w-4" />
+                {scheduleSaving ? 'Saving…' : 'Save dates'}
               </Button>
               {isMock && (
-                <p className="text-xs text-amber-700">Course assignment requires live API (not mock mode).</p>
+                <p className="text-xs text-amber-700">Schedule updates require live API (not mock mode).</p>
               )}
             </div>
           )}

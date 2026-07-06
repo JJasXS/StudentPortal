@@ -4,27 +4,27 @@ using MusicTuitionPortal.Api.Data;
 namespace MusicTuitionPortal.Api.Services;
 
 /// <summary>
-/// Writes SL_SODTL.UDF_CLASSDATE (SQL Account DateTime / Firebird TIMESTAMP) from portal class sessions.
+/// Writes PORTAL_SO_LINE_SCHEDULE.CLASSSTARTDATETIME from portal class sessions.
 /// </summary>
 public class SqlAccountSodtlUdfSyncService
 {
     private readonly AppDbContext _context;
-    private readonly SqlAccountLocalDbService _localDb;
+    private readonly PortalSoLineScheduleService _schedules;
     private readonly ILogger<SqlAccountSodtlUdfSyncService> _logger;
 
     public SqlAccountSodtlUdfSyncService(
         AppDbContext context,
-        SqlAccountLocalDbService localDb,
+        PortalSoLineScheduleService schedules,
         ILogger<SqlAccountSodtlUdfSyncService> logger)
     {
         _context = context;
-        _localDb = localDb;
+        _schedules = schedules;
         _logger = logger;
     }
 
     public async Task SyncNextSessionClassDateAsync(Guid classId, CancellationToken cancellationToken = default)
     {
-        if (!_localDb.CanWriteLocalDb)
+        if (!_schedules.CanWrite)
             return;
 
         var cls = await _context.Classes
@@ -60,7 +60,7 @@ public class SqlAccountSodtlUdfSyncService
             var updated = 0;
             if (itemCodes.Count > 0)
             {
-                updated += await _localDb.UpdateClassDateByItemCodesAsync(
+                updated += await _schedules.UpdateClassStartByItemCodesAsync(
                     itemCodes,
                     classDateTime,
                     cancellationToken);
@@ -68,7 +68,7 @@ public class SqlAccountSodtlUdfSyncService
 
             if (!string.IsNullOrWhiteSpace(cls.DayOfWeek) && !string.IsNullOrWhiteSpace(cls.TeacherUser?.FullName))
             {
-                updated += await _localDb.UpdateClassDateByScheduleMatchAsync(
+                updated += await _schedules.UpdateClassStartByScheduleMatchAsync(
                     cls.DayOfWeek,
                     cls.TeacherUser.FullName,
                     classDateTime,
@@ -78,7 +78,7 @@ public class SqlAccountSodtlUdfSyncService
             if (updated > 0)
             {
                 _logger.LogInformation(
-                    "Synced UDF_CLASSDATE for class {ClassId} ({ClassName}): {Count} SL_SODTL line(s) → {Date}",
+                    "Synced portal SO schedule for class {ClassId} ({ClassName}): {Count} line(s) → {Date}",
                     classId,
                     cls.ClassName,
                     updated,
@@ -87,7 +87,7 @@ public class SqlAccountSodtlUdfSyncService
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Failed to sync UDF_CLASSDATE for class {ClassId}", classId);
+            _logger.LogWarning(ex, "Failed to sync portal SO schedule for class {ClassId}", classId);
         }
     }
 }

@@ -1,4 +1,5 @@
 using FirebirdSql.Data.FirebirdClient;
+using MusicTuitionPortal.Api.Helpers;
 
 namespace MusicTuitionPortal.Api.Services;
 
@@ -195,5 +196,152 @@ public static class PortalFirebirdSchema
         cmd.Parameters.AddWithValue("@name", tableName.ToUpperInvariant());
         var result = await cmd.ExecuteScalarAsync(ct);
         return result != null;
+    }
+
+    public static async Task<bool> SodtlColumnExistsAsync(
+        FbConnection connection,
+        string columnName,
+        CancellationToken cancellationToken = default)
+    {
+        const string sql = """
+            SELECT 1 FROM RDB$RELATION_FIELDS
+            WHERE RDB$RELATION_NAME = 'SL_SODTL' AND RDB$FIELD_NAME = @name
+            """;
+        await using var cmd = new FbCommand(sql, connection);
+        cmd.Parameters.AddWithValue("@name", columnName.ToUpperInvariant());
+        return await cmd.ExecuteScalarAsync(cancellationToken) != null;
+    }
+
+    /// <summary>
+    /// SQL Account desktop expects FMTBcd (DECIMAL with scale, like UNITPRICE) — not plain BIGINT.
+    /// Portal uses PORTAL_SO_LINE_SCHEDULE; these columns are kept in sync for ERP UI.
+    /// </summary>
+    public static async Task EnsureSodtlClassDateUdfsAsync(
+        FbConnection connection,
+        CancellationToken cancellationToken = default)
+    {
+        if (await SodtlColumnExistsAsync(connection, "UDF_CLASSDATE", cancellationToken)
+            && await SodtlColumnExistsAsync(connection, "UDF_CLASSENDDATE", cancellationToken))
+        {
+            return;
+        }
+
+        if (!await SodtlColumnExistsAsync(connection, "UDF_CLASSDATE", cancellationToken))
+        {
+            await using var add = new FbCommand(
+                "ALTER TABLE SL_SODTL ADD UDF_CLASSDATE DECIMAL(18,4)", connection);
+            await add.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        if (!await SodtlColumnExistsAsync(connection, "UDF_CLASSENDDATE", cancellationToken))
+        {
+            await using var add = new FbCommand(
+                "ALTER TABLE SL_SODTL ADD UDF_CLASSENDDATE DECIMAL(18,4)", connection);
+            await add.ExecuteNonQueryAsync(cancellationToken);
+        }
+    }
+
+    private static async Task<string?> GetSodtlColumnDomainAsync(
+        FbConnection connection,
+        string columnName,
+        CancellationToken cancellationToken = default)
+    {
+        const string sql = """
+            SELECT TRIM(RF.RDB$FIELD_SOURCE)
+            FROM RDB$RELATION_FIELDS RF
+            WHERE RF.RDB$RELATION_NAME = 'SL_SODTL' AND TRIM(RF.RDB$FIELD_NAME) = @name
+            """;
+        await using var cmd = new FbCommand(sql, connection);
+        cmd.Parameters.AddWithValue("@name", columnName.Trim());
+        return (await cmd.ExecuteScalarAsync(cancellationToken))?.ToString()?.Trim();
+    }
+
+    public static async Task<bool> SodtlClassDateUdfsAreBcdAsync(
+        FbConnection connection,
+        CancellationToken cancellationToken = default)
+    {
+        var meta = await GetSodtlColumnMetaAsync(connection, "UDF_CLASSDATE", cancellationToken);
+        return meta is { SubType: 2, Precision: 18, Scale: -4 };
+    }
+
+    public static async Task<(short Type, short Precision, short Scale, short SubType)?> GetSodtlColumnMetaAsync(
+        FbConnection connection,
+        string columnName,
+        CancellationToken cancellationToken = default)
+    {
+        const string sql = """
+            SELECT F.RDB$FIELD_TYPE, F.RDB$FIELD_PRECISION, F.RDB$FIELD_SCALE, F.RDB$FIELD_SUB_TYPE
+            FROM RDB$RELATION_FIELDS RF
+            JOIN RDB$FIELDS F ON RF.RDB$FIELD_SOURCE = F.RDB$FIELD_NAME
+            WHERE RF.RDB$RELATION_NAME = 'SL_SODTL' AND TRIM(RF.RDB$FIELD_NAME) = @name
+            """;
+        await using var cmd = new FbCommand(sql, connection);
+        cmd.Parameters.AddWithValue("@name", columnName.Trim());
+        await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+            return null;
+
+        return (
+            reader.GetInt16(0),
+            reader.IsDBNull(1) ? (short)0 : reader.GetInt16(1),
+            reader.IsDBNull(2) ? (short)0 : reader.GetInt16(2),
+            reader.IsDBNull(3) ? (short)0 : reader.GetInt16(3));
+    }
+
+    public static async Task EnsureSodtlClassDateUdfsAsBcdAsync(
+        FbConnection connection,
+        CancellationToken cancellationToken = default)
+    {
+        if (!await SodtlClassDateUdfsAreBcdAsync(connection, cancellationToken))
+        {
+            if (await SodtlColumnExistsAsync(connection, "UDF_CLASSDATE", cancellationToken))
+            {
+                await using var drop = new FbCommand("ALTER TABLE SL_SODTL DROP UDF_CLASSDATE", connection);
+                await drop.ExecuteNonQueryAsync(cancellationToken);
+            }
+
+            if (await SodtlColumnExistsAsync(connection, "UDF_CLASSENDDATE", cancellationToken))
+            {
+                await using var drop = new FbCommand("ALTER TABLE SL_SODTL DROP UDF_CLASSENDDATE", connection);
+                await drop.ExecuteNonQueryAsync(cancellationToken);
+            }
+        }
+
+        await EnsureSodtlClassDateUdfsAsync(connection, cancellationToken);
+    }
+
+    public static async Task SyncSodtlUdfClassDatesAsync(
+        FbConnection connection,
+        int docKey,
+        int seq,
+        DateTime classStart,
+        DateTime? classEnd,
+        CancellationToken cancellationToken = default)
+    {
+        await EnsureSodtlClassDateUdfsAsBcdAsync(connection, cancellationToken);
+        if (!await SodtlColumnExistsAsync(connection, "UDF_CLASSDATE", cancellationToken))
+            return;
+
+        var classDateBcd = SqlAccountUdfClassDateHelper.ToClassDateBcdDecimal(classStart);
+        object? classEndBcd = classEnd.HasValue
+            ? SqlAccountUdfClassDateHelper.ToClassEndDateBcdDecimal(classEnd.Value)
+            : DBNull.Value;
+
+        const string sql = """
+            UPDATE SL_SODTL
+            SET UDF_CLASSDATE = @classStart,
+                UDF_CLASSENDDATE = @classEnd
+            WHERE DOCKEY = @docKey AND SEQ = @seq
+            """;
+
+        await using var cmd = new FbCommand(sql, connection);
+        cmd.Parameters.AddWithValue("@docKey", docKey);
+        cmd.Parameters.AddWithValue("@seq", seq);
+        cmd.Parameters.Add(new FbParameter("@classStart", FbDbType.Decimal) { Value = classDateBcd });
+        cmd.Parameters.Add(new FbParameter("@classEnd", FbDbType.Decimal)
+        {
+            Value = classEndBcd
+        });
+        await cmd.ExecuteNonQueryAsync(cancellationToken);
     }
 }

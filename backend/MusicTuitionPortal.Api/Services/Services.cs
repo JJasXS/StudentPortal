@@ -55,10 +55,10 @@ public class AuthService
             return new LoginMethodResponse("password", false);
 
         throw new InvalidOperationException(
-            "This email is not found in SQL Account (SY_USER email or AR_CUSTOMER udf_email). Contact the centre for access.");
+            "This email is not found in SQL Account (SY_USER email or AR_CUSTOMERBRANCH email). Contact the centre for access.");
     }
 
-    /// <summary>Sign in when email matches SY_USER (admin/teacher), or AR_CUSTOMER udf_email parent.</summary>
+    /// <summary>Sign in when email matches SY_USER (admin/teacher), or AR_CUSTOMERBRANCH email (parent).</summary>
     public async Task<LoginResponse?> LoginWithUdfEmailAsync(string email)
     {
         var normalized = NormalizeEmail(email);

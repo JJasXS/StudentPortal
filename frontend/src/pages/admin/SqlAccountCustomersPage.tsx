@@ -153,7 +153,7 @@ export default function SqlAccountCustomersPage() {
     <div>
       <PageHeader
         title="SQL Account Customers"
-        description="Read-only view of AR_CUSTOMER — parent (COMPANYNAME), parent login (udf_email), children (BRANCHNAME)."
+        description="Read-only view of AR_CUSTOMER — parent (COMPANYNAME), parent login (branch EMAIL), children (BRANCHNAME)."
         actions={
           <div className="flex flex-wrap items-center gap-2">
             <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600">
@@ -206,7 +206,7 @@ export default function SqlAccountCustomersPage() {
         <SearchBox
           value={search}
           onChange={setSearch}
-          placeholder="Search parent, udf_email, child, code, email, or phone..."
+          placeholder="Search parent, branch email, child, code, email, or phone..."
           className="max-w-md"
         />
         <div className="flex items-center gap-2 text-sm text-slate-500">
