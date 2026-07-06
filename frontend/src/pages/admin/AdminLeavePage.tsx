@@ -12,12 +12,12 @@ import { formatDateDDMMYYYY } from '@/utils/dateFormat';
 import { formatPortalSlotDate, portalLeaveStatusLabel } from '@/utils/portalLeave';
 import { getApiErrorMessage } from '@/utils/apiError';
 import type { PortalLeaveRequest } from '@/types/portal';
-import type { TeacherProfile } from '@/types';
+import type { SqlAccountCalendarTeacher } from '@/types/sqlAccount';
 
 export default function AdminLeavePage() {
   const { error: showError } = useToast();
   const [requests, setRequests] = useState<PortalLeaveRequest[]>([]);
-  const [teachers, setTeachers] = useState<TeacherProfile[]>([]);
+  const [erpTeachers, setErpTeachers] = useState<SqlAccountCalendarTeacher[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<'all' | 'action'>('action');
   const [notes, setNotes] = useState<Record<string, string>>({});
@@ -36,14 +36,14 @@ export default function AdminLeavePage() {
 
   useEffect(() => {
     setLoading(true);
-    Promise.all([leaveApi.getAll(), teachersApi.getAll()])
+    Promise.all([leaveApi.getAll(), teachersApi.getCalendarFilter()])
       .then(([leaveData, teacherData]) => {
         setRequests(leaveData);
-        setTeachers(teacherData.filter((t) => t.isActive));
+        setErpTeachers(teacherData);
       })
       .catch(() => {
         setRequests([]);
-        setTeachers([]);
+        setErpTeachers([]);
       })
       .finally(() => setLoading(false));
   }, []);
@@ -179,15 +179,20 @@ export default function AdminLeavePage() {
                   {req.status === 'ReplacementNeeded' && (
                     <div className="grid gap-3 border-t border-slate-100 pt-4 sm:grid-cols-2">
                       <div className="space-y-1.5 sm:col-span-2">
-                        <Label>Replacement teacher</Label>
+                        <Label>Replacement teacher (ERP / SY_USER)</Label>
                         <Select
                           value={form.replTeacher}
                           onChange={(e) => setForm(req.id, { replTeacher: e.target.value })}
                         >
                           <option value="">Select teacher…</option>
-                          {teachers.map((t) => (
-                            <option key={t.userId} value={t.fullName}>
+                          {erpTeachers.map((t) => (
+                            <option
+                              key={t.erpUserId}
+                              value={t.fullName}
+                              disabled={!t.portalUserId}
+                            >
                               {t.fullName}
+                              {!t.portalUserId ? ' (no portal login)' : ''}
                             </option>
                           ))}
                         </Select>
