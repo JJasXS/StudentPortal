@@ -53,7 +53,7 @@ public class AuthController : ControllerBase
         {
             var result = await _authService.LoginWithUdfEmailAsync(request.Email);
             if (result == null)
-                return Unauthorized(new { message = "Email not found in SQL Account (SY_USER or AR_CUSTOMER udf_email)." });
+                return Unauthorized(new { message = "Email not found in SQL Account (SY_USER email or AR_CUSTOMER udf_email)." });
             return Ok(MapLogin(result));
         }
         catch (InvalidOperationException ex)
@@ -400,6 +400,20 @@ public class ParentsController : ControllerBase
         });
     }
 
+    [HttpGet("me/calendar-events")]
+    [Authorize(Roles = "Parent")]
+    public async Task<IActionResult> GetMyCalendarEvents(
+        [FromQuery] string? branchName,
+        CancellationToken cancellationToken)
+    {
+        var email = User.FindFirst(System.Security.Claims.ClaimTypes.Email)?.Value;
+        if (string.IsNullOrWhiteSpace(email))
+            return Unauthorized(new { message = "Email not found in token." });
+
+        var events = await _service.GetCalendarEventsForEmailAsync(email, branchName, cancellationToken);
+        return Ok(events.Select(MapCalendarEvent).ToList());
+    }
+
     [HttpGet("me/sql-account-children/{branchName}/enrollments")]
     [Authorize(Roles = "Parent")]
     public async Task<IActionResult> GetMySqlAccountChildEnrollments(
@@ -424,6 +438,8 @@ public class ParentsController : ControllerBase
             branchName = result.BranchName,
             enrollments = result.Enrollments.Select(e => new
             {
+                docKey = e.DocKey,
+                seq = e.Seq,
                 docNo = e.DocNo,
                 docDate = e.DocDate,
                 className = e.ClassName,
@@ -432,6 +448,18 @@ public class ParentsController : ControllerBase
                 unitPrice = e.UnitPrice,
                 amount = e.Amount,
                 deliveryDate = e.DeliveryDate,
+                classDay = e.ClassDay,
+                classTime = e.ClassTime,
+                classDate = e.ClassDate,
+                studentName = e.StudentName,
+                conductedBy = e.ConductedBy,
+                linkedClassId = e.LinkedClassId,
+                linkedClassName = e.LinkedClassName,
+                linkedClassDayOfWeek = e.LinkedClassDayOfWeek,
+                linkedClassStartTime = e.LinkedClassStartTime,
+                linkedClassEndTime = e.LinkedClassEndTime,
+                linkedClassTeacherName = e.LinkedClassTeacherName,
+                nextSessionDate = e.NextSessionDate,
             }),
         });
     }
@@ -482,6 +510,27 @@ public class ParentsController : ControllerBase
     };
 
     private static List<object> MapList(List<ParentDto> list) => list.Select(p => Map(p)).Cast<object>().ToList();
+
+    private static object MapCalendarEvent(ErpCalendarEventDto e) => new
+    {
+        id = e.Id,
+        docKey = e.DocKey,
+        seq = e.Seq,
+        classId = e.ClassId?.ToString(),
+        courseId = e.CourseId?.ToString(),
+        className = e.ClassName,
+        courseName = e.CourseName,
+        teacherUserId = e.TeacherUserId?.ToString(),
+        teacherName = e.TeacherName,
+        studentName = e.StudentName,
+        branchName = e.BranchName,
+        itemCode = e.ItemCode,
+        customerCode = e.CustomerCode,
+        sessionDate = e.SessionDate,
+        startTime = e.StartTime,
+        endTime = e.EndTime,
+        status = e.Status,
+    };
 }
 
 [ApiController]
@@ -494,6 +543,17 @@ public class TeachersController : ControllerBase
 
     [HttpGet]
     public async Task<IActionResult> GetAll() => Ok(MapList(await _service.GetAllAsync()));
+
+    [HttpGet("calendar-filter")]
+    [Authorize(Roles = "Admin")]
+    public async Task<IActionResult> GetCalendarFilter(CancellationToken cancellationToken) =>
+        Ok((await _service.GetCalendarFilterTeachersAsync(cancellationToken)).Select(t => new
+        {
+            erpUserId = t.ErpUserId,
+            fullName = t.FullName,
+            email = t.Email,
+            portalUserId = t.PortalUserId?.ToString(),
+        }));
 
     [HttpGet("{id:guid}")]
     public async Task<IActionResult> GetById(Guid id)
@@ -664,7 +724,9 @@ public class ClassesController : ControllerBase
         maxStudents = c.MaxStudents,
         enrolledCount = c.EnrolledCount,
         location = c.Location,
-        isActive = c.IsActive
+        isActive = c.IsActive,
+        startDate = c.StartDate?.ToString("yyyy-MM-dd"),
+        endDate = c.EndDate?.ToString("yyyy-MM-dd")
     };
 
     private static List<object> MapList(List<ClassDto> list) => list.Select(c => Map(c)).Cast<object>().ToList();
@@ -683,7 +745,11 @@ public class EnrollmentsController : ControllerBase
 
     [HttpPost]
     [Authorize(Roles = "Admin")]
-    public async Task<IActionResult> Create([FromBody] EnrollmentDto request) => Ok(Map(await _service.CreateAsync(request)));
+    public async Task<IActionResult> Create([FromBody] EnrollmentDto request)
+    {
+        try { return Ok(Map(await _service.CreateAsync(request))); }
+        catch (InvalidOperationException ex) { return BadRequest(new { message = ex.Message }); }
+    }
 
     [HttpPut("{id:guid}")]
     [Authorize(Roles = "Admin")]
@@ -721,7 +787,24 @@ public class EnrollmentsController : ControllerBase
 public class ClassSessionsController : ControllerBase
 {
     private readonly ClassSessionService _service;
-    public ClassSessionsController(ClassSessionService service) => _service = service;
+    private readonly ClassSessionChangeHistoryService _history;
+
+    public ClassSessionsController(ClassSessionService service, ClassSessionChangeHistoryService history)
+    {
+        _service = service;
+        _history = history;
+    }
+
+    [HttpGet("changes")]
+    [Authorize(Roles = "Admin,Teacher")]
+    public async Task<IActionResult> GetChanges(
+        [FromQuery] Guid? classId,
+        [FromQuery] Guid? sessionId,
+        CancellationToken cancellationToken)
+    {
+        var rows = await _history.GetAsync(classId, sessionId, cancellationToken: cancellationToken);
+        return Ok(rows.Select(MapChange).ToList());
+    }
 
     [HttpGet]
     public async Task<IActionResult> GetAll() => Ok(MapList(await _service.GetAllAsync()));
@@ -739,18 +822,32 @@ public class ClassSessionsController : ControllerBase
 
     [HttpPut("{id:guid}")]
     [Authorize(Roles = "Admin,Teacher")]
-    public async Task<IActionResult> Update(Guid id, [FromBody] ClassSessionDto request)
+    public async Task<IActionResult> Update(Guid id, [FromBody] ClassSessionDto request, [FromQuery] string? reason)
     {
-        var session = await _service.UpdateAsync(id, request);
+        var session = await _service.UpdateAsync(id, request, reason);
         return session == null ? NotFound() : Ok(Map(session));
     }
 
     [HttpDelete("{id:guid}")]
     [Authorize(Roles = "Admin,Teacher")]
-    public async Task<IActionResult> Delete(Guid id)
+    public async Task<IActionResult> Delete(Guid id, [FromQuery] string? reason)
     {
-        var deleted = await _service.DeleteAsync(id);
+        var deleted = await _service.DeleteAsync(id, reason);
         return deleted ? NoContent() : NotFound();
+    }
+
+    [HttpPost("{id:guid}/replace")]
+    [Authorize(Roles = "Admin,Teacher")]
+    public async Task<IActionResult> Replace(Guid id, [FromBody] ReplaceClassSessionRequest request)
+    {
+        try
+        {
+            return Ok(Map(await _service.ReplaceAsync(id, request)));
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
     }
 
     [HttpPost("generate")]
@@ -794,6 +891,81 @@ public class ClassSessionsController : ControllerBase
     };
 
     private static List<object> MapList(List<ClassSessionDto> list) => list.Select(s => Map(s)).Cast<object>().ToList();
+
+    private static object MapChange(ClassSessionChangeHistoryDto h) => new
+    {
+        id = h.Id.ToString(),
+        classSessionId = h.ClassSessionId.ToString(),
+        classId = h.ClassId.ToString(),
+        className = h.ClassName,
+        changeType = h.ChangeType,
+        actorUserId = h.ActorUserId?.ToString(),
+        actorName = h.ActorName,
+        reason = h.Reason,
+        previousSessionDate = h.PreviousSessionDate,
+        previousStartTime = h.PreviousStartTime,
+        previousEndTime = h.PreviousEndTime,
+        previousStatus = h.PreviousStatus,
+        newSessionDate = h.NewSessionDate,
+        newStartTime = h.NewStartTime,
+        newEndTime = h.NewEndTime,
+        newStatus = h.NewStatus,
+        replacementClassSessionId = h.ReplacementClassSessionId?.ToString(),
+        createdAt = h.CreatedAt
+    };
+}
+
+[ApiController]
+[Route("api/class-assignment-logs")]
+[Authorize(Roles = "Admin,Teacher")]
+public class ClassAssignmentLogsController : ControllerBase
+{
+    private readonly ClassAssignmentChangeLogService _service;
+
+    public ClassAssignmentLogsController(ClassAssignmentChangeLogService service) => _service = service;
+
+    [HttpGet]
+    public async Task<IActionResult> GetAll(
+        [FromQuery] Guid? classId,
+        CancellationToken cancellationToken)
+    {
+        var rows = await _service.GetAsync(classId, cancellationToken: cancellationToken);
+        return Ok(rows.Select(Map).ToList());
+    }
+
+    private static object Map(ClassAssignmentChangeLogDto l) => new
+    {
+        id = l.Id.ToString(),
+        classId = l.ClassId.ToString(),
+        className = l.ClassName,
+        entityType = l.EntityType,
+        operation = l.Operation,
+        entityId = l.EntityId?.ToString(),
+        studentUserId = l.StudentUserId?.ToString(),
+        studentName = l.StudentName,
+        previousTeacherUserId = l.PreviousTeacherUserId?.ToString(),
+        previousTeacherName = l.PreviousTeacherName,
+        newTeacherUserId = l.NewTeacherUserId?.ToString(),
+        newTeacherName = l.NewTeacherName,
+        previousDayOfWeek = l.PreviousDayOfWeek,
+        newDayOfWeek = l.NewDayOfWeek,
+        previousClassStartTime = l.PreviousClassStartTime,
+        newClassStartTime = l.NewClassStartTime,
+        previousClassEndTime = l.PreviousClassEndTime,
+        newClassEndTime = l.NewClassEndTime,
+        previousSessionDate = l.PreviousSessionDate,
+        newSessionDate = l.NewSessionDate,
+        previousSessionStartTime = l.PreviousSessionStartTime,
+        newSessionStartTime = l.NewSessionStartTime,
+        previousSessionEndTime = l.PreviousSessionEndTime,
+        newSessionEndTime = l.NewSessionEndTime,
+        previousStatus = l.PreviousStatus,
+        newStatus = l.NewStatus,
+        actorUserId = l.ActorUserId?.ToString(),
+        actorName = l.ActorName,
+        reason = l.Reason,
+        createdAt = l.CreatedAt
+    };
 }
 
 [ApiController]
@@ -1146,56 +1318,113 @@ public class AuditLogsController : ControllerBase
 }
 
 [ApiController]
-[Route("api/notifications")]
-[Authorize]
-public class NotificationsController : ControllerBase
+[Route("api/calendar")]
+[Authorize(Roles = "Admin,Teacher")]
+public class CalendarController : ControllerBase
 {
-    private readonly NotificationService _service;
+    private readonly AdminCalendarService _calendarService;
 
-    public NotificationsController(NotificationService service) => _service = service;
+    public CalendarController(AdminCalendarService calendarService) => _calendarService = calendarService;
 
-    [HttpGet]
-    public async Task<IActionResult> GetAll([FromQuery] bool? unreadOnly)
+    [HttpGet("events")]
+    public async Task<IActionResult> GetEvents(CancellationToken cancellationToken)
     {
-        var userId = Guid.Parse(User.FindFirstValue(System.Security.Claims.ClaimTypes.NameIdentifier)!);
-        return Ok(MapList(await _service.GetForUserAsync(userId, unreadOnly)));
+        var events = await _calendarService.GetEventsAsync(cancellationToken);
+        return Ok(events.Select(Map).ToList());
     }
 
-    [HttpGet("unread-count")]
-    public async Task<IActionResult> GetUnreadCount()
+    [HttpPost("events/{id}/cancel")]
+    public async Task<IActionResult> CancelEvent(
+        string id,
+        [FromBody] CalendarEventCancelRequest request,
+        CancellationToken cancellationToken)
     {
-        var userId = Guid.Parse(User.FindFirstValue(System.Security.Claims.ClaimTypes.NameIdentifier)!);
-        return Ok(new { count = await _service.GetUnreadCountAsync(userId) });
+        if (string.IsNullOrWhiteSpace(request.Reason))
+            return BadRequest(new { message = "Reason is required." });
+
+        try
+        {
+            if (AdminCalendarService.TryParseOccurrenceId(id, out var occurrenceId))
+            {
+                await _calendarService.CancelOccurrenceByIdAsync(occurrenceId, request.Reason, cancellationToken);
+                return NoContent();
+            }
+
+            if (!AdminCalendarService.TryParseEventId(id, out var docKey, out var seq))
+                return BadRequest(new { message = "Invalid event id." });
+
+            await _calendarService.CancelEventAsync(docKey, seq, request.Reason, cancellationToken);
+            return NoContent();
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
     }
 
-    [HttpPut("{id:guid}/read")]
-    public async Task<IActionResult> MarkRead(Guid id)
+    [HttpPost("events/{id}/replace")]
+    public async Task<IActionResult> ReplaceEvent(
+        string id,
+        [FromBody] CalendarEventReplaceRequest request,
+        CancellationToken cancellationToken)
     {
-        var userId = Guid.Parse(User.FindFirstValue(System.Security.Claims.ClaimTypes.NameIdentifier)!);
-        var notification = await _service.MarkReadAsync(id, userId);
-        return notification == null ? NotFound() : Ok(Map(notification));
+        if (string.IsNullOrWhiteSpace(request.Reason))
+            return BadRequest(new { message = "Reason is required." });
+
+        try
+        {
+            if (AdminCalendarService.TryParseOccurrenceId(id, out var occurrenceId))
+            {
+                var updated = await _calendarService.ReplaceOccurrenceByIdAsync(
+                    occurrenceId,
+                    request.SessionDate,
+                    request.StartTime,
+                    request.EndTime,
+                    request.Reason,
+                    request.Notes,
+                    cancellationToken);
+                return updated == null ? NoContent() : Ok(Map(updated));
+            }
+
+            if (!AdminCalendarService.TryParseEventId(id, out var docKey, out var seq))
+                return BadRequest(new { message = "Invalid event id." });
+
+            var legacyUpdated = await _calendarService.ReplaceEventAsync(
+                docKey,
+                seq,
+                request.SessionDate,
+                request.StartTime,
+                request.EndTime,
+                request.Reason,
+                request.Notes,
+                cancellationToken);
+
+            return legacyUpdated == null ? NoContent() : Ok(Map(legacyUpdated));
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
     }
 
-    [HttpPut("read-all")]
-    public async Task<IActionResult> MarkAllRead()
+    private static object Map(ErpCalendarEventDto e) => new
     {
-        var userId = Guid.Parse(User.FindFirstValue(System.Security.Claims.ClaimTypes.NameIdentifier)!);
-        await _service.MarkAllReadAsync(userId);
-        return Ok(new { success = true });
-    }
-
-    private static object Map(NotificationDto n) => new
-    {
-        id = n.Id.ToString(),
-        userId = n.UserId.ToString(),
-        title = n.Title,
-        message = n.Message,
-        category = n.Category,
-        linkPath = n.LinkPath,
-        isRead = n.IsRead,
-        createdAt = n.CreatedAt
+        id = e.Id,
+        docKey = e.DocKey,
+        seq = e.Seq,
+        classId = e.ClassId?.ToString(),
+        courseId = e.CourseId?.ToString(),
+        className = e.ClassName,
+        courseName = e.CourseName,
+        teacherUserId = e.TeacherUserId?.ToString(),
+        teacherName = e.TeacherName,
+        studentName = e.StudentName,
+        branchName = e.BranchName,
+        itemCode = e.ItemCode,
+        customerCode = e.CustomerCode,
+        sessionDate = e.SessionDate,
+        startTime = e.StartTime,
+        endTime = e.EndTime,
+        status = e.Status,
     };
-
-    private static List<object> MapList(List<NotificationDto> list) =>
-        list.Select(n => Map(n)).Cast<object>().ToList();
 }

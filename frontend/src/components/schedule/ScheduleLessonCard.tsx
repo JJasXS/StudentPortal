@@ -41,36 +41,38 @@ export function ScheduleLessonCard({ item, className }: ScheduleLessonCardProps)
   return (
     <article
       className={cn(
-        'relative flex overflow-hidden rounded-2xl bg-white shadow-[0_2px_12px_rgba(15,23,42,0.08)]',
+        'relative flex min-w-0 overflow-hidden rounded-2xl bg-white shadow-[0_2px_12px_rgba(15,23,42,0.08)]',
         className
       )}
     >
-      <div className="flex w-[4.25rem] shrink-0 flex-col items-center justify-center border-r border-slate-100 py-5 text-center">
-        <span className="text-[11px] font-medium tracking-wide text-slate-400">{weekday}</span>
-        <span className="text-[1.75rem] font-bold leading-none text-[#9B6B4F]">{day}</span>
-        <span className="mt-0.5 text-[11px] font-bold text-[#9B6B4F]">{month}</span>
+      <div className="flex w-16 shrink-0 flex-col items-center justify-center border-r border-slate-100 py-4 text-center sm:w-[4.25rem] sm:py-5">
+        <span className="text-[10px] font-medium tracking-wide text-slate-400 sm:text-[11px]">{weekday}</span>
+        <span className="text-2xl font-bold leading-none text-[#9B6B4F] sm:text-[1.75rem]">{day}</span>
+        <span className="mt-0.5 text-[10px] font-bold text-[#9B6B4F] sm:text-[11px]">{month}</span>
       </div>
 
-      <div className="min-w-0 flex-1 px-4 py-3.5">
+      <div className="min-w-0 flex-1 px-3 py-3 sm:px-4 sm:py-3.5">
         <span
           className={cn(
-            'inline-block rounded-full px-3 py-0.5 text-[11px] font-semibold',
+            'inline-block rounded-full px-2.5 py-0.5 text-[10px] font-semibold sm:px-3 sm:text-[11px]',
             STATUS_STYLES[displayStatus]
           )}
         >
           {displayStatus}
         </span>
-        <h3 className="mt-2.5 text-[15px] font-bold leading-snug text-slate-900">{item.title}</h3>
+        <h3 className="mt-2 line-clamp-2 text-sm font-bold leading-snug text-slate-900 sm:mt-2.5 sm:text-[15px]">
+          {item.title}
+        </h3>
         {item.teacherName && (
-          <p className="mt-1 text-sm text-slate-500">{item.teacherName}</p>
+          <p className="mt-1 truncate text-xs text-slate-500 sm:text-sm">{item.teacherName}</p>
         )}
         {item.courseLabel && (
-          <p className="mt-0.5 text-sm text-slate-500">{item.courseLabel}</p>
+          <p className="mt-0.5 line-clamp-2 text-xs text-slate-500 sm:text-sm">{item.courseLabel}</p>
         )}
       </div>
 
       {item.isMakeup && (
-        <div className="flex w-9 shrink-0 items-center justify-center bg-emerald-600 text-[10px] font-bold uppercase tracking-wider text-white [writing-mode:vertical-rl]">
+        <div className="flex w-8 shrink-0 items-center justify-center bg-emerald-600 text-[9px] font-bold uppercase tracking-wider text-white [writing-mode:vertical-rl] sm:w-9 sm:text-[10px]">
           Make-up
         </div>
       )}

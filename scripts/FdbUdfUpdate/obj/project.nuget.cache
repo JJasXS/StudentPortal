@@ -1,0 +1,29 @@
+{
+  "version": 2,
+  "dgSpecHash": "TK0KJMtTMmM=",
+  "success": true,
+  "projectFilePath": "C:\\Users\\sqlsupport\\StudentPortal\\scripts\\FdbUdfUpdate\\FdbUdfUpdate.csproj",
+  "expectedPackageFiles": [
+    "C:\\Users\\sqlsupport\\AppData\\Local\\Temp\\cursor-sandbox-cache\\1edf59976efd40b81a84cba03415f4ed\\nuget\\firebirdsql.data.firebirdclient\\10.3.3\\firebirdsql.data.firebirdclient.10.3.3.nupkg.sha512",
+    "C:\\Users\\sqlsupport\\AppData\\Local\\Temp\\cursor-sandbox-cache\\1edf59976efd40b81a84cba03415f4ed\\nuget\\microsoft.data.sqlite\\10.0.0\\microsoft.data.sqlite.10.0.0.nupkg.sha512",
+    "C:\\Users\\sqlsupport\\AppData\\Local\\Temp\\cursor-sandbox-cache\\1edf59976efd40b81a84cba03415f4ed\\nuget\\microsoft.data.sqlite.core\\10.0.0\\microsoft.data.sqlite.core.10.0.0.nupkg.sha512",
+    "C:\\Users\\sqlsupport\\AppData\\Local\\Temp\\cursor-sandbox-cache\\1edf59976efd40b81a84cba03415f4ed\\nuget\\sqlitepclraw.bundle_e_sqlite3\\2.1.11\\sqlitepclraw.bundle_e_sqlite3.2.1.11.nupkg.sha512",
+    "C:\\Users\\sqlsupport\\AppData\\Local\\Temp\\cursor-sandbox-cache\\1edf59976efd40b81a84cba03415f4ed\\nuget\\sqlitepclraw.core\\2.1.11\\sqlitepclraw.core.2.1.11.nupkg.sha512",
+    "C:\\Users\\sqlsupport\\AppData\\Local\\Temp\\cursor-sandbox-cache\\1edf59976efd40b81a84cba03415f4ed\\nuget\\sqlitepclraw.lib.e_sqlite3\\2.1.11\\sqlitepclraw.lib.e_sqlite3.2.1.11.nupkg.sha512",
+    "C:\\Users\\sqlsupport\\AppData\\Local\\Temp\\cursor-sandbox-cache\\1edf59976efd40b81a84cba03415f4ed\\nuget\\sqlitepclraw.provider.e_sqlite3\\2.1.11\\sqlitepclraw.provider.e_sqlite3.2.1.11.nupkg.sha512"
+  ],
+  "logs": [
+    {
+      "code": "NU1903",
+      "level": "Warning",
+      "message": "Package 'SQLitePCLRaw.lib.e_sqlite3' 2.1.11 has a known high severity vulnerability, https://github.com/advisories/GHSA-2m69-gcr7-jv3q",
+      "projectPath": "C:\\Users\\sqlsupport\\StudentPortal\\scripts\\FdbUdfUpdate\\FdbUdfUpdate.csproj",
+      "warningLevel": 1,
+      "filePath": "C:\\Users\\sqlsupport\\StudentPortal\\scripts\\FdbUdfUpdate\\FdbUdfUpdate.csproj",
+      "libraryId": "SQLitePCLRaw.lib.e_sqlite3",
+      "targetGraphs": [
+        "net10.0"
+      ]
+    }
+  ]
+}

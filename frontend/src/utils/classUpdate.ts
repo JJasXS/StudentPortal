@@ -1,7 +1,11 @@
 import type { ClassItem } from '@/types';
 
 /** Payload shape for PUT /classes/{id} */
-export function classToUpdatePayload(item: ClassItem, teacherUserId: string) {
+export function classToUpdatePayload(
+  item: ClassItem,
+  teacherUserId: string,
+  overrides?: { startDate?: string; endDate?: string }
+) {
   return {
     id: item.id,
     courseId: item.courseId,
@@ -13,5 +17,7 @@ export function classToUpdatePayload(item: ClassItem, teacherUserId: string) {
     maxStudents: item.maxStudents,
     location: item.location,
     isActive: item.isActive,
+    startDate: overrides?.startDate ?? item.startDate,
+    endDate: overrides?.endDate ?? item.endDate,
   };
 }

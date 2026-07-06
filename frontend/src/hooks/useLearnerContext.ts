@@ -3,8 +3,6 @@ import { useAuth } from '@/context/AuthContext';
 import { parentsApi } from '@/api/resources';
 import { mockParents } from '@/utils/mockData';
 
-const useApi = import.meta.env.VITE_USE_MOCK !== 'true';
-
 export function useLearnerContext() {
   const { user } = useAuth();
   const [parentChildIds, setParentChildIds] = useState<string[]>([]);

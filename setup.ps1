@@ -26,9 +26,9 @@ Test-Command "npm" "npm --version"
 Test-Command "Git" "git --version"
 
 Write-Host ""
-Write-Host "PostgreSQL reminder:" -ForegroundColor Yellow
-Write-Host "  For production use PostgreSQL. For quick local dev, backend uses SQLite by default in Development."
-Write-Host "  To use PostgreSQL instead, set DatabaseProvider=Postgres in appsettings.Development.json"
+Write-Host "Database reminder:" -ForegroundColor Yellow
+Write-Host "  Portal + ERP use Firebird (SqlAccount__DatabasePath, default PORTAL.FDB)."
+Write-Host "  Set DatabaseProvider=Postgres only if you run a separate PostgreSQL portal DB."
 Write-Host ""
 Write-Host "Optional winget installs (run manually if needed):" -ForegroundColor DarkGray
 Write-Host "  winget install Microsoft.DotNet.SDK.8"

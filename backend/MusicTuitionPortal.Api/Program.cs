@@ -1,4 +1,5 @@
 using System.Text;
+using FirebirdSql.EntityFrameworkCore.Firebird;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
@@ -30,19 +31,28 @@ var sqlAccountSettings = builder.Configuration.GetSection("SqlAccount").Get<SqlA
 builder.Services.AddSingleton(sqlAccountSettings);
 builder.Services.AddHttpClient("SqlAccount");
 builder.Services.AddScoped<SqlAccountLocalDbService>();
+builder.Services.AddScoped<PortalSoLineScheduleService>();
+builder.Services.AddScoped<SqlAccountSodtlUdfSyncService>();
 builder.Services.AddScoped<SqlAccountService>();
 builder.Services.AddScoped<SqlAccountSalesOrderService>();
+builder.Services.AddScoped<SqlAccountChildEnrollmentWriteService>();
+builder.Services.AddScoped<ItemCodeClassLinkService>();
 
 builder.Services.AddDbContext<AppDbContext>(options =>
 {
-    var provider = builder.Configuration["DatabaseProvider"] ?? "Postgres";
-    if (string.Equals(provider, "Sqlite", StringComparison.OrdinalIgnoreCase))
+    var provider = builder.Configuration["DatabaseProvider"] ?? FirebirdDbConfig.ProviderName;
+    if (string.Equals(provider, FirebirdDbConfig.ProviderName, StringComparison.OrdinalIgnoreCase))
     {
-        options.UseSqlite(builder.Configuration.GetConnectionString("SqliteConnection"));
+        options.UseFirebird(FirebirdDbConfig.BuildConnectionString(builder.Configuration));
+    }
+    else if (string.Equals(provider, "Postgres", StringComparison.OrdinalIgnoreCase))
+    {
+        options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection"));
     }
     else
     {
-        options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection"));
+        throw new InvalidOperationException(
+            $"Unsupported DatabaseProvider '{provider}'. Use {FirebirdDbConfig.ProviderName} or Postgres.");
     }
 });
 
@@ -55,12 +65,18 @@ builder.Services.AddScoped<CourseService>();
 builder.Services.AddScoped<ClassService>();
 builder.Services.AddScoped<EnrollmentService>();
 builder.Services.AddScoped<ClassSessionService>();
+builder.Services.AddScoped<ClassSessionChangeHistoryService>();
+builder.Services.AddScoped<ClassAssignmentChangeLogService>();
+builder.Services.AddScoped<PortalClassSessionService>();
+builder.Services.AddScoped<PortalHomeworkService>();
+builder.Services.AddScoped<PortalLeaveRequestService>();
+builder.Services.AddScoped<PortalAnnouncementService>();
+builder.Services.AddScoped<AdminCalendarService>();
 builder.Services.AddScoped<AttendanceService>();
 builder.Services.AddScoped<LessonNoteService>();
 builder.Services.AddScoped<AnnouncementService>();
 builder.Services.AddScoped<InvoiceService>();
 builder.Services.AddHttpContextAccessor();
-builder.Services.AddScoped<NotificationService>();
 builder.Services.AddScoped<AuditLogService>();
 
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
@@ -146,7 +162,7 @@ try
 catch (Exception ex)
 {
     var logger = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("Startup");
-    logger.LogError(ex, "Database initialization failed. Check PostgreSQL is running or set DatabaseProvider=Sqlite in appsettings.Development.json");
+    logger.LogError(ex, "Database initialization failed. Check Firebird PORTAL.FDB path (SqlAccount__DatabasePath) and credentials.");
     throw;
 }
 

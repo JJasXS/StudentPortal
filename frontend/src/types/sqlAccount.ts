@@ -1,3 +1,39 @@
+export interface SqlAccountCalendarTeacher {
+  erpUserId: string;
+  fullName: string;
+  email: string;
+  portalUserId?: string | null;
+}
+
+export interface ErpCalendarEvent {
+  id: string;
+  docKey: number;
+  seq: number;
+  classId?: string | null;
+  courseId?: string | null;
+  className: string;
+  courseName?: string | null;
+  teacherUserId?: string | null;
+  teacherName?: string | null;
+  studentName?: string | null;
+  branchName?: string | null;
+  itemCode?: string | null;
+  customerCode?: string | null;
+  sessionDate: string;
+  startTime: string;
+  endTime: string;
+  status: string;
+}
+
+export interface SqlAccountCourseOption {
+  itemCode: string;
+  description: string;
+  dayOfWeek?: string | null;
+  startTime?: string | null;
+  endTime?: string | null;
+  teacherName?: string | null;
+}
+
 export interface SqlAccountChild {
   branchName: string;
   attention?: string | null;
@@ -19,6 +55,8 @@ export interface SqlAccountStatus {
 }
 
 export interface SqlAccountChildEnrollment {
+  docKey: number;
+  seq: number;
   docNo: string;
   docDate?: string | null;
   className: string;
@@ -27,10 +65,30 @@ export interface SqlAccountChildEnrollment {
   unitPrice?: string | null;
   amount?: string | null;
   deliveryDate?: string | null;
+  classDay?: string | null;
+  classTime?: string | null;
+  classDate?: string | null;
+  studentName?: string | null;
+  conductedBy?: string | null;
+  linkedClassId?: string | null;
+  linkedClassName?: string | null;
+  linkedClassDayOfWeek?: string | null;
+  linkedClassStartTime?: string | null;
+  linkedClassEndTime?: string | null;
+  linkedClassTeacherName?: string | null;
+  nextSessionDate?: string | null;
 }
 
 export interface SqlAccountChildEnrollments {
   customerCode: string;
   branchName: string;
   enrollments: SqlAccountChildEnrollment[];
+}
+
+export interface ItemCodeClassLink {
+  id: string;
+  itemCode: string;
+  portalClassId: string;
+  portalClassName?: string | null;
+  createdAt: string;
 }

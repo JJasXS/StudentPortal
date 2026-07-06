@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/Button';
 import { cn } from '@/utils/cn';
 import { formatDateDDMMYYYY } from '@/utils/dateFormat';
 import { weekDayKeys, weekRange } from '@/utils/sessionGeneration';
-import { sessionStatusColor } from '@/components/calendar/calendarStyles';
+import { teacherEventColor } from '@/components/calendar/calendarStyles';
 import type { ClassSession } from '@/types';
 
 export interface CalendarEvent {
@@ -13,8 +13,11 @@ export interface CalendarEvent {
   courseName?: string;
   className?: string;
   teacherName?: string;
+  teacherUserId?: string;
   location?: string;
   subtitle?: string;
+  studentName?: string;
+  branchName?: string;
   href?: string;
 }
 
@@ -92,7 +95,7 @@ export function WeekCalendar({
                       <div
                         className={cn(
                           'rounded-lg border px-2 py-1.5 text-xs',
-                          sessionStatusColor(event.session.status)
+                          teacherEventColor(event.teacherUserId, event.session.status)
                         )}
                       >
                         <p className="font-semibold">{event.session.className ?? 'Class'}</p>

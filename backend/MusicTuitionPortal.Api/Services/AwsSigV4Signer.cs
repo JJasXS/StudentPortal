@@ -24,6 +24,7 @@ internal static class AwsSigV4Signer
         var headers = new SortedDictionary<string, string>(StringComparer.Ordinal)
         {
             ["host"] = uri.Host,
+            ["x-amz-content-sha256"] = payloadHash,
             ["x-amz-date"] = amzDate
         };
 
@@ -53,6 +54,7 @@ internal static class AwsSigV4Signer
             $"AWS4-HMAC-SHA256 Credential={accessKey}/{credentialScope}, SignedHeaders={signedHeaders}, Signature={signature}";
 
         request.Headers.TryAddWithoutValidation("x-amz-date", amzDate);
+        request.Headers.TryAddWithoutValidation("x-amz-content-sha256", payloadHash);
         request.Headers.TryAddWithoutValidation("Authorization", authHeader);
     }
 

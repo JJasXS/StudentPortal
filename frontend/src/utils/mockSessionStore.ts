@@ -54,6 +54,11 @@ export function generateMockSessions(
   };
 }
 
+/** Append a single ad-hoc session to the mock store (used for non-repeat assignment). */
+export function addMockSession(session: ClassSession) {
+  saveExtra([...loadExtra(), session]);
+}
+
 /** Seed demo sessions for admin calendar (prev, current, next month). */
 export function seedAdminCalendarSessions(classes: ClassItem[]) {
   const active = classes.filter((c) => c.isActive);

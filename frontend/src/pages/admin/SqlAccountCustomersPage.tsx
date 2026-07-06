@@ -1,12 +1,15 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { AlertCircle, ChevronDown, ChevronRight, Database, RefreshCw, Users } from 'lucide-react';
-import { sqlAccountApi } from '@/api/resources';
+import { AlertCircle, ChevronDown, ChevronRight, Database, Link2, Plus, RefreshCw, Trash2, Users } from 'lucide-react';
+import { classesApi, sqlAccountApi } from '@/api/resources';
 import { PageHeader } from '@/components/PageHeader';
 import { SearchBox } from '@/components/SearchBox';
 import { Card, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
-import type { SqlAccountParent, SqlAccountStatus } from '@/types/sqlAccount';
+import { Input, Label, Select } from '@/components/ui/Input';
+import type { ClassItem } from '@/types';
+import type { ItemCodeClassLink, SqlAccountParent, SqlAccountStatus } from '@/types/sqlAccount';
 import { cn } from '@/utils/cn';
+import { getApiErrorMessage } from '@/utils/apiError';
 
 export default function SqlAccountCustomersPage() {
   const [parents, setParents] = useState<SqlAccountParent[]>([]);
@@ -15,6 +18,31 @@ export default function SqlAccountCustomersPage() {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [itemCodeLinks, setItemCodeLinks] = useState<ItemCodeClassLink[]>([]);
+  const [portalClasses, setPortalClasses] = useState<ClassItem[]>([]);
+  const [linksLoading, setLinksLoading] = useState(true);
+  const [linksError, setLinksError] = useState('');
+  const [newItemCode, setNewItemCode] = useState('');
+  const [newPortalClassId, setNewPortalClassId] = useState('');
+  const [addingLink, setAddingLink] = useState(false);
+
+  const loadLinks = useCallback(async () => {
+    setLinksLoading(true);
+    setLinksError('');
+    try {
+      const [links, classes] = await Promise.all([
+        sqlAccountApi.getItemCodeLinks(),
+        classesApi.getAll(),
+      ]);
+      setItemCodeLinks(links);
+      setPortalClasses(classes.filter((c) => c.isActive));
+    } catch (err) {
+      setLinksError(getApiErrorMessage(err, 'Could not load item code mappings.'));
+      setItemCodeLinks([]);
+    } finally {
+      setLinksLoading(false);
+    }
+  }, []);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -48,6 +76,43 @@ export default function SqlAccountCustomersPage() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    void loadLinks();
+  }, [loadLinks]);
+
+  const handleAddLink = async () => {
+    const itemCode = newItemCode.trim();
+    if (!itemCode || !newPortalClassId) return;
+
+    setAddingLink(true);
+    setLinksError('');
+    try {
+      const link = await sqlAccountApi.createItemCodeLink({
+        itemCode,
+        portalClassId: newPortalClassId,
+      });
+      setItemCodeLinks((current) =>
+        [...current, link].sort((a, b) => a.itemCode.localeCompare(b.itemCode))
+      );
+      setNewItemCode('');
+      setNewPortalClassId('');
+    } catch (err) {
+      setLinksError(getApiErrorMessage(err, 'Could not create mapping.'));
+    } finally {
+      setAddingLink(false);
+    }
+  };
+
+  const handleDeleteLink = async (id: string) => {
+    setLinksError('');
+    try {
+      await sqlAccountApi.deleteItemCodeLink(id);
+      setItemCodeLinks((current) => current.filter((link) => link.id !== id));
+    } catch (err) {
+      setLinksError(getApiErrorMessage(err, 'Could not delete mapping.'));
+    }
+  };
 
   const filteredParents = useMemo(() => {
     const term = search.trim().toLowerCase();
@@ -225,6 +290,119 @@ export default function SqlAccountCustomersPage() {
               );
             })
           )}
+        </CardContent>
+      </Card>
+
+      <Card className="mt-6">
+        <CardContent className="p-0">
+          <div className="border-b border-slate-100 px-4 py-4 sm:px-6">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h2 className="flex items-center gap-2 text-base font-semibold text-slate-900">
+                  <Link2 className="h-4 w-4 text-primary-600" />
+                  Item code → portal class mappings
+                </h2>
+                <p className="mt-1 text-sm text-slate-500">
+                  Link SQL Account ITEMCODE values to portal classes so parents see live schedules.
+                  Stored in the portal database only — no ERP writes.
+                </p>
+              </div>
+              <Button variant="outline" size="sm" onClick={() => void loadLinks()} disabled={linksLoading}>
+                <RefreshCw className={cn('mr-1.5 h-4 w-4', linksLoading && 'animate-spin')} />
+                Refresh
+              </Button>
+            </div>
+          </div>
+
+          {linksError && (
+            <div className="border-b border-red-100 bg-red-50 px-4 py-3 text-sm text-red-700 sm:px-6">
+              {linksError}
+            </div>
+          )}
+
+          <div className="grid gap-4 border-b border-slate-100 px-4 py-4 sm:grid-cols-[minmax(0,1fr)_minmax(0,2fr)_auto] sm:items-end sm:px-6">
+            <div>
+              <Label htmlFor="newItemCode">ITEMCODE</Label>
+              <Input
+                id="newItemCode"
+                value={newItemCode}
+                onChange={(e) => setNewItemCode(e.target.value)}
+                placeholder="e.g. PIANO-MON-AM"
+                className="mt-1"
+              />
+            </div>
+            <div>
+              <Label htmlFor="newPortalClass">Portal class</Label>
+              <Select
+                id="newPortalClass"
+                value={newPortalClassId}
+                onChange={(e) => setNewPortalClassId(e.target.value)}
+                className="mt-1"
+              >
+                <option value="">Select a class…</option>
+                {portalClasses.map((cls) => (
+                  <option key={cls.id} value={cls.id}>
+                    {cls.className}
+                    {cls.dayOfWeek ? ` (${cls.dayOfWeek})` : ''}
+                  </option>
+                ))}
+              </Select>
+            </div>
+            <Button
+              onClick={() => void handleAddLink()}
+              disabled={addingLink || !newItemCode.trim() || !newPortalClassId}
+            >
+              <Plus className="mr-1.5 h-4 w-4" />
+              Add mapping
+            </Button>
+          </div>
+
+          <div className="overflow-x-auto">
+            {linksLoading ? (
+              <div className="px-6 py-8 text-center text-sm text-slate-500">Loading mappings…</div>
+            ) : itemCodeLinks.length === 0 ? (
+              <div className="px-6 py-8 text-center text-sm text-slate-500">
+                No item code mappings yet. Add one above to connect ERP sales order lines to portal classes.
+              </div>
+            ) : (
+              <table className="min-w-full text-sm">
+                <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+                  <tr>
+                    <th className="px-4 py-2 font-medium sm:px-6">ITEMCODE</th>
+                    <th className="px-4 py-2 font-medium">Portal class</th>
+                    <th className="px-4 py-2 font-medium">Created</th>
+                    <th className="px-4 py-2 font-medium sm:px-6">
+                      <span className="sr-only">Actions</span>
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {itemCodeLinks.map((link) => (
+                    <tr key={link.id}>
+                      <td className="px-4 py-2 font-mono text-sm font-medium text-slate-900 sm:px-6">
+                        {link.itemCode}
+                      </td>
+                      <td className="px-4 py-2 text-slate-700">{link.portalClassName ?? link.portalClassId}</td>
+                      <td className="px-4 py-2 text-slate-600">
+                        {link.createdAt ? new Date(link.createdAt).toLocaleDateString() : '—'}
+                      </td>
+                      <td className="px-4 py-2 text-right sm:px-6">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-red-600 hover:bg-red-50 hover:text-red-700"
+                          onClick={() => void handleDeleteLink(link.id)}
+                          aria-label={`Delete mapping for ${link.itemCode}`}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
         </CardContent>
       </Card>
     </div>

@@ -1,0 +1,10 @@
+{
+  "version": 2,
+  "dgSpecHash": "5HHsvLQ9ErE=",
+  "success": true,
+  "projectFilePath": "C:\\Users\\sqlsupport\\StudentPortal\\scripts\\FdbUdfUpdate\\Probe\\Probe.csproj",
+  "expectedPackageFiles": [
+    "C:\\Users\\sqlsupport\\AppData\\Local\\Temp\\cursor-sandbox-cache\\1edf59976efd40b81a84cba03415f4ed\\nuget\\firebirdsql.data.firebirdclient\\10.3.3\\firebirdsql.data.firebirdclient.10.3.3.nupkg.sha512"
+  ],
+  "logs": []
+}

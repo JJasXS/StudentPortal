@@ -4,18 +4,24 @@ import { RefreshCw, UserPlus } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { PageHeader } from '@/components/PageHeader';
 import { Breadcrumbs } from '@/components/ui/Breadcrumbs';
-import { AssignStudentToClassModal } from '@/components/AssignStudentToClassModal';
+import { AssignStudentToClassModal, type AssignStudentOptions } from '@/components/AssignStudentToClassModal';
 import { ClassTeacherCell } from '@/components/ClassTeacherCell';
 import { DataTable } from '@/components/ui/DataTable';
 import { SlidingTabs } from '@/components/ui/SlidingTabs';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { Card, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
+import { ClassSessionChangeHistoryPanel } from '@/components/ClassSessionChangeHistoryPanel';
+import { ClassAssignmentChangeLogPanel } from '@/components/ClassAssignmentChangeLogPanel';
+import {
+  ClassSessionActionModal,
+  type ClassSessionActionMode,
+} from '@/components/ClassSessionActionModal';
 import { classesApi, coursesApi, classSessionsApi, enrollmentsApi, studentsApi, teachersApi } from '@/api/resources';
 import { classToUpdatePayload } from '@/utils/classUpdate';
 import { formatDateDDMMYYYY } from '@/utils/dateFormat';
 import { mockCourses, mockClasses, mockClassSessions, mockStudents, mockTeachers } from '@/utils/mockData';
-import { generateMockSessions, loadAllSessions } from '@/utils/mockSessionStore';
+import { addMockSession, generateMockSessions, loadAllSessions } from '@/utils/mockSessionStore';
 import { sessionsForClass } from '@/utils/sessionGeneration';
 import { enrollmentsForClass, loadMockEnrollments, saveMockEnrollments } from '@/utils/mockEnrollmentStore';
 import { activeRecordStatus } from '@/utils/statusFilter';
@@ -86,6 +92,11 @@ export default function ClassDetailPage() {
   const [savingStudent, setSavingStudent] = useState(false);
   const [savingTeacher, setSavingTeacher] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [historyRefreshKey, setHistoryRefreshKey] = useState(0);
+  const [sessionActionOpen, setSessionActionOpen] = useState(false);
+  const [sessionActionMode, setSessionActionMode] = useState<ClassSessionActionMode>('cancel');
+  const [sessionActionTarget, setSessionActionTarget] = useState<ClassSession | null>(null);
+  const [sessionActionSaving, setSessionActionSaving] = useState(false);
 
   const isMock = import.meta.env.VITE_USE_MOCK === 'true';
 
@@ -134,34 +145,77 @@ export default function ClassDetailPage() {
 
   const courseClassesUrl = `/admin/courses/${courseId}?tab=classes`;
 
-  const handleAssign = async (studentUserId: string, studentName: string) => {
+  const handleAssign = async (options: AssignStudentOptions) => {
     if (!classId || !classItem) return;
     if (enrolledCount >= maxStudents) return;
 
+    const { studentUserId, studentName, teacherUserId, teacherName, repeat, startDate, endDate } =
+      options;
+    const teacherChanged = !!teacherUserId && teacherUserId !== classItem.teacherUserId;
+    const sessionSummary = (createdCount: number, skippedCount: number) =>
+      `Generated ${createdCount} session${createdCount === 1 ? '' : 's'} (${skippedCount} skipped).`;
+
     setSavingStudent(true);
+    setSessionMessage('');
     const enrollmentDate = new Date().toISOString().slice(0, 10);
-    const newEnrollment: Enrollment = {
-      id: crypto.randomUUID(),
-      studentUserId,
-      studentName,
-      classId,
-      className: classItem.className,
-      enrollmentDate,
-      status: 'Active',
-    };
 
     try {
       if (isMock) {
+        const newEnrollment: Enrollment = {
+          id: crypto.randomUUID(),
+          studentUserId,
+          studentName,
+          classId,
+          className: classItem.className,
+          enrollmentDate,
+          status: 'Active',
+        };
         const next = [...enrollments, newEnrollment];
         setEnrollments(next);
         saveMockEnrollments(next);
-        setAssignOpen(false);
         logAdminAction(user, {
           action: AUDIT_ACTIONS.enrollmentCreated,
           entityType: 'Enrollment',
           entityId: newEnrollment.id,
           entityLabel: `${studentName} → ${classItem.className}`,
         });
+
+        const updatedClass: ClassItem = {
+          ...classItem,
+          teacherUserId: teacherChanged ? teacherUserId : classItem.teacherUserId,
+          teacherName: teacherChanged ? teacherName : classItem.teacherName,
+          startDate,
+          endDate: repeat ? endDate : classItem.endDate,
+        };
+        setClassItem(updatedClass);
+        if (teacherChanged) {
+          logAdminAction(user, {
+            action: AUDIT_ACTIONS.classUpdated,
+            entityType: 'Class',
+            entityId: updatedClass.id,
+            entityLabel: updatedClass.className,
+            details: `Teacher: ${teacherName}`,
+          });
+        }
+
+        if (repeat) {
+          const result = generateMockSessions([updatedClass], startDate, endDate, updatedClass.id);
+          setClassSessions(sessionsForClass(result.sessions, updatedClass.id));
+          setSessionMessage(sessionSummary(result.createdCount, result.skippedCount));
+        } else {
+          const single: ClassSession = {
+            id: crypto.randomUUID(),
+            classId: updatedClass.id,
+            className: updatedClass.className,
+            sessionDate: startDate,
+            startTime: updatedClass.startTime,
+            endTime: updatedClass.endTime,
+            status: 'Scheduled',
+          };
+          addMockSession(single);
+          setClassSessions((prev) => sessionsForClass([...prev, single], updatedClass.id));
+          setSessionMessage('Added 1 one-off session.');
+        }
       } else {
         const created = await enrollmentsApi.create({
           studentUserId,
@@ -170,19 +224,62 @@ export default function ClassDetailPage() {
           status: 'Active',
         });
         setEnrollments((list) => [...list, { ...created, studentName, className: classItem.className }]);
-        setAssignOpen(false);
         logAdminAction(user, {
           action: AUDIT_ACTIONS.enrollmentCreated,
           entityType: 'Enrollment',
           entityId: created.id,
           entityLabel: `${studentName} → ${classItem.className}`,
         });
+
+        let effectiveClass = classItem;
+        if (teacherChanged || repeat) {
+          const payload = classToUpdatePayload(
+            classItem,
+            teacherChanged ? teacherUserId : classItem.teacherUserId,
+            { startDate, endDate: repeat ? endDate : classItem.endDate }
+          );
+          const updated = await classesApi.update(classItem.id, payload);
+          effectiveClass = { ...classItem, ...updated };
+          setClassItem(effectiveClass);
+          if (teacherChanged) {
+            logAdminAction(user, {
+              action: AUDIT_ACTIONS.classUpdated,
+              entityType: 'Class',
+              entityId: classItem.id,
+              entityLabel: classItem.className,
+              details: `Teacher: ${teacherName}`,
+            });
+          }
+        }
+
+        if (repeat) {
+          const result = await classSessionsApi.generate({
+            classId,
+            fromDate: startDate,
+            toDate: endDate,
+          });
+          setClassSessions((prev) => {
+            const byId = new Map(prev.map((s) => [s.id, s]));
+            for (const s of result.sessions) byId.set(s.id, s);
+            return sessionsForClass([...byId.values()], classId);
+          });
+          setSessionMessage(sessionSummary(result.createdCount, result.skippedCount));
+        } else {
+          const single = await classSessionsApi.create({
+            classId,
+            sessionDate: startDate,
+            startTime: effectiveClass.startTime,
+            endTime: effectiveClass.endTime,
+            status: 'Scheduled',
+          });
+          setClassSessions((prev) => sessionsForClass([...prev, single], classId));
+          setSessionMessage('Added 1 one-off session.');
+        }
       }
-    } catch {
-      const next = [...enrollments, newEnrollment];
-      setEnrollments(next);
-      if (isMock) saveMockEnrollments(next);
       setAssignOpen(false);
+      setHistoryRefreshKey((k) => k + 1);
+    } catch {
+      setSessionMessage('Could not complete the assignment. Please try again.');
     } finally {
       setSavingStudent(false);
     }
@@ -208,6 +305,7 @@ export default function ClassDetailPage() {
       } else {
         const updated = await classesApi.update(classItem.id, payload);
         setClassItem({ ...classItem, ...updated });
+        setHistoryRefreshKey((k) => k + 1);
         logAdminAction(user, {
           action: AUDIT_ACTIONS.classUpdated,
           entityType: 'Class',
@@ -252,6 +350,93 @@ export default function ClassDetailPage() {
       setSessionMessage('Could not generate sessions.');
     } finally {
       setGeneratingSessions(false);
+    }
+  };
+
+  const openSessionAction = (session: ClassSession, mode: ClassSessionActionMode) => {
+    setSessionActionTarget(session);
+    setSessionActionMode(mode);
+    setSessionActionOpen(true);
+  };
+
+  const handleSessionActionConfirm = async (payload: {
+    reason: string;
+    sessionDate?: string;
+    startTime?: string;
+    endTime?: string;
+    notes?: string;
+  }) => {
+    if (!sessionActionTarget || !classId) return;
+    setSessionActionSaving(true);
+    setSessionMessage('');
+    try {
+      if (sessionActionMode === 'cancel') {
+        if (isMock) {
+          setClassSessions((prev) =>
+            prev.map((s) =>
+              s.id === sessionActionTarget.id ? { ...s, status: 'Cancelled' as const } : s
+            )
+          );
+        } else {
+          await classSessionsApi.remove(sessionActionTarget.id, payload.reason);
+          setClassSessions((prev) =>
+            prev.map((s) =>
+              s.id === sessionActionTarget.id ? { ...s, status: 'Cancelled' as const } : s
+            )
+          );
+        }
+        setSessionMessage('Session cancelled and recorded in history.');
+      } else if (payload.sessionDate && payload.startTime && payload.endTime) {
+        if (isMock) {
+          const replacement: ClassSession = {
+            id: `cs-rep-${Date.now()}`,
+            classId,
+            sessionDate: payload.sessionDate,
+            startTime: payload.startTime,
+            endTime: payload.endTime,
+            status: 'Rescheduled',
+            notes: payload.notes,
+          };
+          setClassSessions((prev) =>
+            sessionsForClass(
+              [
+                ...prev.map((s) =>
+                  s.id === sessionActionTarget.id ? { ...s, status: 'Cancelled' as const } : s
+                ),
+                replacement,
+              ],
+              classId
+            )
+          );
+        } else {
+          const replacement = await classSessionsApi.replace(sessionActionTarget.id, {
+            sessionDate: payload.sessionDate,
+            startTime: payload.startTime,
+            endTime: payload.endTime,
+            reason: payload.reason,
+            notes: payload.notes,
+          });
+          setClassSessions((prev) =>
+            sessionsForClass(
+              [
+                ...prev.map((s) =>
+                  s.id === sessionActionTarget.id ? { ...s, status: 'Cancelled' as const } : s
+                ),
+                replacement,
+              ],
+              classId
+            )
+          );
+        }
+        setSessionMessage('Replacement session created and recorded in history.');
+      }
+      setHistoryRefreshKey((k) => k + 1);
+      setSessionActionOpen(false);
+      setSessionActionTarget(null);
+    } catch {
+      setSessionMessage('Could not save the session change.');
+    } finally {
+      setSessionActionSaving(false);
     }
   };
 
@@ -331,6 +516,13 @@ export default function ClassDetailPage() {
                 </DetailRow>
                 <DetailRow label="Schedule">
                   {classItem.dayOfWeek}, {classItem.startTime} – {classItem.endTime}
+                </DetailRow>
+                <DetailRow label="Term dates">
+                  {classItem.startDate || classItem.endDate
+                    ? `${classItem.startDate ? formatDateDDMMYYYY(classItem.startDate) : '—'} → ${
+                        classItem.endDate ? formatDateDDMMYYYY(classItem.endDate) : '—'
+                      }`
+                    : 'Not set'}
                 </DetailRow>
                 <DetailRow label="Location">{classItem.location}</DetailRow>
                 <DetailRow label="Capacity">
@@ -459,8 +651,40 @@ export default function ClassDetailPage() {
                     header: 'Status',
                     render: (s) => <StatusBadge status={s.status} />,
                   },
+                  {
+                    key: 'actions',
+                    header: '',
+                    render: (s) =>
+                      s.status === 'Cancelled' || s.status === 'Completed' ? (
+                        <span className="text-xs text-slate-400">—</span>
+                      ) : (
+                        <div className="flex justify-end gap-1">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => openSessionAction(s, 'cancel')}
+                          >
+                            Cancel
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            onClick={() => openSessionAction(s, 'replace')}
+                          >
+                            Replace
+                          </Button>
+                        </div>
+                      ),
+                  },
                 ]}
               />
+              {classId && (
+                <>
+                  <ClassAssignmentChangeLogPanel classId={classId} refreshKey={historyRefreshKey} />
+                  <ClassSessionChangeHistoryPanel classId={classId} refreshKey={historyRefreshKey} />
+                </>
+              )}
             </div>
           )}
         </CardContent>
@@ -476,10 +700,24 @@ export default function ClassDetailPage() {
           currentCount={enrolledCount}
           students={students}
           enrollments={enrollments}
+          teachers={teachers}
+          currentTeacherUserId={classItem.teacherUserId}
           saving={savingStudent}
           onAssign={handleAssign}
         />
       )}
+
+      <ClassSessionActionModal
+        open={sessionActionOpen}
+        mode={sessionActionMode}
+        session={sessionActionTarget}
+        saving={sessionActionSaving}
+        onClose={() => {
+          setSessionActionOpen(false);
+          setSessionActionTarget(null);
+        }}
+        onConfirm={handleSessionActionConfirm}
+      />
     </div>
   );
 }

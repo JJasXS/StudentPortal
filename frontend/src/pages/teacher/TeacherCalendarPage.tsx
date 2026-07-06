@@ -4,12 +4,14 @@ import { PageHeader } from '@/components/PageHeader';
 import { CalendarSessionDetailModal } from '@/components/calendar/CalendarSessionDetailModal';
 import { MonthCalendar } from '@/components/calendar/MonthCalendar';
 import type { CalendarEvent } from '@/components/calendar/WeekCalendar';
-import { classesApi } from '@/api/resources';
-import { mockClasses } from '@/utils/mockData';
+import { classesApi, calendarApi, classSessionsApi } from '@/api/resources';
+import { mockClasses, mockClassSessions } from '@/utils/mockData';
+import { erpEventToCalendarEvent, erpEventsInRange } from '@/utils/erpCalendar';
 import { generateMockSessions, loadAllSessions } from '@/utils/mockSessionStore';
 import { monthRange, sessionsInRange } from '@/utils/sessionGeneration';
 import { mergeTeacherClasses } from '@/utils/teacherClasses';
 import type { ClassItem, ClassSession } from '@/types';
+import type { ErpCalendarEvent } from '@/types/sqlAccount';
 
 function seedTeacherCalendarSessions(classes: ClassItem[]) {
   const active = classes.filter((c) => c.isActive);
@@ -30,8 +32,10 @@ export default function TeacherCalendarPage() {
   const { user } = useAuth();
   const [classes, setClasses] = useState<ClassItem[]>([]);
   const [sessions, setSessions] = useState<ClassSession[]>([]);
+  const [erpEvents, setErpEvents] = useState<ErpCalendarEvent[]>([]);
   const [anchorDate, setAnchorDate] = useState(() => new Date());
   const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
+  const isMock = import.meta.env.VITE_USE_MOCK === 'true';
 
   const loadData = useCallback(() => {
     if (!user?.id) return;
@@ -39,16 +43,34 @@ export default function TeacherCalendarPage() {
     classesApi
       .getAll()
       .catch(() => mockClasses)
-      .then((classList) => {
+      .then(async (classList) => {
         const mine = mergeTeacherClasses(classList, user);
         setClasses(mine);
-        seedTeacherCalendarSessions(mine);
-
         const classIds = new Set(mine.map((c) => c.id));
-        const all = loadAllSessions();
+
+        if (isMock) {
+          seedTeacherCalendarSessions(mine);
+          setSessions(loadAllSessions().filter((s) => classIds.has(s.classId)));
+          setErpEvents([]);
+          return;
+        }
+
+        const [all, erpAll] = await Promise.all([
+          classSessionsApi.getAll().catch(() => mockClassSessions),
+          calendarApi.getEvents().catch(() => [] as ErpCalendarEvent[]),
+        ]);
         setSessions(all.filter((s) => classIds.has(s.classId)));
+        const teacherName = user.fullName?.toLowerCase();
+        setErpEvents(
+          erpAll.filter(
+            (e) =>
+              (e.teacherUserId && e.teacherUserId === user.id) ||
+              (teacherName && e.teacherName?.toLowerCase() === teacherName) ||
+              (e.classId && classIds.has(e.classId))
+          )
+        );
       });
-  }, [user]);
+  }, [user, isMock]);
 
   useEffect(() => {
     loadData();
@@ -64,25 +86,40 @@ export default function TeacherCalendarPage() {
     [sessions, monthStart, monthEnd]
   );
 
+  const monthErpEvents = useMemo(
+    () => erpEventsInRange(erpEvents, monthStart, monthEnd),
+    [erpEvents, monthStart, monthEnd]
+  );
+
   const classById = useMemo(() => new Map(classes.map((c) => [c.id, c])), [classes]);
 
-  const events: CalendarEvent[] = useMemo(
-    () =>
-      monthSessions.map((session) => {
-        const cls = classById.get(session.classId);
+  const events: CalendarEvent[] = useMemo(() => {
+    if (!isMock && erpEvents.length > 0) {
+      return monthErpEvents.map((erp) => {
+        const event = erpEventToCalendarEvent(erp, classById);
         return {
-          id: session.id,
-          session,
-          courseName: cls?.courseName,
-          className: cls?.className ?? session.className,
-          teacherName: cls?.teacherName ?? user?.fullName,
-          location: cls?.location,
-          subtitle: cls?.courseName,
-          href: `/teacher/classes/${session.classId}/sessions`,
+          ...event,
+          teacherName: event.teacherName ?? user?.fullName,
+          subtitle: event.studentName ?? event.courseName,
+          href: erp.classId ? `/teacher/classes/${erp.classId}/sessions` : event.href,
         };
-      }),
-    [monthSessions, classById, user?.fullName]
-  );
+      });
+    }
+
+    return monthSessions.map((session) => {
+      const cls = classById.get(session.classId);
+      return {
+        id: session.id,
+        session,
+        courseName: cls?.courseName,
+        className: cls?.className ?? session.className,
+        teacherName: cls?.teacherName ?? user?.fullName,
+        location: cls?.location,
+        subtitle: cls?.courseName,
+        href: `/teacher/classes/${session.classId}/sessions`,
+      };
+    });
+  }, [isMock, erpEvents.length, monthErpEvents, monthSessions, classById, user?.fullName]);
 
   return (
     <div>

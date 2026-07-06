@@ -9,9 +9,10 @@ interface ModalProps {
   title: string;
   children: ReactNode;
   className?: string;
+  headerExtra?: ReactNode;
 }
 
-export function Modal({ open, onClose, title, children, className }: ModalProps) {
+export function Modal({ open, onClose, title, children, className, headerExtra }: ModalProps) {
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
@@ -43,9 +44,12 @@ export function Modal({ open, onClose, title, children, className }: ModalProps)
           <h2 id="modal-title" className="text-lg font-semibold text-slate-900">
             {title}
           </h2>
-          <Button type="button" variant="ghost" size="sm" onClick={onClose} aria-label="Close">
-            <X className="h-4 w-4" />
-          </Button>
+          <div className="flex items-center gap-1">
+            {headerExtra}
+            <Button type="button" variant="ghost" size="sm" onClick={onClose} aria-label="Close">
+              <X className="h-4 w-4" />
+            </Button>
+          </div>
         </div>
         <div className="px-5 py-4">{children}</div>
       </div>

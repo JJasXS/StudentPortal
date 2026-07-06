@@ -1,7 +1,8 @@
-import { BookOpen, Calendar, FileText, Hash } from 'lucide-react';
+import { BookOpen, Calendar, Clock, Link2, User } from 'lucide-react';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { SkeletonCard } from '@/components/ui/Skeleton';
 import type { SqlAccountChildEnrollment } from '@/types/sqlAccount';
+import { formatDateDDMMYYYY } from '@/utils/dateFormat';
 
 interface SqlAccountChildEnrollmentsListProps {
   branchName: string;
@@ -72,7 +73,29 @@ export function SqlAccountChildEnrollmentsList({
   );
 }
 
+function formatScheduleTime(start?: string | null, end?: string | null) {
+  if (!start) return null;
+  return end ? `${start} – ${end}` : start;
+}
+
 function EnrollmentRow({ enrollment }: { enrollment: SqlAccountChildEnrollment }) {
+  const erpSchedule =
+    enrollment.classDate
+      ? formatDateDDMMYYYY(enrollment.classDate.slice(0, 10)) +
+        (enrollment.classTime ? ` · ${enrollment.classTime}` : '')
+      : enrollment.classDay || enrollment.classTime
+        ? [enrollment.classDay, enrollment.classTime].filter(Boolean).join(' · ')
+        : null;
+
+  const portalSchedule = enrollment.linkedClassName
+    ? [
+        enrollment.linkedClassDayOfWeek,
+        formatScheduleTime(enrollment.linkedClassStartTime, enrollment.linkedClassEndTime),
+      ]
+        .filter(Boolean)
+        .join(' · ')
+    : null;
+
   return (
     <li className="rounded-xl border border-slate-200/80 bg-white p-4 shadow-sm">
       <div className="flex items-start gap-3">
@@ -81,37 +104,58 @@ function EnrollmentRow({ enrollment }: { enrollment: SqlAccountChildEnrollment }
         </div>
         <div className="min-w-0 flex-1 space-y-2">
           <h3 className="font-medium text-slate-900">{enrollment.className}</h3>
-          <dl className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-slate-600">
-            {enrollment.docNo && (
-              <div className="flex items-center gap-1.5">
-                <FileText className="h-3.5 w-3.5 text-slate-400" />
-                <dt className="sr-only">Order</dt>
-                <dd>{enrollment.docNo}</dd>
-              </div>
-            )}
-            {enrollment.docDate && (
-              <div className="flex items-center gap-1.5">
-                <Calendar className="h-3.5 w-3.5 text-slate-400" />
-                <dt className="sr-only">Date</dt>
-                <dd>{enrollment.docDate}</dd>
-              </div>
-            )}
-            {enrollment.qty && (
-              <div className="flex items-center gap-1.5">
-                <Hash className="h-3.5 w-3.5 text-slate-400" />
-                <dt className="sr-only">Quantity</dt>
-                <dd>Qty {enrollment.qty}</dd>
-              </div>
-            )}
-            {enrollment.amount && (
-              <div>
-                <dt className="sr-only">Amount</dt>
-                <dd className="font-medium text-slate-700">{enrollment.amount}</dd>
-              </div>
-            )}
-          </dl>
+          {enrollment.studentName && (
+            <p className="flex items-center gap-1.5 text-sm text-slate-700">
+              <User className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+              {enrollment.studentName}
+            </p>
+          )}
           {enrollment.itemCode && (
-            <p className="text-xs text-slate-500">Item: {enrollment.itemCode}</p>
+            <p className="text-xs text-slate-500">Item code: {enrollment.itemCode}</p>
+          )}
+
+          {erpSchedule && (
+            <p className="flex items-center gap-1.5 text-sm text-slate-600">
+              <Clock className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+              <span>
+                ERP schedule: {erpSchedule}
+              </span>
+            </p>
+          )}
+
+          {enrollment.conductedBy && (
+            <p className="flex items-center gap-1.5 text-sm text-slate-600">
+              <User className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+              Teacher: {enrollment.conductedBy}
+            </p>
+          )}
+
+          {enrollment.linkedClassName && (
+            <div className="mt-2 rounded-lg border border-emerald-100 bg-emerald-50/60 px-3 py-2 text-sm text-emerald-900">
+              <p className="flex items-center gap-1.5 font-medium">
+                <Link2 className="h-3.5 w-3.5 shrink-0" />
+                Portal class: {enrollment.linkedClassName}
+              </p>
+              {portalSchedule && (
+                <p className="mt-1 flex items-center gap-1.5 text-emerald-800">
+                  <Clock className="h-3.5 w-3.5 shrink-0 text-emerald-600" />
+                  {portalSchedule}
+                </p>
+              )}
+              {enrollment.linkedClassTeacherName &&
+                enrollment.linkedClassTeacherName !== enrollment.conductedBy && (
+                <p className="mt-1 flex items-center gap-1.5 text-emerald-800">
+                  <User className="h-3.5 w-3.5 shrink-0 text-emerald-600" />
+                  {enrollment.linkedClassTeacherName}
+                </p>
+              )}
+              {enrollment.nextSessionDate && (
+                <p className="mt-1 flex items-center gap-1.5 text-emerald-800">
+                  <Calendar className="h-3.5 w-3.5 shrink-0 text-emerald-600" />
+                  Next session: {formatDateDDMMYYYY(enrollment.nextSessionDate)}
+                </p>
+              )}
+            </div>
           )}
         </div>
       </div>

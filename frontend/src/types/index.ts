@@ -88,6 +88,8 @@ export interface ClassItem {
   enrolledCount?: number;
   location: string;
   isActive: boolean;
+  startDate?: string;
+  endDate?: string;
 }
 
 export interface Enrollment {
@@ -110,6 +112,65 @@ export interface ClassSession {
   topic?: string;
   notes?: string;
   status: 'Scheduled' | 'Completed' | 'Cancelled' | 'Rescheduled';
+}
+
+export type ClassSessionChangeType = 'Cancellation' | 'Replacement';
+
+export interface ClassSessionChangeHistory {
+  id: string;
+  classSessionId: string;
+  classId: string;
+  className?: string | null;
+  changeType: ClassSessionChangeType;
+  actorUserId?: string | null;
+  actorName?: string | null;
+  reason?: string | null;
+  previousSessionDate: string;
+  previousStartTime: string;
+  previousEndTime: string;
+  previousStatus: string;
+  newSessionDate?: string | null;
+  newStartTime?: string | null;
+  newEndTime?: string | null;
+  newStatus?: string | null;
+  replacementClassSessionId?: string | null;
+  createdAt: string;
+}
+
+export type ClassAssignmentEntityType = 'Enrollment' | 'Class' | 'ClassSession';
+export type ClassAssignmentOperation = 'Create' | 'Update' | 'Delete';
+
+export interface ClassAssignmentChangeLog {
+  id: string;
+  classId: string;
+  className?: string | null;
+  entityType: ClassAssignmentEntityType;
+  operation: ClassAssignmentOperation;
+  entityId?: string | null;
+  studentUserId?: string | null;
+  studentName?: string | null;
+  previousTeacherUserId?: string | null;
+  previousTeacherName?: string | null;
+  newTeacherUserId?: string | null;
+  newTeacherName?: string | null;
+  previousDayOfWeek?: string | null;
+  newDayOfWeek?: string | null;
+  previousClassStartTime?: string | null;
+  newClassStartTime?: string | null;
+  previousClassEndTime?: string | null;
+  newClassEndTime?: string | null;
+  previousSessionDate?: string | null;
+  newSessionDate?: string | null;
+  previousSessionStartTime?: string | null;
+  newSessionStartTime?: string | null;
+  previousSessionEndTime?: string | null;
+  newSessionEndTime?: string | null;
+  previousStatus?: string | null;
+  newStatus?: string | null;
+  actorUserId?: string | null;
+  actorName?: string | null;
+  reason?: string | null;
+  createdAt: string;
 }
 
 export interface Attendance {
@@ -136,9 +197,9 @@ export interface AttendanceCheckInInfo {
 
 export interface LessonNote {
   id: string;
-  classSessionId: string;
+  classSessionId?: string;
   className?: string;
-  studentUserId: string;
+  studentUserId?: string;
   studentName?: string;
   teacherUserId: string;
   teacherName?: string;

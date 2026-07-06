@@ -1,5 +1,7 @@
 using FirebirdSql.Data.FirebirdClient;
 using MusicTuitionPortal.Api.DTOs;
+using MusicTuitionPortal.Api.Helpers;
+using MusicTuitionPortal.Api.Models;
 
 namespace MusicTuitionPortal.Api.Services;
 
@@ -20,6 +22,8 @@ public class SqlAccountLocalDbService
 
     public bool CanReadLocalDb =>
         !string.IsNullOrWhiteSpace(_settings.DatabasePath) && File.Exists(_settings.DatabasePath);
+
+    public bool CanWriteLocalDb => CanReadLocalDb;
 
     public async Task<SqlAccountCustomerMatch?> FindCustomerByUdfEmailAsync(
         string email,
@@ -47,7 +51,7 @@ public class SqlAccountLocalDbService
         return match == null ? null : ToMatch(match);
     }
 
-    public async Task<SqlAccountAdminUserMatch?> FindAdminByUdfEmailAsync(
+    public async Task<SqlAccountStaffUserMatch?> FindStaffByEmailAsync(
         string email,
         CancellationToken cancellationToken = default)
     {
@@ -60,11 +64,11 @@ public class SqlAccountLocalDbService
             await connection.OpenAsync(cancellationToken);
 
             const string sql = """
-                SELECT CODE, NAME, UDF_EMAIL
+                SELECT CODE, NAME, EMAIL, UDF_ISADMIN
                 FROM SY_USER
-                WHERE UDF_EMAIL IS NOT NULL
-                  AND TRIM(UDF_EMAIL) <> ''
-                  AND LOWER(TRIM(UDF_EMAIL)) = LOWER(@email)
+                WHERE EMAIL IS NOT NULL
+                  AND TRIM(EMAIL) <> ''
+                  AND LOWER(TRIM(EMAIL)) = LOWER(@email)
                 """;
 
             await using var command = new FbCommand(sql, connection);
@@ -74,11 +78,12 @@ public class SqlAccountLocalDbService
             if (!await reader.ReadAsync(cancellationToken))
                 return null;
 
-            var udfEmail = ReadString(reader, "UDF_EMAIL") ?? email.Trim();
-            return new SqlAccountAdminUserMatch(
+            var matchedEmail = ReadString(reader, "EMAIL") ?? email.Trim();
+            return new SqlAccountStaffUserMatch(
                 ReadString(reader, "CODE") ?? string.Empty,
-                ReadString(reader, "NAME") ?? udfEmail,
-                udfEmail);
+                ReadString(reader, "NAME") ?? matchedEmail,
+                matchedEmail,
+                ReadBool(reader, "UDF_ISADMIN"));
         }
         catch (Exception ex)
         {
@@ -120,8 +125,9 @@ public class SqlAccountLocalDbService
             await connection.OpenAsync(cancellationToken);
 
             const string sql = """
-                SELECT A.DOCNO, A.DOCDATE,
-                       B.ITEMCODE, B.DESCRIPTION, B.QTY, B.UNITPRICE, B.AMOUNT, B.DELIVERYDATE
+                SELECT A.DOCKEY, B.SEQ, A.DOCNO, A.DOCDATE,
+                       B.ITEMCODE, B.DESCRIPTION, B.QTY, B.UNITPRICE, B.AMOUNT, B.DELIVERYDATE,
+                       B.UDF_CLASSDATE, B.UDF_CLASSDAY, B.UDF_CLASSTIME, B.UDF_STUDENTNAME, B.UDF_CONDUCTEDBY
                 FROM SL_SO A
                 INNER JOIN SL_SODTL B ON A.DOCKEY = B.DOCKEY
                 WHERE A.CODE = @code
@@ -143,6 +149,8 @@ public class SqlAccountLocalDbService
                 var className = !string.IsNullOrWhiteSpace(description) ? description : itemCode ?? "Class";
 
                 results.Add(new SqlAccountChildEnrollmentDto(
+                    Convert.ToInt32(reader["DOCKEY"]),
+                    Convert.ToInt32(reader["SEQ"]),
                     ReadString(reader, "DOCNO") ?? string.Empty,
                     FormatDate(ReadValue(reader, "DOCDATE")),
                     className,
@@ -150,7 +158,12 @@ public class SqlAccountLocalDbService
                     ReadString(reader, "QTY"),
                     ReadString(reader, "UNITPRICE"),
                     ReadString(reader, "AMOUNT"),
-                    FormatDate(ReadValue(reader, "DELIVERYDATE"))));
+                    FormatDate(ReadValue(reader, "DELIVERYDATE")),
+                    ReadString(reader, "UDF_CLASSDAY"),
+                    TimeHelper.FormatUdfClassTime(ReadValue(reader, "UDF_CLASSTIME")),
+                    ReadString(reader, "UDF_STUDENTNAME"),
+                    ReadString(reader, "UDF_CONDUCTEDBY"),
+                    ClassDate: SqlAccountUdfClassDateHelper.FormatStoredValue(ReadValue(reader, "UDF_CLASSDATE"))));
             }
 
             return results;
@@ -163,6 +176,534 @@ public class SqlAccountLocalDbService
                 branchName);
             return Array.Empty<SqlAccountChildEnrollmentDto>();
         }
+    }
+
+    public async Task<IReadOnlyList<SqlAccountStaffUserMatch>> GetStaffTeachersAsync(
+        CancellationToken cancellationToken = default)
+    {
+        if (!CanReadLocalDb)
+            return Array.Empty<SqlAccountStaffUserMatch>();
+
+        try
+        {
+            await using var connection = OpenConnection();
+            await connection.OpenAsync(cancellationToken);
+
+            const string sql = """
+                SELECT CODE, NAME, EMAIL, UDF_ISADMIN
+                FROM SY_USER
+                WHERE (UDF_ISADMIN IS NULL OR UDF_ISADMIN = FALSE)
+                ORDER BY NAME
+                """;
+
+            var results = new List<SqlAccountStaffUserMatch>();
+            await using var command = new FbCommand(sql, connection);
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                var email = ReadString(reader, "EMAIL")?.Trim() ?? string.Empty;
+                var code = ReadString(reader, "CODE") ?? string.Empty;
+                var name = ReadString(reader, "NAME");
+                results.Add(new SqlAccountStaffUserMatch(
+                    code,
+                    string.IsNullOrWhiteSpace(name) ? (string.IsNullOrWhiteSpace(email) ? code : email) : name.Trim(),
+                    email,
+                    ReadBool(reader, "UDF_ISADMIN")));
+            }
+
+            return results;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Local SQL Account SY_USER teacher list read failed");
+            return Array.Empty<SqlAccountStaffUserMatch>();
+        }
+    }
+
+    public async Task<int> UpdateClassDateByItemCodesAsync(
+        IReadOnlyList<string> itemCodes,
+        DateTime? classDateTime,
+        CancellationToken cancellationToken = default)
+    {
+        if (!CanWriteLocalDb || itemCodes.Count == 0)
+            return 0;
+
+        await using var connection = OpenConnection();
+        await connection.OpenAsync(cancellationToken);
+
+        const string sql = """
+            UPDATE SL_SODTL SET UDF_CLASSDATE = @classDate
+            WHERE TRIM(ITEMCODE) = @itemCode
+              AND DOCKEY IN (
+                SELECT A.DOCKEY FROM SL_SO A
+                WHERE A.CANCELLED IS NULL OR A.CANCELLED = FALSE
+              )
+            """;
+
+        var updated = 0;
+        foreach (var itemCode in itemCodes.Where(c => !string.IsNullOrWhiteSpace(c)).Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            await using var command = new FbCommand(sql, connection);
+            command.Parameters.AddWithValue("@itemCode", itemCode.Trim());
+            AddClassDateParameter(command, classDateTime);
+            updated += await command.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        return updated;
+    }
+
+    public async Task<int> UpdateClassDateByScheduleMatchAsync(
+        string dayOfWeek,
+        string teacherName,
+        DateTime? classDateTime,
+        CancellationToken cancellationToken = default)
+    {
+        if (!CanWriteLocalDb
+            || string.IsNullOrWhiteSpace(dayOfWeek)
+            || string.IsNullOrWhiteSpace(teacherName))
+        {
+            return 0;
+        }
+
+        await using var connection = OpenConnection();
+        await connection.OpenAsync(cancellationToken);
+
+        const string sql = """
+            UPDATE SL_SODTL B SET B.UDF_CLASSDATE = @classDate
+            WHERE B.DOCKEY IN (
+                SELECT A.DOCKEY FROM SL_SO A
+                WHERE A.CANCELLED IS NULL OR A.CANCELLED = FALSE
+              )
+              AND TRIM(B.UDF_CLASSDAY) = @day
+              AND TRIM(B.UDF_CONDUCTEDBY) = @teacher
+            """;
+
+        await using var command = new FbCommand(sql, connection);
+        command.Parameters.AddWithValue("@day", dayOfWeek.Trim());
+        command.Parameters.AddWithValue("@teacher", teacherName.Trim());
+        AddClassDateParameter(command, classDateTime);
+
+        return await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<SqlAccountErpCalendarLineDto>> GetErpCalendarLinesAsync(
+        CancellationToken cancellationToken = default)
+    {
+        if (!CanReadLocalDb)
+            return Array.Empty<SqlAccountErpCalendarLineDto>();
+
+        try
+        {
+            await using var connection = OpenConnection();
+            await connection.OpenAsync(cancellationToken);
+
+            const string sql = """
+                SELECT A.CODE, A.BRANCHNAME, B.DOCKEY, B.SEQ, B.ITEMCODE, B.DESCRIPTION,
+                       B.UDF_CLASSDATE, B.UDF_CLASSDAY, B.UDF_CLASSTIME,
+                       B.UDF_STUDENTNAME, B.UDF_CONDUCTEDBY
+                FROM SL_SO A
+                INNER JOIN SL_SODTL B ON A.DOCKEY = B.DOCKEY
+                WHERE (A.CANCELLED IS NULL OR A.CANCELLED = FALSE)
+                  AND B.UDF_CLASSDATE IS NOT NULL
+                ORDER BY B.UDF_CLASSDATE, A.CODE, A.BRANCHNAME, B.SEQ
+                """;
+
+            var results = new List<SqlAccountErpCalendarLineDto>();
+            await using var command = new FbCommand(sql, connection);
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                results.Add(new SqlAccountErpCalendarLineDto(
+                    Convert.ToInt32(reader["DOCKEY"]),
+                    Convert.ToInt32(reader["SEQ"]),
+                    ReadString(reader, "CODE") ?? string.Empty,
+                    ReadString(reader, "BRANCHNAME") ?? string.Empty,
+                    ReadString(reader, "ITEMCODE"),
+                    ReadString(reader, "DESCRIPTION"),
+                    ReadClassDateTime(reader, "UDF_CLASSDATE"),
+                    ReadString(reader, "UDF_CLASSDAY"),
+                    TimeHelper.FormatUdfClassTime(ReadValue(reader, "UDF_CLASSTIME")),
+                    ReadString(reader, "UDF_STUDENTNAME"),
+                    ReadString(reader, "UDF_CONDUCTEDBY")));
+            }
+
+            return results;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Local SQL Account ERP calendar read failed");
+            return Array.Empty<SqlAccountErpCalendarLineDto>();
+        }
+    }
+
+    public async Task<SqlAccountErpCalendarLineDto?> GetErpCalendarLineByKeyAsync(
+        int docKey,
+        int seq,
+        CancellationToken cancellationToken = default)
+    {
+        if (!CanReadLocalDb)
+            return null;
+
+        try
+        {
+            await using var connection = OpenConnection();
+            await connection.OpenAsync(cancellationToken);
+
+            const string sql = """
+                SELECT A.CODE, A.BRANCHNAME, B.DOCKEY, B.SEQ, B.ITEMCODE, B.DESCRIPTION,
+                       B.UDF_CLASSDATE, B.UDF_CLASSDAY, B.UDF_CLASSTIME,
+                       B.UDF_STUDENTNAME, B.UDF_CONDUCTEDBY
+                FROM SL_SO A
+                INNER JOIN SL_SODTL B ON A.DOCKEY = B.DOCKEY
+                WHERE (A.CANCELLED IS NULL OR A.CANCELLED = FALSE)
+                  AND B.DOCKEY = @docKey
+                  AND B.SEQ = @seq
+                """;
+
+            await using var command = new FbCommand(sql, connection);
+            command.Parameters.AddWithValue("@docKey", docKey);
+            command.Parameters.AddWithValue("@seq", seq);
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            if (!await reader.ReadAsync(cancellationToken))
+                return null;
+
+            return new SqlAccountErpCalendarLineDto(
+                Convert.ToInt32(reader["DOCKEY"]),
+                Convert.ToInt32(reader["SEQ"]),
+                ReadString(reader, "CODE") ?? string.Empty,
+                ReadString(reader, "BRANCHNAME") ?? string.Empty,
+                ReadString(reader, "ITEMCODE"),
+                ReadString(reader, "DESCRIPTION"),
+                ReadClassDateTime(reader, "UDF_CLASSDATE"),
+                ReadString(reader, "UDF_CLASSDAY"),
+                TimeHelper.FormatUdfClassTime(ReadValue(reader, "UDF_CLASSTIME")),
+                ReadString(reader, "UDF_STUDENTNAME"),
+                ReadString(reader, "UDF_CONDUCTEDBY"));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Local SQL Account ERP calendar line read failed for {DocKey}/{Seq}", docKey, seq);
+            return null;
+        }
+    }
+
+    public async Task<int> UpdateSingleSodtlClassDateAsync(
+        int docKey,
+        int seq,
+        DateTime? classDateTime,
+        CancellationToken cancellationToken = default)
+    {
+        if (!CanWriteLocalDb)
+            return 0;
+
+        await using var connection = OpenConnection();
+        await connection.OpenAsync(cancellationToken);
+
+        const string sql = """
+            UPDATE SL_SODTL SET UDF_CLASSDATE = @classDate
+            WHERE DOCKEY = @docKey AND SEQ = @seq
+            """;
+
+        await using var command = new FbCommand(sql, connection);
+        command.Parameters.AddWithValue("@docKey", docKey);
+        command.Parameters.AddWithValue("@seq", seq);
+        AddClassDateParameter(command, classDateTime);
+
+        return await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    public async Task EnsureClassAssignmentChangeLogsTableAsync(CancellationToken cancellationToken = default)
+    {
+        if (!CanWriteLocalDb)
+            return;
+
+        await using var connection = OpenConnection();
+        await connection.OpenAsync(cancellationToken);
+
+        if (await AssignmentChangeLogsTableExistsAsync(connection, cancellationToken))
+            return;
+
+        var statements = new[]
+        {
+            """
+            CREATE TABLE ClassAssignmentChangeLogs (
+                ID VARCHAR(36) NOT NULL PRIMARY KEY,
+                CLASSID VARCHAR(36) NOT NULL,
+                CLASSNAME VARCHAR(200),
+                ENTITYTYPE VARCHAR(50) NOT NULL,
+                OPERATION VARCHAR(20) NOT NULL,
+                ENTITYID VARCHAR(36),
+                STUDENTUSERID VARCHAR(36),
+                STUDENTNAME VARCHAR(200),
+                PREVIOUSTEACHERUSERID VARCHAR(36),
+                PREVIOUSTEACHERNAME VARCHAR(200),
+                NEWTEACHERUSERID VARCHAR(36),
+                NEWTEACHERNAME VARCHAR(200),
+                PREVIOUSDAYOFWEEK VARCHAR(20),
+                NEWDAYOFWEEK VARCHAR(20),
+                PREVIOUSCLASSSTARTTIME VARCHAR(10),
+                NEWCLASSSTARTTIME VARCHAR(10),
+                PREVIOUSCLASSENDTIME VARCHAR(10),
+                NEWCLASSENDTIME VARCHAR(10),
+                PREVIOUSSESSIONDATE DATE,
+                NEWSESSIONDATE DATE,
+                PREVIOUSSESSIONSTARTTIME VARCHAR(10),
+                NEWSESSIONSTARTTIME VARCHAR(10),
+                PREVIOUSSESSIONENDTIME VARCHAR(10),
+                NEWSESSIONENDTIME VARCHAR(10),
+                PREVIOUSSTATUS VARCHAR(50),
+                NEWSTATUS VARCHAR(50),
+                ACTORUSERID VARCHAR(36),
+                ACTORNAME VARCHAR(200),
+                REASON VARCHAR(500),
+                CREATEDAT TIMESTAMP NOT NULL
+            )
+            """,
+            "CREATE INDEX IX_CLASSASSIGNLOG_CLASSID ON ClassAssignmentChangeLogs (CLASSID)",
+            "CREATE INDEX IX_CLASSASSIGNLOG_CREATEDAT ON ClassAssignmentChangeLogs (CREATEDAT)",
+        };
+
+        foreach (var statement in statements)
+        {
+            await using var command = new FbCommand(statement, connection);
+            await command.ExecuteNonQueryAsync(cancellationToken);
+        }
+    }
+
+    public async Task InsertClassAssignmentChangeLogAsync(
+        ClassAssignmentChangeLog entry,
+        CancellationToken cancellationToken = default)
+    {
+        if (!CanWriteLocalDb)
+            return;
+
+        await EnsureClassAssignmentChangeLogsTableAsync(cancellationToken);
+
+        await using var connection = OpenConnection();
+        await connection.OpenAsync(cancellationToken);
+
+        const string sql = """
+            INSERT INTO ClassAssignmentChangeLogs (
+                ID, CLASSID, CLASSNAME, ENTITYTYPE, OPERATION, ENTITYID, STUDENTUSERID, STUDENTNAME,
+                PREVIOUSTEACHERUSERID, PREVIOUSTEACHERNAME, NEWTEACHERUSERID, NEWTEACHERNAME,
+                PREVIOUSDAYOFWEEK, NEWDAYOFWEEK, PREVIOUSCLASSSTARTTIME, NEWCLASSSTARTTIME,
+                PREVIOUSCLASSENDTIME, NEWCLASSENDTIME, PREVIOUSSESSIONDATE, NEWSESSIONDATE,
+                PREVIOUSSESSIONSTARTTIME, NEWSESSIONSTARTTIME, PREVIOUSSESSIONENDTIME, NEWSESSIONENDTIME,
+                PREVIOUSSTATUS, NEWSTATUS, ACTORUSERID, ACTORNAME, REASON, CREATEDAT
+            ) VALUES (
+                @id, @classId, @className, @entityType, @operation, @entityId, @studentUserId, @studentName,
+                @prevTeacherUserId, @prevTeacherName, @newTeacherUserId, @newTeacherName,
+                @prevDay, @newDay, @prevClassStart, @newClassStart, @prevClassEnd, @newClassEnd,
+                @prevSessionDate, @newSessionDate, @prevSessionStart, @newSessionStart, @prevSessionEnd, @newSessionEnd,
+                @prevStatus, @newStatus, @actorUserId, @actorName, @reason, @createdAt
+            )
+            """;
+
+        await using var command = new FbCommand(sql, connection);
+        command.Parameters.AddWithValue("@id", entry.Id.ToString());
+        command.Parameters.AddWithValue("@classId", entry.ClassId.ToString());
+        command.Parameters.AddWithValue("@className", (object?)entry.ClassName ?? DBNull.Value);
+        command.Parameters.AddWithValue("@entityType", entry.EntityType);
+        command.Parameters.AddWithValue("@operation", entry.Operation);
+        command.Parameters.AddWithValue("@entityId", (object?)entry.EntityId?.ToString() ?? DBNull.Value);
+        command.Parameters.AddWithValue("@studentUserId", (object?)entry.StudentUserId?.ToString() ?? DBNull.Value);
+        command.Parameters.AddWithValue("@studentName", (object?)entry.StudentName ?? DBNull.Value);
+        command.Parameters.AddWithValue("@prevTeacherUserId", (object?)entry.PreviousTeacherUserId?.ToString() ?? DBNull.Value);
+        command.Parameters.AddWithValue("@prevTeacherName", (object?)entry.PreviousTeacherName ?? DBNull.Value);
+        command.Parameters.AddWithValue("@newTeacherUserId", (object?)entry.NewTeacherUserId?.ToString() ?? DBNull.Value);
+        command.Parameters.AddWithValue("@newTeacherName", (object?)entry.NewTeacherName ?? DBNull.Value);
+        command.Parameters.AddWithValue("@prevDay", (object?)entry.PreviousDayOfWeek ?? DBNull.Value);
+        command.Parameters.AddWithValue("@newDay", (object?)entry.NewDayOfWeek ?? DBNull.Value);
+        command.Parameters.AddWithValue("@prevClassStart", FormatNullableTime(entry.PreviousClassStartTime));
+        command.Parameters.AddWithValue("@newClassStart", FormatNullableTime(entry.NewClassStartTime));
+        command.Parameters.AddWithValue("@prevClassEnd", FormatNullableTime(entry.PreviousClassEndTime));
+        command.Parameters.AddWithValue("@newClassEnd", FormatNullableTime(entry.NewClassEndTime));
+        command.Parameters.AddWithValue("@prevSessionDate", (object?)entry.PreviousSessionDate?.Date ?? DBNull.Value);
+        command.Parameters.AddWithValue("@newSessionDate", (object?)entry.NewSessionDate?.Date ?? DBNull.Value);
+        command.Parameters.AddWithValue("@prevSessionStart", FormatNullableTime(entry.PreviousSessionStartTime));
+        command.Parameters.AddWithValue("@newSessionStart", FormatNullableTime(entry.NewSessionStartTime));
+        command.Parameters.AddWithValue("@prevSessionEnd", FormatNullableTime(entry.PreviousSessionEndTime));
+        command.Parameters.AddWithValue("@newSessionEnd", FormatNullableTime(entry.NewSessionEndTime));
+        command.Parameters.AddWithValue("@prevStatus", (object?)entry.PreviousStatus ?? DBNull.Value);
+        command.Parameters.AddWithValue("@newStatus", (object?)entry.NewStatus ?? DBNull.Value);
+        command.Parameters.AddWithValue("@actorUserId", (object?)entry.ActorUserId?.ToString() ?? DBNull.Value);
+        command.Parameters.AddWithValue("@actorName", (object?)entry.ActorName ?? DBNull.Value);
+        command.Parameters.AddWithValue("@reason", (object?)entry.Reason ?? DBNull.Value);
+        command.Parameters.AddWithValue("@createdAt", entry.CreatedAt);
+
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<ClassAssignmentChangeLog>> GetClassAssignmentChangeLogsAsync(
+        Guid? classId = null,
+        int limit = 200,
+        CancellationToken cancellationToken = default)
+    {
+        if (!CanReadLocalDb)
+            return Array.Empty<ClassAssignmentChangeLog>();
+
+        try
+        {
+            await using var connection = OpenConnection();
+            await connection.OpenAsync(cancellationToken);
+
+            if (!await AssignmentChangeLogsTableExistsAsync(connection, cancellationToken))
+                return Array.Empty<ClassAssignmentChangeLog>();
+
+            var sql = $"""
+                SELECT FIRST {Math.Clamp(limit, 1, 1000)}
+                    ID, CLASSID, CLASSNAME, ENTITYTYPE, OPERATION, ENTITYID, STUDENTUSERID, STUDENTNAME,
+                    PREVIOUSTEACHERUSERID, PREVIOUSTEACHERNAME, NEWTEACHERUSERID, NEWTEACHERNAME,
+                    PREVIOUSDAYOFWEEK, NEWDAYOFWEEK, PREVIOUSCLASSSTARTTIME, NEWCLASSSTARTTIME,
+                    PREVIOUSCLASSENDTIME, NEWCLASSENDTIME, PREVIOUSSESSIONDATE, NEWSESSIONDATE,
+                    PREVIOUSSESSIONSTARTTIME, NEWSESSIONSTARTTIME, PREVIOUSSESSIONENDTIME, NEWSESSIONENDTIME,
+                    PREVIOUSSTATUS, NEWSTATUS, ACTORUSERID, ACTORNAME, REASON, CREATEDAT
+                FROM ClassAssignmentChangeLogs
+                """;
+
+            if (classId.HasValue)
+            {
+                sql += " WHERE CLASSID = @classId";
+            }
+
+            sql += " ORDER BY CREATEDAT DESC";
+
+            await using var command = new FbCommand(sql, connection);
+            if (classId.HasValue)
+            {
+                command.Parameters.AddWithValue("@classId", classId.Value.ToString());
+            }
+
+            var results = new List<ClassAssignmentChangeLog>();
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                results.Add(MapClassAssignmentChangeLog(reader));
+            }
+
+            return results;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Local SQL Account ClassAssignmentChangeLogs read failed");
+            return Array.Empty<ClassAssignmentChangeLog>();
+        }
+    }
+
+    private static async Task<bool> AssignmentChangeLogsTableExistsAsync(
+        FbConnection connection,
+        CancellationToken cancellationToken)
+    {
+        const string sql = """
+            SELECT 1 FROM RDB$RELATIONS
+            WHERE RDB$RELATION_NAME = 'CLASSASSIGNMENTCHANGELOGS'
+            """;
+        await using var command = new FbCommand(sql, connection);
+        var result = await command.ExecuteScalarAsync(cancellationToken);
+        return result != null;
+    }
+
+    private static ClassAssignmentChangeLog MapClassAssignmentChangeLog(FbDataReader reader) =>
+        new()
+        {
+            Id = ParseGuid(ReadString(reader, "ID")) ?? Guid.Empty,
+            ClassId = ParseGuid(ReadString(reader, "CLASSID")) ?? Guid.Empty,
+            ClassName = ReadString(reader, "CLASSNAME"),
+            EntityType = ReadString(reader, "ENTITYTYPE") ?? ClassAssignmentEntityTypes.Class,
+            Operation = ReadString(reader, "OPERATION") ?? ClassAssignmentOperations.Update,
+            EntityId = ParseGuid(ReadString(reader, "ENTITYID")),
+            StudentUserId = ParseGuid(ReadString(reader, "STUDENTUSERID")),
+            StudentName = ReadString(reader, "STUDENTNAME"),
+            PreviousTeacherUserId = ParseGuid(ReadString(reader, "PREVIOUSTEACHERUSERID")),
+            PreviousTeacherName = ReadString(reader, "PREVIOUSTEACHERNAME"),
+            NewTeacherUserId = ParseGuid(ReadString(reader, "NEWTEACHERUSERID")),
+            NewTeacherName = ReadString(reader, "NEWTEACHERNAME"),
+            PreviousDayOfWeek = ReadString(reader, "PREVIOUSDAYOFWEEK"),
+            NewDayOfWeek = ReadString(reader, "NEWDAYOFWEEK"),
+            PreviousClassStartTime = ParseNullableTime(ReadString(reader, "PREVIOUSCLASSSTARTTIME")),
+            NewClassStartTime = ParseNullableTime(ReadString(reader, "NEWCLASSSTARTTIME")),
+            PreviousClassEndTime = ParseNullableTime(ReadString(reader, "PREVIOUSCLASSENDTIME")),
+            NewClassEndTime = ParseNullableTime(ReadString(reader, "NEWCLASSENDTIME")),
+            PreviousSessionDate = ReadNullableDate(reader, "PREVIOUSSESSIONDATE"),
+            NewSessionDate = ReadNullableDate(reader, "NEWSESSIONDATE"),
+            PreviousSessionStartTime = ParseNullableTime(ReadString(reader, "PREVIOUSSESSIONSTARTTIME")),
+            NewSessionStartTime = ParseNullableTime(ReadString(reader, "NEWSESSIONSTARTTIME")),
+            PreviousSessionEndTime = ParseNullableTime(ReadString(reader, "PREVIOUSSESSIONENDTIME")),
+            NewSessionEndTime = ParseNullableTime(ReadString(reader, "NEWSESSIONENDTIME")),
+            PreviousStatus = ReadString(reader, "PREVIOUSSTATUS"),
+            NewStatus = ReadString(reader, "NEWSTATUS"),
+            ActorUserId = ParseGuid(ReadString(reader, "ACTORUSERID")),
+            ActorName = ReadString(reader, "ACTORNAME"),
+            Reason = ReadString(reader, "REASON"),
+            CreatedAt = ReadDateTime(reader, "CREATEDAT") ?? DateTime.UtcNow,
+        };
+
+    private static Guid? ParseGuid(string? value) =>
+        Guid.TryParse(value, out var id) ? id : null;
+
+    private static object FormatNullableTime(TimeSpan? value) =>
+        value.HasValue ? TimeHelper.FormatTime(value.Value) : DBNull.Value;
+
+    private static TimeSpan? ParseNullableTime(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? null : TimeSpan.TryParse(value, out var parsed) ? parsed : null;
+
+    private static DateTime? ReadNullableDate(FbDataReader reader, string column)
+    {
+        try
+        {
+            var ordinal = reader.GetOrdinal(column);
+            if (reader.IsDBNull(ordinal))
+                return null;
+            return reader.GetDateTime(ordinal);
+        }
+        catch (IndexOutOfRangeException)
+        {
+            return null;
+        }
+    }
+
+    private static DateTime? ReadDateTime(FbDataReader reader, string column)
+    {
+        try
+        {
+            var ordinal = reader.GetOrdinal(column);
+            if (reader.IsDBNull(ordinal))
+                return null;
+            return reader.GetDateTime(ordinal);
+        }
+        catch (IndexOutOfRangeException)
+        {
+            return null;
+        }
+    }
+
+    private static DateTime? ReadClassDateTime(FbDataReader reader, string column)
+    {
+        try
+        {
+            var ordinal = reader.GetOrdinal(column);
+            if (reader.IsDBNull(ordinal))
+                return null;
+
+            var value = reader.GetValue(ordinal);
+            return value switch
+            {
+                DateTime dt => dt,
+                _ when DateTime.TryParse(value.ToString(), out var parsed) => parsed,
+                _ => null
+            };
+        }
+        catch (IndexOutOfRangeException)
+        {
+            return null;
+        }
+    }
+
+    private static void AddClassDateParameter(FbCommand command, DateTime? classDateTime)
+    {
+        command.Parameters.Add(classDateTime.HasValue
+            ? new FbParameter("@classDate", FbDbType.TimeStamp) { Value = classDateTime.Value }
+            : new FbParameter("@classDate", FbDbType.TimeStamp) { Value = DBNull.Value });
     }
 
     private static string? ReadValue(FbDataReader reader, string column)
@@ -189,7 +730,70 @@ public class SqlAccountLocalDbService
         return value;
     }
 
-    private FbConnection OpenConnection()
+    public async Task<IReadOnlyDictionary<string, string>> GetItemDescriptionsByCodeAsync(
+        IEnumerable<string> itemCodes,
+        CancellationToken cancellationToken = default)
+    {
+        var codes = itemCodes
+            .Where(c => !string.IsNullOrWhiteSpace(c))
+            .Select(c => c.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        if (!CanReadLocalDb || codes.Count == 0)
+            return new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+        await using var connection = OpenConnection();
+        await connection.OpenAsync(cancellationToken);
+
+        var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var code in codes)
+        {
+            await using var command = new FbCommand(
+                "SELECT DESCRIPTION FROM ST_ITEM WHERE CODE = @code",
+                connection);
+            command.Parameters.AddWithValue("@code", code);
+            var description = (await command.ExecuteScalarAsync(cancellationToken))?.ToString()?.Trim();
+            if (!string.IsNullOrWhiteSpace(description))
+                result[code] = description;
+        }
+
+        return result;
+    }
+
+    public async Task<IReadOnlyList<(string Code, string Description)>> GetStItemOptionsAsync(
+        CancellationToken cancellationToken = default)
+    {
+        if (!CanReadLocalDb)
+            return Array.Empty<(string, string)>();
+
+        await using var connection = OpenConnection();
+        await connection.OpenAsync(cancellationToken);
+
+        const string sql = """
+            SELECT CODE, DESCRIPTION
+            FROM ST_ITEM
+            WHERE DESCRIPTION IS NOT NULL
+              AND TRIM(DESCRIPTION) <> ''
+              AND (ISACTIVE IS NULL OR ISACTIVE = TRUE)
+            ORDER BY DESCRIPTION
+            """;
+
+        var results = new List<(string Code, string Description)>();
+        await using var command = new FbCommand(sql, connection);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            var code = reader["CODE"]?.ToString()?.Trim();
+            var description = reader["DESCRIPTION"]?.ToString()?.Trim();
+            if (!string.IsNullOrWhiteSpace(code) && !string.IsNullOrWhiteSpace(description))
+                results.Add((code, description));
+        }
+
+        return results;
+    }
+
+    public FbConnection OpenConnection()
     {
         var user = Environment.GetEnvironmentVariable("SqlAccount__DbUser") ?? "SYSDBA";
         var password = Environment.GetEnvironmentVariable("SqlAccount__DbPassword") ?? "masterkey";
@@ -199,7 +803,7 @@ public class SqlAccountLocalDbService
             Database = _settings.DatabasePath,
             UserID = user,
             Password = password,
-            Charset = "NONE",
+            Charset = "UTF8",
         };
         return new FbConnection(builder.ToString());
     }
@@ -267,6 +871,43 @@ public class SqlAccountLocalDbService
             .Where(p => p.Children.Count > 0)
             .OrderBy(p => p.ParentName, StringComparer.OrdinalIgnoreCase)
             .ToList();
+    }
+
+    private static bool ReadBool(FbDataReader reader, string column)
+    {
+        try
+        {
+            var ordinal = reader.GetOrdinal(column);
+            if (reader.IsDBNull(ordinal))
+                return false;
+
+            return reader.GetValue(ordinal) switch
+            {
+                bool value => value,
+                int value => value != 0,
+                short value => value != 0,
+                long value => value != 0,
+                string value => IsTruthy(value),
+                _ => false
+            };
+        }
+        catch (IndexOutOfRangeException)
+        {
+            return false;
+        }
+    }
+
+    private static bool IsTruthy(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return false;
+
+        var normalized = value.Trim();
+        return normalized.Equals("T", StringComparison.OrdinalIgnoreCase)
+            || normalized.Equals("Y", StringComparison.OrdinalIgnoreCase)
+            || normalized.Equals("1", StringComparison.OrdinalIgnoreCase)
+            || normalized.Equals("TRUE", StringComparison.OrdinalIgnoreCase)
+            || normalized.Equals("YES", StringComparison.OrdinalIgnoreCase);
     }
 
     private static string? ReadString(FbDataReader reader, string column)

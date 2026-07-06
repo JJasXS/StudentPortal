@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ClipboardList } from 'lucide-react';
 import { PageHeader } from '@/components/PageHeader';
 import { LeaveWorkflowSteps } from '@/components/leave/LeaveWorkflowSteps';
@@ -6,34 +6,47 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input, Label, Select, Textarea } from '@/components/ui/Input';
 import { StatusBadge } from '@/components/ui/StatusBadge';
+import { useToast } from '@/context/ToastContext';
+import { leaveApi, teachersApi } from '@/api/resources';
 import { formatDateDDMMYYYY } from '@/utils/dateFormat';
-import { mockUsers } from '@/utils/mockData';
-import {
-  adminConfirmReplacement,
-  adminProposeReplacement,
-  adminReviewLeave,
-  ensureLeaveSeeded,
-  formatSlotDate,
-  leaveStatusLabel,
-  loadLeaveRequests,
-} from '@/utils/leaveRequestStore';
-import type { LeaveRequest } from '@/types/leaveRequest';
+import { formatPortalSlotDate, portalLeaveStatusLabel } from '@/utils/portalLeave';
+import { getApiErrorMessage } from '@/utils/apiError';
+import type { PortalLeaveRequest } from '@/types/portal';
+import type { TeacherProfile } from '@/types';
 
 export default function AdminLeavePage() {
-  ensureLeaveSeeded();
-  const [requests, setRequests] = useState<LeaveRequest[]>(() => loadLeaveRequests());
+  const { error: showError } = useToast();
+  const [requests, setRequests] = useState<PortalLeaveRequest[]>([]);
+  const [teachers, setTeachers] = useState<TeacherProfile[]>([]);
+  const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<'all' | 'action'>('action');
   const [notes, setNotes] = useState<Record<string, string>>({});
   const [replacementForms, setReplacementForms] = useState<
-    Record<string, { teacherUserId: string; date: string; start: string; end: string }>
+    Record<string, { replTeacher: string; date: string; start: string; end: string }>
   >({});
 
-  const teachers = useMemo(
-    () => mockUsers.filter((u) => u.role === 'Teacher' && u.isActive),
-    []
-  );
+  const refresh = useCallback(async () => {
+    try {
+      const data = await leaveApi.getAll();
+      setRequests(data);
+    } catch (err) {
+      showError(getApiErrorMessage(err, 'Could not load leave requests.'));
+    }
+  }, [showError]);
 
-  const refresh = () => setRequests(loadLeaveRequests());
+  useEffect(() => {
+    setLoading(true);
+    Promise.all([leaveApi.getAll(), teachersApi.getAll()])
+      .then(([leaveData, teacherData]) => {
+        setRequests(leaveData);
+        setTeachers(teacherData.filter((t) => t.isActive));
+      })
+      .catch(() => {
+        setRequests([]);
+        setTeachers([]);
+      })
+      .finally(() => setLoading(false));
+  }, []);
 
   const filtered = useMemo(() => {
     if (filter === 'all') return requests;
@@ -44,7 +57,7 @@ export default function AdminLeavePage() {
 
   const getNote = (id: string) => notes[id] ?? '';
   const getForm = (id: string) =>
-    replacementForms[id] ?? { teacherUserId: '', date: '', start: '10:00', end: '11:00' };
+    replacementForms[id] ?? { replTeacher: '', date: '', start: '10:00', end: '11:00' };
 
   const setForm = (id: string, patch: Partial<(typeof replacementForms)[string]>) => {
     setReplacementForms((prev) => ({ ...prev, [id]: { ...getForm(id), ...patch } }));
@@ -76,7 +89,9 @@ export default function AdminLeavePage() {
         </Button>
       </div>
 
-      {filtered.length === 0 ? (
+      {loading ? (
+        <p className="text-sm text-slate-500">Loading leave requests…</p>
+      ) : filtered.length === 0 ? (
         <Card>
           <CardContent className="flex flex-col items-center py-10 text-center text-sm text-slate-500">
             <ClipboardList className="mb-2 h-10 w-10 text-slate-300" />
@@ -92,13 +107,13 @@ export default function AdminLeavePage() {
                 <CardHeader className="border-b border-slate-100 bg-slate-50/50">
                   <div className="flex flex-wrap items-start justify-between gap-2">
                     <div>
-                      <CardTitle className="text-base">{req.studentName}</CardTitle>
+                      <CardTitle className="text-base">{req.requestedBy ?? req.branchName}</CardTitle>
                       <p className="text-sm text-slate-500">
-                        {req.className} · {req.courseName} · Leave{' '}
+                        {req.className} · {req.branchName} · Leave{' '}
                         {formatDateDDMMYYYY(req.sessionDate)}
                       </p>
                     </div>
-                    <StatusBadge status={req.status} label={leaveStatusLabel(req.status)} />
+                    <StatusBadge status={req.status} label={portalLeaveStatusLabel(req.status)} />
                   </div>
                 </CardHeader>
                 <CardContent className="space-y-4 pt-4">
@@ -117,35 +132,44 @@ export default function AdminLeavePage() {
                       <Button
                         type="button"
                         variant="outline"
-                        onClick={() => {
-                          adminReviewLeave(req.id, 'reject', { adminNote: getNote(req.id) });
-                          refresh();
-                        }}
+                        onClick={() =>
+                          void leaveApi
+                            .review(req.id, {
+                              adminNote: getNote(req.id),
+                              approve: false,
+                              needsReplacement: false,
+                            })
+                            .then(() => refresh())
+                        }
                       >
                         Reject
                       </Button>
                       <Button
                         type="button"
                         variant="outline"
-                        onClick={() => {
-                          adminReviewLeave(req.id, 'approve', {
-                            adminNote: getNote(req.id),
-                            needsReplacement: false,
-                          });
-                          refresh();
-                        }}
+                        onClick={() =>
+                          void leaveApi
+                            .review(req.id, {
+                              adminNote: getNote(req.id),
+                              approve: true,
+                              needsReplacement: false,
+                            })
+                            .then(() => refresh())
+                        }
                       >
                         Approve (no replacement)
                       </Button>
                       <Button
                         type="button"
-                        onClick={() => {
-                          adminReviewLeave(req.id, 'approve', {
-                            adminNote: getNote(req.id) || 'Approved — replacement required.',
-                            needsReplacement: true,
-                          });
-                          refresh();
-                        }}
+                        onClick={() =>
+                          void leaveApi
+                            .review(req.id, {
+                              adminNote: getNote(req.id) || 'Approved — replacement required.',
+                              approve: true,
+                              needsReplacement: true,
+                            })
+                            .then(() => refresh())
+                        }
                       >
                         Approve + replacement
                       </Button>
@@ -157,12 +181,12 @@ export default function AdminLeavePage() {
                       <div className="space-y-1.5 sm:col-span-2">
                         <Label>Replacement teacher</Label>
                         <Select
-                          value={form.teacherUserId}
-                          onChange={(e) => setForm(req.id, { teacherUserId: e.target.value })}
+                          value={form.replTeacher}
+                          onChange={(e) => setForm(req.id, { replTeacher: e.target.value })}
                         >
                           <option value="">Select teacher…</option>
                           {teachers.map((t) => (
-                            <option key={t.id} value={t.id}>
+                            <option key={t.userId} value={t.fullName}>
                               {t.fullName}
                             </option>
                           ))}
@@ -197,19 +221,17 @@ export default function AdminLeavePage() {
                       <div className="sm:col-span-2">
                         <Button
                           type="button"
-                          disabled={!form.teacherUserId || !form.date}
-                          onClick={() => {
-                            const teacher = teachers.find((t) => t.id === form.teacherUserId);
-                            if (!teacher) return;
-                            adminProposeReplacement(req.id, {
-                              teacherUserId: teacher.id,
-                              teacherName: teacher.fullName,
-                              proposedDate: form.date,
-                              proposedStartTime: form.start,
-                              proposedEndTime: form.end,
-                            });
-                            refresh();
-                          }}
+                          disabled={!form.replTeacher || !form.date}
+                          onClick={() =>
+                            void leaveApi
+                              .proposeReplacement(req.id, {
+                                replTeacher: form.replTeacher,
+                                replDate: form.date,
+                                replStart: form.start,
+                                replEnd: form.end,
+                              })
+                              .then(() => refresh())
+                          }
                         >
                           Send to teacher
                         </Button>
@@ -217,63 +239,48 @@ export default function AdminLeavePage() {
                     </div>
                   )}
 
-                  {req.status === 'AwaitingTeacher' && req.replacement && (
+                  {req.status === 'AwaitingTeacher' && (
                     <div className="rounded-lg border border-blue-100 bg-blue-50/50 px-3 py-2 text-sm text-blue-900">
-                      Waiting for {req.replacement.teacherName} — proposed{' '}
-                      {formatSlotDate(
-                        req.replacement.proposedDate,
-                        req.replacement.proposedStartTime,
-                        req.replacement.proposedEndTime
-                      )}
-                      {req.replacement.teacherResponse === 'Accepted' && (
+                      Waiting for {req.replTeacher} — proposed{' '}
+                      {formatPortalSlotDate(req.replDate, req.replStart, req.replEnd)}
+                      {req.teacherResponse === 'Accepted' && (
                         <span className="ml-1 font-medium">· Teacher accepted</span>
                       )}
                     </div>
                   )}
 
-                  {req.status === 'TeacherCountered' && req.replacement && (
+                  {req.status === 'TeacherCountered' && (
                     <div className="space-y-3 border-t border-slate-100 pt-4">
                       <div className="rounded-lg border border-violet-100 bg-violet-50/50 px-3 py-2 text-sm">
                         <p className="font-medium text-violet-900">Teacher counter-proposal</p>
                         <p className="text-violet-800">
-                          {formatSlotDate(
-                            req.replacement.teacherCounterDate!,
-                            req.replacement.teacherCounterStartTime!,
-                            req.replacement.teacherCounterEndTime!
+                          {formatPortalSlotDate(
+                            req.counterDate,
+                            req.counterStart,
+                            req.counterEnd
                           )}
                         </p>
-                        {req.replacement.teacherMessage && (
-                          <p className="mt-1 text-violet-700">{req.replacement.teacherMessage}</p>
+                        {req.counterMsg && (
+                          <p className="mt-1 text-violet-700">{req.counterMsg}</p>
                         )}
                       </div>
-                      <Button type="button" onClick={() => {
-                        adminConfirmReplacement(req.id);
-                        refresh();
-                      }}>
-                        Confirm schedule & notify student
+                      <Button type="button" onClick={() => void leaveApi.confirm(req.id).then(() => refresh())}>
+                        Confirm schedule
                       </Button>
                     </div>
                   )}
 
-                  {req.status === 'AwaitingTeacher' &&
-                    req.replacement?.teacherResponse === 'Accepted' && (
-                      <Button type="button" onClick={() => {
-                        adminConfirmReplacement(req.id);
-                        refresh();
-                      }}>
-                        Confirm schedule & notify student
-                      </Button>
-                    )}
+                  {req.status === 'AwaitingTeacher' && req.teacherResponse === 'Accepted' && (
+                    <Button type="button" onClick={() => void leaveApi.confirm(req.id).then(() => refresh())}>
+                      Confirm schedule
+                    </Button>
+                  )}
 
-                  {req.status === 'Confirmed' && req.replacement && (
+                  {req.status === 'Confirmed' && (
                     <div className="rounded-lg border border-emerald-200 bg-emerald-50/60 px-3 py-2 text-sm text-emerald-900">
                       Confirmed replacement:{' '}
-                      {formatSlotDate(
-                        req.replacement.proposedDate,
-                        req.replacement.proposedStartTime,
-                        req.replacement.proposedEndTime
-                      )}{' '}
-                      with {req.replacement.teacherName}
+                      {formatPortalSlotDate(req.replDate, req.replStart, req.replEnd)}{' '}
+                      with {req.replTeacher}
                     </div>
                   )}
                 </CardContent>

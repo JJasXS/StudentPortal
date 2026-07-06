@@ -36,15 +36,17 @@ public class AuthService
 
         var user = await _context.Users.FirstOrDefaultAsync(u => u.Email.ToLower() == normalized && u.IsActive);
 
+        if (await IsSqlAccountAdminEmailAsync(normalized))
+            return new LoginMethodResponse("udf_email", true);
+
+        if (await IsSqlAccountTeacherEmailAsync(normalized))
+            return new LoginMethodResponse("udf_email", true);
+
         if (user?.Role is Roles.Teacher)
             return new LoginMethodResponse("password", false);
 
         if (user?.Role is Roles.Student)
             return new LoginMethodResponse("password", false);
-
-        // SY_USER / dev admin: passwordless udf-email even if a portal Admin row already exists
-        if (await IsSqlAccountAdminEmailAsync(normalized))
-            return new LoginMethodResponse("udf_email", true);
 
         if (await IsSqlAccountParentEmailAsync(normalized) || _authSettings.IsDevParentEmail(normalized))
             return new LoginMethodResponse("udf_email", true);
@@ -53,10 +55,10 @@ public class AuthService
             return new LoginMethodResponse("password", false);
 
         throw new InvalidOperationException(
-            "This email is not found in SQL Account (SY_USER or AR_CUSTOMER udf_email). Contact the centre for access.");
+            "This email is not found in SQL Account (SY_USER email or AR_CUSTOMER udf_email). Contact the centre for access.");
     }
 
-    /// <summary>Sign in when email matches SY_USER or AR_CUSTOMER udf_email (OTP bypassed for now).</summary>
+    /// <summary>Sign in when email matches SY_USER (admin/teacher), or AR_CUSTOMER udf_email parent.</summary>
     public async Task<LoginResponse?> LoginWithUdfEmailAsync(string email)
     {
         var normalized = NormalizeEmail(email);
@@ -71,6 +73,16 @@ public class AuthService
 
             var adminToken = JwtHelper.GenerateToken(adminUser, _jwtSettings);
             return new LoginResponse(adminToken, MapUser(adminUser));
+        }
+
+        if (await IsSqlAccountTeacherEmailAsync(normalized))
+        {
+            var teacherUser = await EnsureTeacherUserForEmailAsync(normalized);
+            if (teacherUser == null || !Roles.CanSignIn(teacherUser.Role))
+                return null;
+
+            var teacherToken = JwtHelper.GenerateToken(teacherUser, _jwtSettings);
+            return new LoginResponse(teacherToken, MapUser(teacherUser));
         }
 
         if (!await IsSqlAccountParentEmailAsync(normalized) && !_authSettings.IsDevParentEmail(normalized))
@@ -150,8 +162,17 @@ public class AuthService
         if (_authSettings.IsDevAdminEmail(normalizedEmail))
             return true;
 
-        var admin = await _sqlAccount.FindAdminByUdfEmailAsync(normalizedEmail);
-        return admin != null;
+        var staff = await _sqlAccount.FindStaffByEmailAsync(normalizedEmail);
+        return staff?.IsAdmin == true;
+    }
+
+    private async Task<bool> IsSqlAccountTeacherEmailAsync(string normalizedEmail)
+    {
+        if (_authSettings.IsDevAdminEmail(normalizedEmail))
+            return false;
+
+        var staff = await _sqlAccount.FindStaffByEmailAsync(normalizedEmail);
+        return staff != null && !staff.IsAdmin;
     }
 
     private async Task<bool> IsSqlAccountParentEmailAsync(string normalizedEmail)
@@ -236,12 +257,12 @@ public class AuthService
             return null;
         }
 
-        var erpAdmin = await _sqlAccount.FindAdminByUdfEmailAsync(normalizedEmail);
-        if (erpAdmin == null && !_authSettings.IsDevAdminEmail(normalizedEmail))
+        var erpStaff = await _sqlAccount.FindStaffByEmailAsync(normalizedEmail);
+        if ((erpStaff == null || !erpStaff.IsAdmin) && !_authSettings.IsDevAdminEmail(normalizedEmail))
             return null;
 
-        var displayEmail = erpAdmin?.Email.Trim() ?? normalizedEmail;
-        var fullName = erpAdmin?.UserName
+        var displayEmail = erpStaff?.Email.Trim() ?? normalizedEmail;
+        var fullName = erpStaff?.UserName
             ?? (_authSettings.IsDevAdminEmail(normalizedEmail) ? displayEmail.Split('@')[0] : displayEmail);
 
         user = new User
@@ -254,6 +275,57 @@ public class AuthService
             IsActive = true
         };
         _context.Users.Add(user);
+        await _context.SaveChangesAsync();
+        return user;
+    }
+
+    private async Task<User?> EnsureTeacherUserForEmailAsync(string normalizedEmail)
+    {
+        var user = await _context.Users
+            .Include(u => u.TeacherProfile)
+            .FirstOrDefaultAsync(u => u.Email.ToLower() == normalizedEmail);
+
+        if (user != null)
+        {
+            if (user.Role == Roles.Teacher)
+                return user.IsActive ? user : null;
+
+            if (user.Role == Roles.Admin)
+                throw new InvalidOperationException("This email is an admin login.");
+
+            if (user.Role is Roles.Parent or Roles.Student)
+                throw new InvalidOperationException("This email is not a teacher login.");
+
+            return null;
+        }
+
+        var erpStaff = await _sqlAccount.FindStaffByEmailAsync(normalizedEmail);
+        if (erpStaff == null || erpStaff.IsAdmin)
+            return null;
+
+        var displayEmail = erpStaff.Email.Trim();
+        var fullName = string.IsNullOrWhiteSpace(erpStaff.UserName) ? displayEmail.Split('@')[0] : erpStaff.UserName;
+
+        user = new User
+        {
+            Id = Guid.NewGuid(),
+            FullName = fullName,
+            Email = displayEmail,
+            PasswordHash = PasswordHelper.Hash(Guid.NewGuid().ToString("N")),
+            Role = Roles.Teacher,
+            IsActive = true
+        };
+
+        var profile = new TeacherProfile
+        {
+            Id = Guid.NewGuid(),
+            UserId = user.Id,
+            HourlyRate = 0,
+            EmploymentType = EmploymentTypes.FullTime
+        };
+
+        _context.Users.Add(user);
+        _context.TeacherProfiles.Add(profile);
         await _context.SaveChangesAsync();
         return user;
     }
@@ -700,19 +772,22 @@ public class ParentService
     private readonly SqlAccountService _sqlAccount;
     private readonly SqlAccountSalesOrderService _salesOrders;
     private readonly AuthSettings _authSettings;
+    private readonly PortalClassSessionService _portalSessions;
 
     public ParentService(
         AppDbContext context,
         AuditLogService audit,
         SqlAccountService sqlAccount,
         SqlAccountSalesOrderService salesOrders,
-        AuthSettings authSettings)
+        AuthSettings authSettings,
+        PortalClassSessionService portalSessions)
     {
         _context = context;
         _audit = audit;
         _sqlAccount = sqlAccount;
         _salesOrders = salesOrders;
         _authSettings = authSettings;
+        _portalSessions = portalSessions;
     }
 
     public async Task<SqlAccountMyChildrenDto> GetSqlAccountChildrenForEmailAsync(
@@ -778,7 +853,101 @@ public class ParentService
             normalizedBranch,
             cancellationToken);
 
-        return new SqlAccountChildEnrollmentsDto(customerCode, normalizedBranch, enrollments);
+        var enriched = await EnrichEnrollmentsAsync(enrollments, cancellationToken);
+        return new SqlAccountChildEnrollmentsDto(customerCode, normalizedBranch, enriched);
+    }
+
+    public async Task<string?> GetCustomerCodeForEmailAsync(
+        string email,
+        CancellationToken cancellationToken = default) =>
+        await ResolveCustomerCodeForEmailAsync(email, cancellationToken);
+
+    public async Task<List<ErpCalendarEventDto>> GetCalendarEventsForEmailAsync(
+        string email,
+        string? branchName = null,
+        CancellationToken cancellationToken = default)
+    {
+        return await _portalSessions.GetCalendarEventsForParentAsync(
+            email, branchName, this, cancellationToken);
+    }
+
+    private async Task<IReadOnlyList<SqlAccountChildEnrollmentDto>> EnrichEnrollmentsAsync(
+        IReadOnlyList<SqlAccountChildEnrollmentDto> enrollments,
+        CancellationToken cancellationToken)
+    {
+        if (enrollments.Count == 0)
+            return enrollments;
+
+        var itemCodes = enrollments
+            .Select(e => e.ItemCode)
+            .Where(c => !string.IsNullOrWhiteSpace(c))
+            .Select(c => c!.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        if (itemCodes.Count == 0)
+            return enrollments;
+
+        var links = await _context.ItemCodeClassLinks
+            .Include(l => l.PortalClass)
+            .ThenInclude(c => c.TeacherUser)
+            .ToListAsync(cancellationToken);
+
+        var linkByItemCode = links
+            .Where(l => itemCodes.Any(code => string.Equals(code, l.ItemCode, StringComparison.OrdinalIgnoreCase)))
+            .ToDictionary(l => l.ItemCode, l => l, StringComparer.OrdinalIgnoreCase);
+
+        if (linkByItemCode.Count == 0)
+            return enrollments;
+
+        var classIds = linkByItemCode.Values.Select(l => l.PortalClassId).Distinct().ToList();
+        var today = DateTime.UtcNow.Date;
+
+        var upcomingSessions = await _context.ClassSessions
+            .Where(s => classIds.Contains(s.ClassId)
+                && s.SessionDate >= today
+                && s.Status != "Cancelled")
+            .OrderBy(s => s.SessionDate)
+            .ToListAsync(cancellationToken);
+
+        var nextSessionByClassId = upcomingSessions
+            .GroupBy(s => s.ClassId)
+            .ToDictionary(g => g.Key, g => g.First());
+
+        return enrollments.Select(enrollment =>
+        {
+            if (string.IsNullOrWhiteSpace(enrollment.ItemCode)
+                || !linkByItemCode.TryGetValue(enrollment.ItemCode, out var link))
+            {
+                return enrollment;
+            }
+
+            var portalClass = link.PortalClass;
+            nextSessionByClassId.TryGetValue(link.PortalClassId, out var nextSession);
+
+            var portalStartTime = TimeHelper.FormatTime(portalClass.StartTime);
+
+            var portalTeacher = portalClass.TeacherUser?.FullName;
+
+            return enrollment with
+            {
+                ClassDay = string.IsNullOrWhiteSpace(enrollment.ClassDay) ? portalClass.DayOfWeek : enrollment.ClassDay,
+                ClassTime = string.IsNullOrWhiteSpace(enrollment.ClassTime) ? portalStartTime : enrollment.ClassTime,
+                ClassDate = string.IsNullOrWhiteSpace(enrollment.ClassDate)
+                    ? (nextSession == null
+                        ? null
+                        : $"{nextSession.SessionDate:yyyy-MM-dd} {TimeHelper.FormatTime(nextSession.StartTime)}")
+                    : enrollment.ClassDate,
+                ConductedBy = string.IsNullOrWhiteSpace(enrollment.ConductedBy) ? portalTeacher : enrollment.ConductedBy,
+                LinkedClassId = portalClass.Id,
+                LinkedClassName = portalClass.ClassName,
+                LinkedClassDayOfWeek = portalClass.DayOfWeek,
+                LinkedClassStartTime = portalStartTime,
+                LinkedClassEndTime = TimeHelper.FormatTime(portalClass.EndTime),
+                LinkedClassTeacherName = portalTeacher,
+                NextSessionDate = nextSession?.SessionDate.ToString("yyyy-MM-dd")
+            };
+        }).ToList();
     }
 
     private async Task<string?> ResolveCustomerCodeForEmailAsync(
@@ -903,10 +1072,48 @@ public class TeacherService
 {
     private readonly AppDbContext _context;
     private readonly AuditLogService _audit;
-    public TeacherService(AppDbContext context, AuditLogService audit)
+    private readonly SqlAccountService _sqlAccount;
+
+    public TeacherService(AppDbContext context, AuditLogService audit, SqlAccountService sqlAccount)
     {
         _context = context;
         _audit = audit;
+        _sqlAccount = sqlAccount;
+    }
+
+    public async Task<List<SqlAccountCalendarTeacherDto>> GetCalendarFilterTeachersAsync(
+        CancellationToken cancellationToken = default)
+    {
+        var erpTeachers = await _sqlAccount.GetStaffTeachersAsync(cancellationToken);
+        if (erpTeachers.Count == 0)
+            return [];
+
+        var emails = erpTeachers
+            .Select(t => t.Email.Trim().ToLowerInvariant())
+            .Distinct()
+            .ToList();
+
+        var portalUsers = await _context.Users
+            .Where(u => u.Role == Roles.Teacher && u.IsActive && emails.Contains(u.Email.ToLower()))
+            .Select(u => new { u.Id, Email = u.Email.ToLower() })
+            .ToListAsync(cancellationToken);
+
+        var portalUserIdByEmail = portalUsers.ToDictionary(u => u.Email, u => u.Id);
+
+        return erpTeachers
+            .Select(t =>
+            {
+                var normalizedEmail = t.Email.Trim().ToLowerInvariant();
+                Guid? mappedPortalUserId = portalUserIdByEmail.TryGetValue(normalizedEmail, out var portalUserId)
+                    ? portalUserId
+                    : null;
+                return new SqlAccountCalendarTeacherDto(
+                    t.UserId,
+                    string.IsNullOrWhiteSpace(t.UserName) ? t.Email : t.UserName,
+                    t.Email,
+                    mappedPortalUserId);
+            })
+            .ToList();
     }
 
     public async Task<List<TeacherDto>> GetAllAsync() =>
@@ -1080,11 +1287,18 @@ public class ClassService
     private readonly AppDbContext _context;
     private readonly AuditLogService _audit;
     private readonly ClassSessionService _sessions;
-    public ClassService(AppDbContext context, AuditLogService audit, ClassSessionService sessions)
+    private readonly ClassAssignmentChangeLogService _assignmentLogs;
+
+    public ClassService(
+        AppDbContext context,
+        AuditLogService audit,
+        ClassSessionService sessions,
+        ClassAssignmentChangeLogService assignmentLogs)
     {
         _context = context;
         _audit = audit;
         _sessions = sessions;
+        _assignmentLogs = assignmentLogs;
     }
 
     public async Task<List<ClassDto>> GetAllAsync() =>
@@ -1114,7 +1328,9 @@ public class ClassService
             EndTime = TimeSpan.Parse(dto.EndTime),
             MaxStudents = dto.MaxStudents,
             Location = dto.Location,
-            IsActive = dto.IsActive
+            IsActive = dto.IsActive,
+            StartDate = dto.StartDate,
+            EndDate = dto.EndDate
         };
         _context.Classes.Add(cls);
         await _context.SaveChangesAsync();
@@ -1128,8 +1344,22 @@ public class ClassService
 
     public async Task<ClassDto?> UpdateAsync(Guid id, ClassDto dto)
     {
-        var cls = await _context.Classes.FindAsync(id);
+        var cls = await _context.Classes
+            .Include(c => c.TeacherUser)
+            .FirstOrDefaultAsync(c => c.Id == id);
         if (cls == null) return null;
+
+        var before = new MusicClass
+        {
+            Id = cls.Id,
+            ClassName = cls.ClassName,
+            TeacherUserId = cls.TeacherUserId,
+            DayOfWeek = cls.DayOfWeek,
+            StartTime = cls.StartTime,
+            EndTime = cls.EndTime
+        };
+        var previousTeacherName = cls.TeacherUser.FullName;
+
         cls.CourseId = dto.CourseId;
         cls.TeacherUserId = dto.TeacherUserId;
         cls.ClassName = dto.ClassName;
@@ -1139,8 +1369,28 @@ public class ClassService
         cls.MaxStudents = dto.MaxStudents;
         cls.Location = dto.Location;
         cls.IsActive = dto.IsActive;
+        cls.StartDate = dto.StartDate;
+        cls.EndDate = dto.EndDate;
         cls.UpdatedAt = DateTime.UtcNow;
         await _context.SaveChangesAsync();
+
+        if (before.TeacherUserId != cls.TeacherUserId)
+        {
+            var newTeacher = await _context.Users.FindAsync(cls.TeacherUserId);
+            await _assignmentLogs.RecordClassTeacherChangedAsync(
+                cls,
+                before.TeacherUserId,
+                previousTeacherName,
+                cls.TeacherUserId,
+                newTeacher?.FullName);
+        }
+
+        var scheduleChanged = before.DayOfWeek != cls.DayOfWeek
+            || before.StartTime != cls.StartTime
+            || before.EndTime != cls.EndTime;
+        if (scheduleChanged)
+            await _assignmentLogs.RecordClassScheduleChangedAsync(before, cls);
+
         await _audit.LogAsync("class.updated", "Class", cls.Id.ToString(), cls.ClassName);
         return await GetByIdAsync(id);
     }
@@ -1159,17 +1409,24 @@ public class ClassService
     private static ClassDto Map(MusicClass c) =>
         new(c.Id, c.CourseId, c.Course.CourseName, c.TeacherUserId, c.TeacherUser.FullName,
             c.ClassName, c.DayOfWeek, TimeHelper.FormatTime(c.StartTime), TimeHelper.FormatTime(c.EndTime),
-            c.MaxStudents, c.Enrollments.Count(e => e.Status == "Active"), c.Location, c.IsActive);
+            c.MaxStudents, c.Enrollments.Count(e => e.Status == "Active"), c.Location, c.IsActive,
+            c.StartDate, c.EndDate);
 }
 
 public class EnrollmentService
 {
     private readonly AppDbContext _context;
     private readonly AuditLogService _audit;
-    public EnrollmentService(AppDbContext context, AuditLogService audit)
+    private readonly ClassAssignmentChangeLogService _assignmentLogs;
+
+    public EnrollmentService(
+        AppDbContext context,
+        AuditLogService audit,
+        ClassAssignmentChangeLogService assignmentLogs)
     {
         _context = context;
         _audit = audit;
+        _assignmentLogs = assignmentLogs;
     }
 
     public async Task<List<EnrollmentDto>> GetAllAsync() =>
@@ -1180,6 +1437,11 @@ public class EnrollmentService
 
     public async Task<EnrollmentDto> CreateAsync(EnrollmentDto dto)
     {
+        var alreadyEnrolled = await _context.Enrollments.AnyAsync(e =>
+            e.StudentUserId == dto.StudentUserId && e.ClassId == dto.ClassId && e.Status == "Active");
+        if (alreadyEnrolled)
+            throw new InvalidOperationException("This student already has an active enrollment in this class.");
+
         var enrollment = new Enrollment
         {
             Id = Guid.NewGuid(),
@@ -1191,27 +1453,53 @@ public class EnrollmentService
         _context.Enrollments.Add(enrollment);
         await _context.SaveChangesAsync();
         var created = (await GetAllAsync()).First(e => e.Id == enrollment.Id);
+        await _assignmentLogs.RecordEnrollmentCreatedAsync(
+            enrollment,
+            created.ClassName,
+            created.StudentName ?? string.Empty);
         await _audit.LogAsync("enrollment.created", "Enrollment", enrollment.Id.ToString(), created.StudentName);
         return created;
     }
 
     public async Task<EnrollmentDto?> UpdateAsync(Guid id, EnrollmentDto dto)
     {
-        var enrollment = await _context.Enrollments.FindAsync(id);
+        var enrollment = await _context.Enrollments
+            .Include(e => e.StudentUser)
+            .Include(e => e.Class)
+            .FirstOrDefaultAsync(e => e.Id == id);
         if (enrollment == null) return null;
+
+        var beforeStatus = enrollment.Status;
         enrollment.Status = dto.Status;
         enrollment.UpdatedAt = DateTime.UtcNow;
         await _context.SaveChangesAsync();
-        var updated = await _context.Enrollments.Include(e => e.StudentUser).Include(e => e.Class)
-            .FirstAsync(e => e.Id == id);
-        await _audit.LogAsync("enrollment.updated", "Enrollment", enrollment.Id.ToString(), updated.StudentUser.FullName, dto.Status);
-        return Map(updated);
+
+        if (!string.Equals(beforeStatus, dto.Status, StringComparison.OrdinalIgnoreCase))
+        {
+            await _assignmentLogs.RecordEnrollmentUpdatedAsync(
+                new Enrollment { Id = enrollment.Id, ClassId = enrollment.ClassId, StudentUserId = enrollment.StudentUserId, Status = beforeStatus },
+                enrollment.Class.ClassName,
+                enrollment.StudentUser.FullName,
+                dto.Status);
+        }
+
+        await _audit.LogAsync("enrollment.updated", "Enrollment", enrollment.Id.ToString(), enrollment.StudentUser.FullName, dto.Status);
+        return Map(enrollment);
     }
 
     public async Task<bool> DeleteAsync(Guid id)
     {
-        var enrollment = await _context.Enrollments.Include(e => e.StudentUser).FirstOrDefaultAsync(e => e.Id == id);
+        var enrollment = await _context.Enrollments
+            .Include(e => e.StudentUser)
+            .Include(e => e.Class)
+            .FirstOrDefaultAsync(e => e.Id == id);
         if (enrollment == null) return false;
+
+        await _assignmentLogs.RecordEnrollmentCancelledAsync(
+            enrollment,
+            enrollment.Class.ClassName,
+            enrollment.StudentUser.FullName);
+
         enrollment.Status = "Cancelled";
         enrollment.UpdatedAt = DateTime.UtcNow;
         await _context.SaveChangesAsync();
@@ -1227,10 +1515,22 @@ public class ClassSessionService
 {
     private readonly AppDbContext _context;
     private readonly AuditLogService _audit;
-    public ClassSessionService(AppDbContext context, AuditLogService audit)
+    private readonly ClassSessionChangeHistoryService _history;
+    private readonly ClassAssignmentChangeLogService _assignmentLogs;
+    private readonly SqlAccountSodtlUdfSyncService _sodtlSync;
+
+    public ClassSessionService(
+        AppDbContext context,
+        AuditLogService audit,
+        ClassSessionChangeHistoryService history,
+        ClassAssignmentChangeLogService assignmentLogs,
+        SqlAccountSodtlUdfSyncService sodtlSync)
     {
         _context = context;
         _audit = audit;
+        _history = history;
+        _assignmentLogs = assignmentLogs;
+        _sodtlSync = sodtlSync;
     }
 
     public async Task<List<ClassSessionDto>> GetAllAsync() =>
@@ -1257,33 +1557,179 @@ public class ClassSessionService
         };
         _context.ClassSessions.Add(session);
         await _context.SaveChangesAsync();
+        var created = await GetByIdAsync(session.Id);
+        await _assignmentLogs.RecordSessionCreatedAsync(session, created?.ClassName);
         await _audit.LogAsync("session.created", "ClassSession", session.Id.ToString(), session.Topic ?? "Session");
-        return (await GetByIdAsync(session.Id))!;
+        await SyncErpClassDateAsync(session.ClassId);
+        return created!;
     }
 
-    public async Task<ClassSessionDto?> UpdateAsync(Guid id, ClassSessionDto dto)
+    public async Task<ClassSessionDto?> UpdateAsync(Guid id, ClassSessionDto dto, string? reason = null)
     {
         var session = await _context.ClassSessions.FindAsync(id);
         if (session == null) return null;
+
+        var before = new ClassSession
+        {
+            Id = session.Id,
+            ClassId = session.ClassId,
+            SessionDate = session.SessionDate,
+            StartTime = session.StartTime,
+            EndTime = session.EndTime,
+            Status = session.Status
+        };
+
+        var changeType = ClassSessionChangeHistoryService.DetermineChangeType(before, dto);
+        var newStart = TimeSpan.Parse(dto.StartTime);
+        var newEnd = TimeSpan.Parse(dto.EndTime);
+
         session.SessionDate = dto.SessionDate;
-        session.StartTime = TimeSpan.Parse(dto.StartTime);
-        session.EndTime = TimeSpan.Parse(dto.EndTime);
+        session.StartTime = newStart;
+        session.EndTime = newEnd;
         session.Topic = dto.Topic;
         session.Notes = dto.Notes;
         session.Status = dto.Status;
         session.UpdatedAt = DateTime.UtcNow;
         await _context.SaveChangesAsync();
+
+        if (changeType != null)
+        {
+            await _history.RecordAsync(
+                before,
+                changeType,
+                reason,
+                session.SessionDate,
+                session.StartTime,
+                session.EndTime,
+                session.Status);
+
+            var className = (await _context.Classes.FindAsync(session.ClassId))?.ClassName;
+            if (changeType == ClassSessionChangeTypes.Cancellation)
+            {
+                await _assignmentLogs.RecordSessionCancelledAsync(before, className, reason);
+            }
+            else
+            {
+                await _assignmentLogs.RecordSessionReplacedAsync(
+                    before,
+                    session,
+                    className,
+                    reason);
+            }
+
+            await _audit.LogAsync(
+                changeType == ClassSessionChangeTypes.Cancellation ? "session.cancelled" : "session.replaced",
+                "ClassSession",
+                session.Id.ToString(),
+                dto.Topic ?? session.Topic ?? "Session",
+                reason);
+        }
+
+        await SyncErpClassDateAsync(session.ClassId);
         return await GetByIdAsync(id);
     }
 
-    public async Task<bool> DeleteAsync(Guid id)
+    public async Task<bool> DeleteAsync(Guid id, string? reason = null)
     {
         var session = await _context.ClassSessions.FindAsync(id);
         if (session == null) return false;
+
+        var before = new ClassSession
+        {
+            Id = session.Id,
+            ClassId = session.ClassId,
+            SessionDate = session.SessionDate,
+            StartTime = session.StartTime,
+            EndTime = session.EndTime,
+            Status = session.Status
+        };
+
         session.Status = "Cancelled";
         session.UpdatedAt = DateTime.UtcNow;
         await _context.SaveChangesAsync();
+
+        await _history.RecordAsync(
+            before,
+            ClassSessionChangeTypes.Cancellation,
+            reason,
+            session.SessionDate,
+            session.StartTime,
+            session.EndTime,
+            session.Status);
+
+        var className = (await _context.Classes.FindAsync(session.ClassId))?.ClassName;
+        await _assignmentLogs.RecordSessionCancelledAsync(before, className, reason);
+        await _audit.LogAsync("session.cancelled", "ClassSession", session.Id.ToString(), session.Topic ?? "Session", reason);
+        await SyncErpClassDateAsync(before.ClassId);
+
         return true;
+    }
+
+    public async Task<ClassSessionDto> ReplaceAsync(Guid id, ReplaceClassSessionRequest request)
+    {
+        var session = await _context.ClassSessions
+            .Include(s => s.Class)
+            .FirstOrDefaultAsync(s => s.Id == id)
+            ?? throw new InvalidOperationException("Session not found");
+
+        var before = new ClassSession
+        {
+            Id = session.Id,
+            ClassId = session.ClassId,
+            SessionDate = session.SessionDate,
+            StartTime = session.StartTime,
+            EndTime = session.EndTime,
+            Status = session.Status
+        };
+
+        var newDate = DateTime.Parse(request.SessionDate).Date;
+        var newStart = TimeSpan.Parse(request.StartTime);
+        var newEnd = TimeSpan.Parse(request.EndTime);
+
+        session.Status = "Cancelled";
+        session.UpdatedAt = DateTime.UtcNow;
+
+        var replacement = new ClassSession
+        {
+            Id = Guid.NewGuid(),
+            ClassId = session.ClassId,
+            SessionDate = newDate,
+            StartTime = newStart,
+            EndTime = newEnd,
+            Topic = session.Topic,
+            Notes = string.IsNullOrWhiteSpace(request.Notes)
+                ? $"Replacement for {before.SessionDate:yyyy-MM-dd}"
+                : request.Notes.Trim(),
+            Status = "Rescheduled"
+        };
+        _context.ClassSessions.Add(replacement);
+        await _context.SaveChangesAsync();
+
+        await _history.RecordAsync(
+            before,
+            ClassSessionChangeTypes.Replacement,
+            request.Reason,
+            replacement.SessionDate,
+            replacement.StartTime,
+            replacement.EndTime,
+            replacement.Status,
+            replacement.Id);
+
+        await _assignmentLogs.RecordSessionReplacedAsync(
+            before,
+            replacement,
+            session.Class?.ClassName,
+            request.Reason);
+
+        await _audit.LogAsync(
+            "session.replaced",
+            "ClassSession",
+            session.Id.ToString(),
+            session.Class?.ClassName ?? "Session",
+            $"Replacement session {replacement.Id}");
+
+        await SyncErpClassDateAsync(session.ClassId);
+        return (await GetByIdAsync(replacement.Id))!;
     }
 
     public async Task<ClassSessionDto> GetOrCreateTodayAsync(Guid classId)
@@ -1312,6 +1758,7 @@ public class ClassSessionService
         _context.ClassSessions.Add(session);
         await _context.SaveChangesAsync();
         await _audit.LogAsync("session.auto_created", "ClassSession", session.Id.ToString(), cls.ClassName, "Today");
+        await SyncErpClassDateAsync(classId);
         return (await GetByIdAsync(session.Id))!;
     }
 
@@ -1390,8 +1837,18 @@ public class ClassSessionService
             sessionDtos.Add(Map(loaded));
         }
 
+        var syncedClassIds = createdSessions.Select(s => s.ClassId).Distinct().ToList();
+        if (request.ClassId.HasValue && !syncedClassIds.Contains(request.ClassId.Value))
+            syncedClassIds.Add(request.ClassId.Value);
+
+        foreach (var classId in syncedClassIds)
+            await SyncErpClassDateAsync(classId);
+
         return new GenerateSessionsResultDto(createdSessions.Count, skipped, sessionDtos);
     }
+
+    private async Task SyncErpClassDateAsync(Guid classId) =>
+        await _sodtlSync.SyncNextSessionClassDateAsync(classId);
 
     private static bool MatchesDayOfWeek(string dayOfWeek, DateTime date)
     {
@@ -1409,11 +1866,10 @@ public class ClassSessionService
 public class AttendanceService
 {
     private readonly AppDbContext _context;
-    private readonly NotificationService _notifications;
-    public AttendanceService(AppDbContext context, NotificationService notifications)
+
+    public AttendanceService(AppDbContext context)
     {
         _context = context;
-        _notifications = notifications;
     }
 
     public async Task<List<AttendanceDto>> GetAllAsync() =>
@@ -1441,7 +1897,6 @@ public class AttendanceService
         };
         _context.Attendances.Add(attendance);
         await _context.SaveChangesAsync();
-        await NotifyIfAbsentAsync(attendance);
         return (await GetAllAsync()).First(a => a.Id == attendance.Id);
     }
 
@@ -1453,27 +1908,7 @@ public class AttendanceService
         attendance.Remarks = dto.Remarks;
         attendance.UpdatedAt = DateTime.UtcNow;
         await _context.SaveChangesAsync();
-        await NotifyIfAbsentAsync(attendance);
         return (await GetAllAsync()).FirstOrDefault(a => a.Id == id);
-    }
-
-    private async Task NotifyIfAbsentAsync(Attendance attendance)
-    {
-        if (attendance.Status is not ("Absent" or "Late")) return;
-
-        var session = await _context.ClassSessions
-            .Include(s => s.Class)
-            .FirstOrDefaultAsync(s => s.Id == attendance.ClassSessionId);
-        if (session == null) return;
-
-        var student = await _context.Users.FindAsync(attendance.StudentUserId);
-        var label = attendance.Status == "Late" ? "Late to class" : "Absent from class";
-        await _notifications.NotifyParentsOfStudentAsync(
-            attendance.StudentUserId,
-            label,
-            $"{student?.FullName ?? "Your child"} was marked {attendance.Status.ToLower()} for {session.Class.ClassName} on {session.SessionDate:dd MMM yyyy}.",
-            "Attendance",
-            "/parent/attendance");
     }
 
     private static AttendanceDto Map(Attendance a) =>
@@ -1602,25 +2037,24 @@ public class AttendanceService
 public class LessonNoteService
 {
     private readonly AppDbContext _context;
-    private readonly NotificationService _notifications;
-    public LessonNoteService(AppDbContext context, NotificationService notifications)
+
+    public LessonNoteService(AppDbContext context)
     {
         _context = context;
-        _notifications = notifications;
     }
 
     public async Task<List<LessonNoteDto>> GetAllAsync() =>
         await _context.LessonNotes
             .Include(n => n.StudentUser)
             .Include(n => n.TeacherUser)
-            .Include(n => n.ClassSession).ThenInclude(s => s.Class)
+            .Include(n => n.ClassSession!).ThenInclude(s => s.Class)
             .Select(n => Map(n)).ToListAsync();
 
     public async Task<List<LessonNoteDto>> GetByStudentAsync(Guid studentUserId) =>
         await _context.LessonNotes
             .Include(n => n.StudentUser)
             .Include(n => n.TeacherUser)
-            .Include(n => n.ClassSession).ThenInclude(s => s.Class)
+            .Include(n => n.ClassSession!).ThenInclude(s => s.Class)
             .Where(n => n.StudentUserId == studentUserId)
             .Select(n => Map(n)).ToListAsync();
 
@@ -1630,7 +2064,9 @@ public class LessonNoteService
         {
             Id = Guid.NewGuid(),
             ClassSessionId = dto.ClassSessionId,
+            ClassName = dto.ClassName,
             StudentUserId = dto.StudentUserId,
+            StudentName = dto.StudentName,
             TeacherUserId = dto.TeacherUserId,
             NoteTitle = dto.NoteTitle,
             NoteContent = dto.NoteContent,
@@ -1638,14 +2074,7 @@ public class LessonNoteService
         };
         _context.LessonNotes.Add(note);
         await _context.SaveChangesAsync();
-        var created = (await GetAllAsync()).First(n => n.Id == note.Id);
-        await _notifications.NotifyParentsOfStudentAsync(
-            note.StudentUserId,
-            "New lesson note",
-            created.NoteTitle,
-            "LessonNote",
-            "/parent/lesson-notes");
-        return created;
+        return (await GetAllAsync()).First(n => n.Id == note.Id);
     }
 
     public async Task<LessonNoteDto?> UpdateAsync(Guid id, LessonNoteDto dto)
@@ -1670,92 +2099,55 @@ public class LessonNoteService
     }
 
     private static LessonNoteDto Map(LessonNote n) =>
-        new(n.Id, n.ClassSessionId, n.ClassSession.Class.ClassName, n.StudentUserId, n.StudentUser.FullName,
-            n.TeacherUserId, n.TeacherUser.FullName, n.NoteTitle, n.NoteContent, n.PracticeInstructions, n.CreatedAt);
+        new(
+            n.Id,
+            n.ClassSessionId,
+            n.ClassName ?? n.ClassSession?.Class?.ClassName,
+            n.StudentUserId,
+            n.StudentName ?? n.StudentUser?.FullName,
+            n.TeacherUserId,
+            n.TeacherUser.FullName,
+            n.NoteTitle,
+            n.NoteContent,
+            n.PracticeInstructions,
+            n.CreatedAt);
 }
 
 public class AnnouncementService
 {
-    private readonly AppDbContext _context;
-    private readonly AuditLogService _audit;
-    private readonly NotificationService _notifications;
-    public AnnouncementService(AppDbContext context, AuditLogService audit, NotificationService notifications)
+    private readonly PortalAnnouncementService _portal;
+
+    public AnnouncementService(PortalAnnouncementService portal)
     {
-        _context = context;
-        _audit = audit;
-        _notifications = notifications;
+        _portal = portal;
     }
 
-    public async Task<List<AnnouncementDto>> GetAllAsync() =>
-        await _context.Announcements.Include(a => a.CreatedByUser).Select(a => Map(a)).ToListAsync();
+    public Task<List<AnnouncementDto>> GetAllAsync(CancellationToken cancellationToken = default) =>
+        _portal.GetAllAsync(cancellationToken);
 
-    public async Task<AnnouncementDto> CreateAsync(AnnouncementDto dto)
-    {
-        var announcement = new Announcement
-        {
-            Id = Guid.NewGuid(),
-            Title = dto.Title,
-            Content = dto.Content,
-            Category = dto.Category,
-            HolidayDate = dto.HolidayDate,
-            TargetRole = dto.TargetRole,
-            CreatedByUserId = dto.CreatedByUserId
-        };
-        _context.Announcements.Add(announcement);
-        await _context.SaveChangesAsync();
-        var created = (await GetAllAsync()).First(a => a.Id == announcement.Id);
-        await _audit.LogAsync("announcement.created", "Announcement", announcement.Id.ToString(), announcement.Title);
-        await _notifications.NotifyAnnouncementAsync(announcement);
-        return created;
-    }
+    public Task<AnnouncementDto> CreateAsync(AnnouncementDto dto, CancellationToken cancellationToken = default) =>
+        _portal.CreateAsync(dto, cancellationToken);
 
-    public async Task<AnnouncementDto?> UpdateAsync(Guid id, AnnouncementDto dto)
-    {
-        var announcement = await _context.Announcements.FindAsync(id);
-        if (announcement == null) return null;
-        announcement.Title = dto.Title;
-        announcement.Content = dto.Content;
-        announcement.Category = dto.Category;
-        announcement.HolidayDate = dto.HolidayDate;
-        announcement.TargetRole = dto.TargetRole;
-        announcement.UpdatedAt = DateTime.UtcNow;
-        await _context.SaveChangesAsync();
-        var updated = (await GetAllAsync()).FirstOrDefault(a => a.Id == id);
-        if (updated != null)
-            await _audit.LogAsync("announcement.updated", "Announcement", announcement.Id.ToString(), announcement.Title);
-        return updated;
-    }
+    public Task<AnnouncementDto?> UpdateAsync(Guid id, AnnouncementDto dto, CancellationToken cancellationToken = default) =>
+        _portal.UpdateAsync(id, dto, cancellationToken);
 
-    public async Task<bool> DeleteAsync(Guid id)
-    {
-        var announcement = await _context.Announcements.FindAsync(id);
-        if (announcement == null) return false;
-        var title = announcement.Title;
-        _context.Announcements.Remove(announcement);
-        await _context.SaveChangesAsync();
-        await _audit.LogAsync("announcement.deleted", "Announcement", id.ToString(), title);
-        return true;
-    }
-
-    private static AnnouncementDto Map(Announcement a) =>
-        new(a.Id, a.Title, a.Content, a.Category, a.HolidayDate, a.TargetRole, a.CreatedByUserId, a.CreatedByUser.FullName, a.CreatedAt);
+    public Task<bool> DeleteAsync(Guid id, CancellationToken cancellationToken = default) =>
+        _portal.DeleteAsync(id, cancellationToken);
 }
 
 public class InvoiceService
 {
     private readonly AppDbContext _context;
     private readonly AuditLogService _audit;
-    private readonly NotificationService _notifications;
     private readonly BillplzService _billplz;
+
     public InvoiceService(
         AppDbContext context,
         AuditLogService audit,
-        NotificationService notifications,
         BillplzService billplz)
     {
         _context = context;
         _audit = audit;
-        _notifications = notifications;
         _billplz = billplz;
     }
 
@@ -1851,17 +2243,6 @@ public class InvoiceService
         invoice.UpdatedAt = DateTime.UtcNow;
         await _context.SaveChangesAsync();
         await _audit.LogAsync("invoice.paid", "Invoice", invoice.Id.ToString(), invoice.InvoiceNo, auditDetails);
-
-        if (invoice.ParentUserId.HasValue)
-        {
-            await _notifications.CreateAsync(
-                invoice.ParentUserId.Value,
-                "Payment received",
-                $"{invoice.InvoiceNo} has been paid.",
-                "Invoice",
-                "/parent/invoices");
-        }
-
         return Map(invoice);
     }
 
@@ -1899,16 +2280,6 @@ public class InvoiceService
             invoice.Id.ToString(),
             invoice.InvoiceNo,
             $"Amount: {invoice.Amount}");
-
-        if (request.SendNow && invoice.ParentUserId.HasValue)
-        {
-            await _notifications.CreateAsync(
-                invoice.ParentUserId.Value,
-                "New invoice",
-                $"{invoice.InvoiceNo} — RM {invoice.Amount:N2} due {invoice.DueDate:dd MMM yyyy}",
-                "Invoice",
-                "/parent/invoices");
-        }
 
         return await GetByIdAsync(invoice.Id);
     }
@@ -2044,4 +2415,82 @@ public class CentreSettingsService
         new(s.CentreName, s.Timezone, s.Currency, s.DefaultMonthlyFee, s.PaymentInstructions,
             s.Address, s.Phone, s.Email, s.BankName, s.BankAccountNo,
             s.InvoicePrefix, s.LogoDataUrl);
+}
+
+public class ItemCodeClassLinkService
+{
+    private readonly AppDbContext _context;
+    private readonly AuditLogService _audit;
+
+    public ItemCodeClassLinkService(AppDbContext context, AuditLogService audit)
+    {
+        _context = context;
+        _audit = audit;
+    }
+
+    public async Task<List<ItemCodeClassLinkDto>> GetAllAsync()
+    {
+        var links = await _context.ItemCodeClassLinks
+            .Include(l => l.PortalClass)
+            .OrderBy(l => l.ItemCode)
+            .ToListAsync();
+
+        return links.Select(Map).ToList();
+    }
+
+    public async Task<ItemCodeClassLinkDto> CreateAsync(CreateItemCodeClassLinkRequest request)
+    {
+        var itemCode = request.ItemCode.Trim();
+        if (string.IsNullOrWhiteSpace(itemCode))
+            throw new InvalidOperationException("Item code is required.");
+
+        var portalClass = await _context.Classes.FindAsync(request.PortalClassId)
+            ?? throw new InvalidOperationException("Portal class not found.");
+
+        if (await _context.ItemCodeClassLinks.AnyAsync(l =>
+                l.ItemCode.ToLower() == itemCode.ToLower()))
+        {
+            throw new InvalidOperationException($"Item code \"{itemCode}\" is already linked.");
+        }
+
+        var link = new ItemCodeClassLink
+        {
+            Id = Guid.NewGuid(),
+            ItemCode = itemCode,
+            PortalClassId = portalClass.Id,
+            CreatedAt = DateTime.UtcNow
+        };
+
+        _context.ItemCodeClassLinks.Add(link);
+        await _context.SaveChangesAsync();
+        await _audit.LogAsync(
+            "item_code_class_link.created",
+            "ItemCodeClassLink",
+            link.Id.ToString(),
+            $"{itemCode} → {portalClass.ClassName}");
+
+        link.PortalClass = portalClass;
+        return Map(link);
+    }
+
+    public async Task<bool> DeleteAsync(Guid id)
+    {
+        var link = await _context.ItemCodeClassLinks
+            .Include(l => l.PortalClass)
+            .FirstOrDefaultAsync(l => l.Id == id);
+        if (link == null)
+            return false;
+
+        _context.ItemCodeClassLinks.Remove(link);
+        await _context.SaveChangesAsync();
+        await _audit.LogAsync(
+            "item_code_class_link.deleted",
+            "ItemCodeClassLink",
+            link.Id.ToString(),
+            $"{link.ItemCode} → {link.PortalClass.ClassName}");
+        return true;
+    }
+
+    private static ItemCodeClassLinkDto Map(ItemCodeClassLink link) =>
+        new(link.Id, link.ItemCode, link.PortalClassId, link.PortalClass?.ClassName, link.CreatedAt);
 }

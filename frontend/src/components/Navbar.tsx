@@ -1,7 +1,6 @@
 import { Link } from 'react-router-dom';
 import { Menu, User } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
-import { NotificationBell } from '@/components/NotificationBell';
 import { TeacherTodoToggleBubble } from '@/components/teacher/TeacherTodoToggleBubble';
 import { Button } from '@/components/ui/Button';
 import { StatusBadge } from '@/components/ui/StatusBadge';
@@ -37,7 +36,6 @@ export default function Navbar({ onMenuClick }: NavbarProps) {
       <div className="flex items-center gap-2">
         {user?.role && user.role !== 'Parent' && <StatusBadge status={user.role} />}
         <TeacherTodoToggleBubble />
-        <NotificationBell />
         <Link to="/profile">
           <Button variant="outline" size="sm">
             <User className="mr-1 h-4 w-4" />

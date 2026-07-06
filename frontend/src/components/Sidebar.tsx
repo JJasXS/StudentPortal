@@ -2,20 +2,19 @@ import { NavLink } from 'react-router-dom';
 import {
   LayoutDashboard,
   UserCircle,
-  GraduationCap,
+  Users,
   Calendar,
   CalendarDays,
   Megaphone,
   Settings,
   NotebookPen,
-  Bell,
   LogOut,
   X,
   History,
   BookOpenCheck,
   CalendarOff,
   RefreshCw,
-  Database,
+  GraduationCap,
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { useCentreBranding } from '@/context/CentreBrandingContext';
@@ -33,11 +32,9 @@ interface NavItem {
 
 const adminNav: NavItem[] = [
   { label: 'Dashboard', path: '/admin/dashboard', icon: LayoutDashboard },
-  { label: 'Students & Parents', path: '/admin/students', icon: GraduationCap },
-  { label: 'SQL Account', path: '/admin/sql-account', icon: Database },
+  { label: 'Parents', path: '/admin/parents', icon: Users },
   { label: 'Staff Management', path: '/admin/teachers', icon: UserCircle },
   { label: 'Calendar & Courses', path: '/admin/calendar', icon: CalendarDays },
-  { label: 'Homework', path: '/admin/homework', icon: BookOpenCheck },
   { label: 'Leave requests', path: '/admin/leave', icon: CalendarOff },
   { label: 'Announcements', path: '/admin/announcements', icon: Megaphone },
   { label: 'Audit log', path: '/admin/audit-log', icon: History },
@@ -51,7 +48,7 @@ const teacherNav: NavItem[] = [
   { label: 'Lesson Notes', path: '/teacher/lesson-notes', icon: NotebookPen },
   { label: 'Homework', path: '/teacher/homework', icon: BookOpenCheck },
   { label: 'Replacements', path: '/teacher/replacements', icon: RefreshCw },
-  { label: 'Notifications', path: '/teacher/notifications', icon: Bell },
+  { label: 'Announcements', path: '/teacher/announcements', icon: Megaphone },
 ];
 
 const learnerNav: NavItem[] = [
@@ -60,7 +57,7 @@ const learnerNav: NavItem[] = [
   { label: 'My Courses', path: '/student/courses', icon: GraduationCap, parentLabel: 'My Children' },
   { label: 'Homework', path: '/student/homework', icon: BookOpenCheck },
   { label: 'Leave', path: '/student/leave', icon: CalendarOff },
-  { label: 'Notifications', path: '/student/notifications', icon: Bell },
+  { label: 'Announcements', path: '/student/announcements', icon: Megaphone },
 ];
 
 export const navByRole: Record<Exclude<UserRole, 'Parent'>, NavItem[]> = {

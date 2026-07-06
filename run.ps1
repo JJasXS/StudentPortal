@@ -41,11 +41,13 @@ if ($provider -eq "Postgres") {
 
     if (-not $pgReady) {
         Write-Host "ERROR: PostgreSQL is not running on localhost:5432" -ForegroundColor Red
-        Write-Host "Start PostgreSQL or set DatabaseProvider=Sqlite in .env" -ForegroundColor Yellow
+        Write-Host "Start PostgreSQL or set DatabaseProvider=Firebird in .env" -ForegroundColor Yellow
         exit 1
     }
 } else {
-    Write-Host "Using SQLite database (music_tuition_portal.db)" -ForegroundColor Cyan
+    $fdb = $env:SqlAccount__DatabasePath
+    if (-not $fdb) { $fdb = "PORTAL.FDB (set SqlAccount__DatabasePath in .env)" }
+    Write-Host "Using Firebird database ($fdb)" -ForegroundColor Cyan
 }
 
 $frontendDir = "$root\frontend"

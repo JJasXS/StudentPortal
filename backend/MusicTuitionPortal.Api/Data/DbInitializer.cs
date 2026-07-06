@@ -1,6 +1,10 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Storage;
+using MusicTuitionPortal.Api.DTOs;
 using MusicTuitionPortal.Api.Helpers;
 using MusicTuitionPortal.Api.Models;
+using MusicTuitionPortal.Api.Services;
 
 namespace MusicTuitionPortal.Api.Data;
 
@@ -10,19 +14,40 @@ public static class DbInitializer
     {
         using var scope = serviceProvider.CreateScope();
         var context = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var configuration = scope.ServiceProvider.GetRequiredService<IConfiguration>();
+        var isSqlite = (context.Database.ProviderName ?? string.Empty)
+            .Contains("Sqlite", StringComparison.OrdinalIgnoreCase);
 
-        await context.Database.EnsureCreatedAsync();
-        await EnsureEmploymentTypeColumnAsync(context);
-        await EnsureAttendanceCheckInsTableAsync(context);
-        await EnsureCentreSettingsTableAsync(context);
-        await EnsureCentreSettingsColumnsAsync(context);
-        await EnsurePasswordResetsTableAsync(context);
-        await EnsureLoginOtpsTableAsync(context);
-        await EnsureDefaultCentreSettingsAsync(context, scope.ServiceProvider.GetRequiredService<IConfiguration>());
-        await EnsureInvoiceCourseColumnsAsync(context);
-        await EnsureInvoiceBillingColumnsAsync(context);
-        await EnsureAuditLogsTableAsync(context);
-        await EnsureNotificationsTableAsync(context);
+        var isFirebird = (context.Database.ProviderName ?? string.Empty)
+            .Contains("Firebird", StringComparison.OrdinalIgnoreCase);
+
+        if (isFirebird)
+            await EnsureFirebirdEfTablesAsync(context);
+        else
+            await context.Database.EnsureCreatedAsync();
+
+        if (isSqlite)
+        {
+            await EnsureEmploymentTypeColumnAsync(context);
+            await EnsureAttendanceCheckInsTableAsync(context);
+            await EnsureCentreSettingsTableAsync(context);
+            await EnsureCentreSettingsColumnsAsync(context);
+            await EnsurePasswordResetsTableAsync(context);
+            await EnsureLoginOtpsTableAsync(context);
+            await EnsureDefaultCentreSettingsAsync(context, configuration);
+            await EnsureInvoiceCourseColumnsAsync(context);
+            await EnsureInvoiceBillingColumnsAsync(context);
+            await EnsureAuditLogsTableAsync(context);
+            await EnsureClassTermColumnsAsync(context);
+            await EnsureItemCodeClassLinksTableAsync(context);
+            await EnsureClassSessionChangeHistoriesTableAsync(context);
+        }
+        else
+        {
+            await EnsureDefaultCentreSettingsAsync(context, configuration);
+        }
+
+        await EnsurePortalFirebirdTablesAsync(scope.ServiceProvider);
 
         if (await context.Users.AnyAsync())
         {
@@ -707,8 +732,9 @@ public static class DbInitializer
         await EnsureDemoTeachersAsync(context);
         }
 
-        await EnsureDemoNotificationsAsync(context);
         await EnsureDemoAuditLogsAsync(context);
+        await SyncSyUserTeachersAsync(context, scope.ServiceProvider);
+        await EnsureTestTeacherDemoDataAsync(context, scope.ServiceProvider);
     }
 
     /// <summary>Adds STU-003…STU-009 when DB was seeded before extra demo students existed.</summary>
@@ -886,6 +912,39 @@ public static class DbInitializer
         await context.SaveChangesAsync();
     }
 
+    private static async Task EnsureFirebirdEfTablesAsync(AppDbContext context)
+    {
+        if (await EfPortalTableExistsAsync(context, "Users"))
+            return;
+
+        var creator = context.GetService<IRelationalDatabaseCreator>();
+        await creator.CreateTablesAsync();
+    }
+
+    private static async Task<bool> EfPortalTableExistsAsync(AppDbContext context, string tableName)
+    {
+        try
+        {
+            await context.Database.ExecuteSqlRawAsync($"SELECT 1 FROM \"{tableName}\" ROWS 1");
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static async Task EnsurePortalFirebirdTablesAsync(IServiceProvider serviceProvider)
+    {
+        var localDb = serviceProvider.GetRequiredService<SqlAccountLocalDbService>();
+        if (!localDb.CanWriteLocalDb)
+            return;
+
+        await using var connection = localDb.OpenConnection();
+        await connection.OpenAsync();
+        await PortalFirebirdSchema.EnsureAllTablesAsync(connection);
+    }
+
     private static async Task EnsureEmploymentTypeColumnAsync(AppDbContext context)
     {
         try
@@ -967,78 +1026,6 @@ public static class DbInitializer
             )");
     }
 
-    private static async Task EnsureNotificationsTableAsync(AppDbContext context)
-    {
-        await context.Database.ExecuteSqlRawAsync(@"
-            CREATE TABLE IF NOT EXISTS Notifications (
-                Id TEXT NOT NULL PRIMARY KEY,
-                UserId TEXT NOT NULL,
-                Title TEXT NOT NULL,
-                Message TEXT NOT NULL,
-                Category TEXT NOT NULL,
-                LinkPath TEXT NULL,
-                IsRead INTEGER NOT NULL DEFAULT 0,
-                CreatedAt TEXT NOT NULL
-            )");
-    }
-
-    private static async Task EnsureDemoNotificationsAsync(AppDbContext context)
-    {
-        if (await context.Notifications.AnyAsync()) return;
-
-        var parent1Id = Guid.Parse("44444444-4444-4444-4444-444444444441");
-        var parent2Id = Guid.Parse("44444444-4444-4444-4444-444444444442");
-        var now = DateTime.UtcNow;
-
-        context.Notifications.AddRange(
-            new Notification
-            {
-                Id = Guid.NewGuid(),
-                UserId = parent1Id,
-                Title = "New lesson note",
-                Message = "Introduction to C Major — Emily had a great first lesson!",
-                Category = "LessonNote",
-                LinkPath = "/parent/lesson-notes",
-                IsRead = false,
-                CreatedAt = now.AddHours(-2)
-            },
-            new Notification
-            {
-                Id = Guid.NewGuid(),
-                UserId = parent1Id,
-                Title = "Course fee due",
-                Message = "INV-2026-0042 — RM 300.00 due 15 Jun 2026",
-                Category = "Invoice",
-                LinkPath = "/parent/invoices",
-                IsRead = false,
-                CreatedAt = now.AddDays(-1)
-            },
-            new Notification
-            {
-                Id = Guid.NewGuid(),
-                UserId = parent1Id,
-                Title = "Centre closed — public holiday",
-                Message = "The centre will be closed on 5 May for Labour Day.",
-                Category = "Announcement",
-                LinkPath = "/parent/announcements",
-                IsRead = true,
-                CreatedAt = now.AddDays(-3)
-            },
-            new Notification
-            {
-                Id = Guid.NewGuid(),
-                UserId = parent2Id,
-                Title = "Absent from class",
-                Message = "James was marked absent for Guitar Wed PM on 28 May 2025.",
-                Category = "Attendance",
-                LinkPath = "/parent/attendance",
-                IsRead = false,
-                CreatedAt = now.AddDays(-2)
-            });
-
-        await context.SaveChangesAsync();
-    }
-
     private static async Task EnsureDemoAuditLogsAsync(AppDbContext context)
     {
         if (await context.AuditLogs.AnyAsync()) return;
@@ -1078,6 +1065,300 @@ public static class DbInitializer
         }
 
         await context.SaveChangesAsync();
+    }
+
+    private static async Task EnsureClassTermColumnsAsync(AppDbContext context)
+    {
+        try { await context.Database.ExecuteSqlRawAsync("ALTER TABLE Classes ADD COLUMN StartDate TEXT NULL"); } catch { }
+        try { await context.Database.ExecuteSqlRawAsync("ALTER TABLE Classes ADD COLUMN EndDate TEXT NULL"); } catch { }
+    }
+
+    private static async Task EnsureItemCodeClassLinksTableAsync(AppDbContext context)
+    {
+        await context.Database.ExecuteSqlRawAsync(@"
+            CREATE TABLE IF NOT EXISTS ItemCodeClassLinks (
+                Id TEXT NOT NULL PRIMARY KEY,
+                ItemCode TEXT NOT NULL,
+                PortalClassId TEXT NOT NULL,
+                CreatedAt TEXT NOT NULL
+            )");
+        try
+        {
+            await context.Database.ExecuteSqlRawAsync(
+                "CREATE UNIQUE INDEX IF NOT EXISTS IX_ItemCodeClassLinks_ItemCode ON ItemCodeClassLinks(ItemCode)");
+        }
+        catch
+        {
+            // Index already exists
+        }
+    }
+
+    private static async Task EnsureClassSessionChangeHistoriesTableAsync(AppDbContext context)
+    {
+        await context.Database.ExecuteSqlRawAsync(@"
+            CREATE TABLE IF NOT EXISTS ClassSessionChangeHistories (
+                Id TEXT NOT NULL PRIMARY KEY,
+                ClassSessionId TEXT NOT NULL,
+                ClassId TEXT NOT NULL,
+                ChangeType TEXT NOT NULL,
+                ActorUserId TEXT NULL,
+                ActorName TEXT NULL,
+                Reason TEXT NULL,
+                PreviousSessionDate TEXT NOT NULL,
+                PreviousStartTime TEXT NOT NULL,
+                PreviousEndTime TEXT NOT NULL,
+                PreviousStatus TEXT NOT NULL,
+                NewSessionDate TEXT NULL,
+                NewStartTime TEXT NULL,
+                NewEndTime TEXT NULL,
+                NewStatus TEXT NULL,
+                ReplacementClassSessionId TEXT NULL,
+                CreatedAt TEXT NOT NULL
+            )");
+        try
+        {
+            await context.Database.ExecuteSqlRawAsync(
+                "CREATE INDEX IF NOT EXISTS IX_ClassSessionChangeHistories_ClassId ON ClassSessionChangeHistories(ClassId)");
+            await context.Database.ExecuteSqlRawAsync(
+                "CREATE INDEX IF NOT EXISTS IX_ClassSessionChangeHistories_ClassSessionId ON ClassSessionChangeHistories(ClassSessionId)");
+        }
+        catch
+        {
+            // Indexes already exist
+        }
+    }
+
+    /// <summary>
+    /// Align portal teacher users/classes with SY_USER (name + email) so calendar filter and UDF_CONDUCTEDBY match ERP.
+    /// </summary>
+    private static async Task SyncSyUserTeachersAsync(AppDbContext context, IServiceProvider serviceProvider)
+    {
+        var localDb = serviceProvider.GetRequiredService<SqlAccountLocalDbService>();
+        var erpTeachers = OrderDemoTeachers(await localDb.GetStaffTeachersAsync());
+        if (erpTeachers.Count == 0)
+            return;
+
+        var demoUserIds = new[]
+        {
+            Guid.Parse("22222222-2222-2222-2222-222222000001"),
+            Guid.Parse("22222222-2222-2222-2222-222222000002"),
+            Guid.Parse("22222222-2222-2222-2222-222222000003"),
+            Guid.Parse("22222222-2222-2222-2222-222222000004"),
+            Guid.Parse("22222222-2222-2222-2222-222222000005"),
+        };
+        var demoClassIds = new[]
+        {
+            Guid.Parse("55555555-5555-5555-5555-555555000001"),
+            Guid.Parse("55555555-5555-5555-5555-555555000002"),
+            Guid.Parse("55555555-5555-5555-5555-555555000003"),
+            Guid.Parse("55555555-5555-5555-5555-555555000004"),
+            Guid.Parse("55555555-5555-5555-5555-555555000005"),
+        };
+        var days = new[] { "Monday", "Tuesday", "Wednesday", "Thursday", "Friday" };
+        var itemCodes = new[] { "TEST-T1", "TEST-T2", "TEST-T3", "TEST-T4", "TEST-T5" };
+
+        for (var i = 0; i < Math.Min(erpTeachers.Count, demoUserIds.Length); i++)
+        {
+            var erp = erpTeachers[i];
+            var displayName = string.IsNullOrWhiteSpace(erp.UserName) ? erp.Email : erp.UserName;
+
+            var user = await context.Users.FindAsync(demoUserIds[i])
+                ?? await context.Users.FirstOrDefaultAsync(u =>
+                    u.Email.ToLower() == erp.Email.ToLower());
+
+            if (user == null)
+            {
+                user = new User
+                {
+                    Id = demoUserIds[i],
+                    FullName = displayName,
+                    Email = erp.Email,
+                    PasswordHash = PasswordHelper.Hash(Guid.NewGuid().ToString("N")),
+                    Role = Roles.Teacher,
+                    IsActive = true
+                };
+                context.Users.Add(user);
+                context.TeacherProfiles.Add(new TeacherProfile
+                {
+                    Id = Guid.NewGuid(),
+                    UserId = user.Id,
+                    Specialization = "Piano",
+                    HourlyRate = 100m,
+                    EmploymentType = EmploymentTypes.FullTime
+                });
+            }
+            else
+            {
+                user.FullName = displayName;
+                user.Email = erp.Email;
+                user.Role = Roles.Teacher;
+                user.IsActive = true;
+            }
+
+            var cls = await context.Classes.FindAsync(demoClassIds[i]);
+            if (cls != null)
+            {
+                cls.TeacherUserId = user.Id;
+                cls.ClassName = $"{displayName} – Piano";
+                cls.DayOfWeek = days[i];
+            }
+
+            var link = await context.ItemCodeClassLinks.FirstOrDefaultAsync(l => l.ItemCode == itemCodes[i]);
+            if (link != null)
+                link.PortalClassId = demoClassIds[i];
+        }
+
+        await context.SaveChangesAsync();
+    }
+
+    private static List<SqlAccountStaffUserMatch> OrderDemoTeachers(IReadOnlyList<SqlAccountStaffUserMatch> all)
+    {
+        if (all.Count == 0)
+            return [];
+
+        var ordered = new List<SqlAccountStaffUserMatch>();
+        var used = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var slotMatchers = new Func<SqlAccountStaffUserMatch, bool>[]
+        {
+            t => t.Email.StartsWith("test1@", StringComparison.OrdinalIgnoreCase),
+            t => t.Email.StartsWith("test2@", StringComparison.OrdinalIgnoreCase),
+            t => t.Email.StartsWith("test3@", StringComparison.OrdinalIgnoreCase),
+            t => t.Email.StartsWith("test4@", StringComparison.OrdinalIgnoreCase)
+                 || t.Email.StartsWith("tes4@", StringComparison.OrdinalIgnoreCase),
+            t => t.Email.StartsWith("test5@", StringComparison.OrdinalIgnoreCase),
+        };
+
+        foreach (var matches in slotMatchers)
+        {
+            var match = all.FirstOrDefault(t => !used.Contains(t.Email) && matches(t));
+            if (match == null)
+                continue;
+            ordered.Add(match);
+            used.Add(match.Email);
+        }
+
+        foreach (var teacher in all.Where(t => !used.Contains(t.Email)))
+            ordered.Add(teacher);
+
+        return ordered;
+    }
+
+    /// <summary>
+    /// Demo teachers from SY_USER with one class each (Mon–Fri), sessions, and ITEMCODE links.
+    /// </summary>
+    private static async Task EnsureTestTeacherDemoDataAsync(AppDbContext context, IServiceProvider serviceProvider)
+    {
+        var course = await context.Courses.FirstOrDefaultAsync(c => c.IsActive);
+        if (course == null)
+            return;
+
+        var localDb = serviceProvider.GetRequiredService<SqlAccountLocalDbService>();
+        var erpTeachers = OrderDemoTeachers(await localDb.GetStaffTeachersAsync());
+
+        var today = DateTime.UtcNow.Date;
+        var termEnd = today.AddDays(56);
+
+        var demoUserIds = new[]
+        {
+            Guid.Parse("22222222-2222-2222-2222-222222000001"),
+            Guid.Parse("22222222-2222-2222-2222-222222000002"),
+            Guid.Parse("22222222-2222-2222-2222-222222000003"),
+            Guid.Parse("22222222-2222-2222-2222-222222000004"),
+            Guid.Parse("22222222-2222-2222-2222-222222000005"),
+        };
+        var demoClassIds = new[]
+        {
+            Guid.Parse("55555555-5555-5555-5555-555555000001"),
+            Guid.Parse("55555555-5555-5555-5555-555555000002"),
+            Guid.Parse("55555555-5555-5555-5555-555555000003"),
+            Guid.Parse("55555555-5555-5555-5555-555555000004"),
+            Guid.Parse("55555555-5555-5555-5555-555555000005"),
+        };
+        var days = new[] { "Monday", "Tuesday", "Wednesday", "Thursday", "Friday" };
+        var itemCodes = new[] { "TEST-T1", "TEST-T2", "TEST-T3", "TEST-T4", "TEST-T5" };
+        var startHours = new[] { (10, 0, 11, 0), (11, 0, 12, 0), (12, 0, 13, 0), (14, 0, 15, 0), (15, 0, 16, 0) };
+
+        var testClassIds = demoClassIds.ToList();
+        if (await context.ItemCodeClassLinks.AnyAsync(l => l.ItemCode == "TEST-T1")
+            && await context.ClassSessions.AnyAsync(s => testClassIds.Contains(s.ClassId)))
+            return;
+
+        var count = Math.Min(erpTeachers.Count, demoUserIds.Length);
+        if (count == 0)
+            return;
+
+        for (var i = 0; i < count; i++)
+        {
+            var erp = erpTeachers[i];
+            var displayName = string.IsNullOrWhiteSpace(erp.UserName) ? erp.Email : erp.UserName;
+            var userId = demoUserIds[i];
+            var classId = demoClassIds[i];
+            var (sh, sm, eh, em) = (startHours[i].Item1, startHours[i].Item2, startHours[i].Item3, startHours[i].Item4);
+
+            var user = await context.Users.FindAsync(userId);
+            if (user == null)
+            {
+                user = new User
+                {
+                    Id = userId,
+                    FullName = displayName,
+                    Email = erp.Email,
+                    PasswordHash = PasswordHelper.Hash(Guid.NewGuid().ToString("N")),
+                    Role = Roles.Teacher,
+                    IsActive = true
+                };
+                context.Users.Add(user);
+                context.TeacherProfiles.Add(new TeacherProfile
+                {
+                    Id = Guid.NewGuid(),
+                    UserId = user.Id,
+                    Specialization = "Piano",
+                    HourlyRate = 100m,
+                    EmploymentType = EmploymentTypes.FullTime
+                });
+            }
+
+            if (!await context.Classes.AnyAsync(c => c.Id == classId))
+            {
+                context.Classes.Add(new MusicClass
+                {
+                    Id = classId,
+                    CourseId = course.Id,
+                    TeacherUserId = user.Id,
+                    ClassName = $"{displayName} – Piano",
+                    DayOfWeek = days[i],
+                    StartTime = new TimeSpan(sh, sm, 0),
+                    EndTime = new TimeSpan(eh, em, 0),
+                    MaxStudents = 8,
+                    Location = "Studio A",
+                    IsActive = true,
+                    StartDate = today,
+                    EndDate = termEnd
+                });
+            }
+
+            if (!await context.ItemCodeClassLinks.AnyAsync(l => l.ItemCode == itemCodes[i]))
+            {
+                context.ItemCodeClassLinks.Add(new ItemCodeClassLink
+                {
+                    Id = Guid.NewGuid(),
+                    ItemCode = itemCodes[i],
+                    PortalClassId = classId,
+                    CreatedAt = DateTime.UtcNow
+                });
+            }
+        }
+
+        await context.SaveChangesAsync();
+
+        var sessionService = serviceProvider.GetRequiredService<ClassSessionService>();
+        for (var i = 0; i < count; i++)
+        {
+            await sessionService.GenerateAsync(new GenerateSessionsRequest(
+                demoClassIds[i],
+                today.ToString("yyyy-MM-dd"),
+                termEnd.ToString("yyyy-MM-dd")));
+        }
     }
 
     private static async Task EnsureInvoiceBillingColumnsAsync(AppDbContext context)

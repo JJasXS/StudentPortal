@@ -9,7 +9,7 @@ public class AuthSettings
     /// <summary>Comma-separated parent emails allowed when SQL Account API is unavailable (testing only).</summary>
     public string DevParentEmails { get; set; } = string.Empty;
 
-    /// <summary>Comma-separated admin emails allowed when SY_USER lookup is unavailable (testing only).</summary>
+    /// <summary>Comma-separated admin emails allowed when SY_USER email lookup is unavailable (testing only).</summary>
     public string DevAdminEmails { get; set; } = string.Empty;
 
     /// <summary>Optional AR_CUSTOMER code for dev parent emails (email=code pairs, comma-separated).</summary>

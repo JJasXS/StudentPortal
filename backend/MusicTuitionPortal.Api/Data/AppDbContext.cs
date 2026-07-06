@@ -25,10 +25,20 @@ public class AppDbContext : DbContext
     public DbSet<PasswordReset> PasswordResets => Set<PasswordReset>();
     public DbSet<LoginOtp> LoginOtps => Set<LoginOtp>();
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
-    public DbSet<Notification> Notifications => Set<Notification>();
+    public DbSet<ItemCodeClassLink> ItemCodeClassLinks => Set<ItemCodeClassLink>();
+    public DbSet<ClassSessionChangeHistory> ClassSessionChangeHistories => Set<ClassSessionChangeHistory>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+        foreach (var entityType in modelBuilder.Model.GetEntityTypes())
+        {
+            foreach (var property in entityType.GetProperties())
+            {
+                if (property.ClrType == typeof(Guid) || property.ClrType == typeof(Guid?))
+                    property.SetColumnType("CHAR(36)");
+            }
+        }
+
         modelBuilder.Entity<User>().HasIndex(u => u.Email).IsUnique();
         modelBuilder.Entity<StudentProfile>().HasIndex(s => s.StudentCode).IsUnique();
         modelBuilder.Entity<StudentProfile>().HasOne(s => s.User).WithOne(u => u.StudentProfile).HasForeignKey<StudentProfile>(s => s.UserId);
@@ -44,9 +54,35 @@ public class AppDbContext : DbContext
         modelBuilder.Entity<MusicClass>().HasOne(c => c.TeacherUser).WithMany().HasForeignKey(c => c.TeacherUserId).OnDelete(DeleteBehavior.Restrict);
         modelBuilder.Entity<Enrollment>().HasOne(e => e.StudentUser).WithMany().HasForeignKey(e => e.StudentUserId).OnDelete(DeleteBehavior.Restrict);
         modelBuilder.Entity<Attendance>().HasOne(a => a.StudentUser).WithMany().HasForeignKey(a => a.StudentUserId).OnDelete(DeleteBehavior.Restrict);
-        modelBuilder.Entity<LessonNote>().HasOne(l => l.StudentUser).WithMany().HasForeignKey(l => l.StudentUserId).OnDelete(DeleteBehavior.Restrict);
+        modelBuilder.Entity<LessonNote>().HasOne(l => l.StudentUser).WithMany().HasForeignKey(l => l.StudentUserId).OnDelete(DeleteBehavior.Restrict).IsRequired(false);
+        modelBuilder.Entity<LessonNote>().HasOne(l => l.ClassSession).WithMany().HasForeignKey(l => l.ClassSessionId).OnDelete(DeleteBehavior.Restrict).IsRequired(false);
         modelBuilder.Entity<LessonNote>().HasOne(l => l.TeacherUser).WithMany().HasForeignKey(l => l.TeacherUserId).OnDelete(DeleteBehavior.Restrict);
         modelBuilder.Entity<Invoice>().HasOne(i => i.StudentUser).WithMany().HasForeignKey(i => i.StudentUserId).OnDelete(DeleteBehavior.Restrict);
         modelBuilder.Entity<Invoice>().HasOne(i => i.ParentUser).WithMany().HasForeignKey(i => i.ParentUserId).OnDelete(DeleteBehavior.SetNull);
+
+        modelBuilder.Entity<ItemCodeClassLink>()
+            .HasIndex(l => l.ItemCode)
+            .IsUnique();
+        modelBuilder.Entity<ItemCodeClassLink>()
+            .HasOne(l => l.PortalClass)
+            .WithMany()
+            .HasForeignKey(l => l.PortalClassId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<ClassSessionChangeHistory>()
+            .HasOne(h => h.ClassSession)
+            .WithMany(s => s.ChangeHistories)
+            .HasForeignKey(h => h.ClassSessionId)
+            .OnDelete(DeleteBehavior.Cascade);
+        modelBuilder.Entity<ClassSessionChangeHistory>()
+            .HasOne(h => h.Class)
+            .WithMany()
+            .HasForeignKey(h => h.ClassId)
+            .OnDelete(DeleteBehavior.Restrict);
+        modelBuilder.Entity<ClassSessionChangeHistory>()
+            .HasIndex(h => h.ClassId);
+        modelBuilder.Entity<ClassSessionChangeHistory>()
+            .HasIndex(h => h.ClassSessionId);
+
     }
 }

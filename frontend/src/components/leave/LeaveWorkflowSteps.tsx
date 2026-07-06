@@ -1,6 +1,6 @@
 import { cn } from '@/utils/cn';
-import { workflowStep } from '@/utils/leaveRequestStore';
-import type { LeaveRequestStatus } from '@/types/leaveRequest';
+import { portalWorkflowStep } from '@/utils/portalLeave';
+import type { PortalLeaveStatus } from '@/types/portal';
 
 const STEPS = [
   'Student submits',
@@ -15,12 +15,12 @@ const STEPS = [
 ];
 
 interface LeaveWorkflowStepsProps {
-  status: LeaveRequestStatus;
+  status: PortalLeaveStatus;
   compact?: boolean;
 }
 
 export function LeaveWorkflowSteps({ status, compact }: LeaveWorkflowStepsProps) {
-  const current = workflowStep(status);
+  const current = portalWorkflowStep(status);
   const terminal = status === 'Rejected' || (status === 'Approved' && current === 3);
 
   return (

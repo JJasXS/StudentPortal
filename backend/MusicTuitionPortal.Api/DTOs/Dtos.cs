@@ -69,7 +69,8 @@ public record CourseDto(
 public record ClassDto(
     Guid Id, Guid CourseId, string? CourseName, Guid TeacherUserId, string? TeacherName,
     string ClassName, string DayOfWeek, string StartTime, string EndTime,
-    int MaxStudents, int EnrolledCount, string Location, bool IsActive);
+    int MaxStudents, int EnrolledCount, string Location, bool IsActive,
+    DateTime? StartDate = null, DateTime? EndDate = null);
 
 public record EnrollmentDto(
     Guid Id, Guid StudentUserId, string? StudentName, Guid ClassId, string? ClassName,
@@ -91,7 +92,7 @@ public record GenerateCheckInRequest(Guid ClassSessionId);
 public record RedeemCheckInRequest(string Code);
 
 public record LessonNoteDto(
-    Guid Id, Guid ClassSessionId, string? ClassName, Guid StudentUserId, string? StudentName,
+    Guid Id, Guid? ClassSessionId, string? ClassName, Guid? StudentUserId, string? StudentName,
     Guid TeacherUserId, string? TeacherName, string NoteTitle, string NoteContent,
     string? PracticeInstructions, DateTime CreatedAt);
 
@@ -138,6 +139,65 @@ public record GenerateSessionsRequest(Guid? ClassId, string FromDate, string ToD
 
 public record GenerateSessionsResultDto(int CreatedCount, int SkippedCount, List<ClassSessionDto> Sessions);
 
+public record ClassSessionChangeHistoryDto(
+    Guid Id,
+    Guid ClassSessionId,
+    Guid ClassId,
+    string? ClassName,
+    string ChangeType,
+    Guid? ActorUserId,
+    string? ActorName,
+    string? Reason,
+    string PreviousSessionDate,
+    string PreviousStartTime,
+    string PreviousEndTime,
+    string PreviousStatus,
+    string? NewSessionDate,
+    string? NewStartTime,
+    string? NewEndTime,
+    string? NewStatus,
+    Guid? ReplacementClassSessionId,
+    DateTime CreatedAt);
+
+public record ReplaceClassSessionRequest(
+    string SessionDate,
+    string StartTime,
+    string EndTime,
+    string? Reason = null,
+    string? Notes = null);
+
+public record ClassAssignmentChangeLogDto(
+    Guid Id,
+    Guid ClassId,
+    string? ClassName,
+    string EntityType,
+    string Operation,
+    Guid? EntityId,
+    Guid? StudentUserId,
+    string? StudentName,
+    Guid? PreviousTeacherUserId,
+    string? PreviousTeacherName,
+    Guid? NewTeacherUserId,
+    string? NewTeacherName,
+    string? PreviousDayOfWeek,
+    string? NewDayOfWeek,
+    string? PreviousClassStartTime,
+    string? NewClassStartTime,
+    string? PreviousClassEndTime,
+    string? NewClassEndTime,
+    string? PreviousSessionDate,
+    string? NewSessionDate,
+    string? PreviousSessionStartTime,
+    string? NewSessionStartTime,
+    string? PreviousSessionEndTime,
+    string? NewSessionEndTime,
+    string? PreviousStatus,
+    string? NewStatus,
+    Guid? ActorUserId,
+    string? ActorName,
+    string? Reason,
+    DateTime CreatedAt);
+
 public record NotificationDto(
     Guid Id, Guid UserId, string Title, string Message, string Category,
     string? LinkPath, bool IsRead, DateTime CreatedAt);
@@ -151,7 +211,15 @@ public record SqlAccountStatusDto(bool Configured, bool Connected, string? Datab
 
 public record SqlAccountMyChildrenDto(string ParentName, IReadOnlyList<SqlAccountChildDto> Children);
 
+public record SqlAccountCalendarTeacherDto(
+    string ErpUserId,
+    string FullName,
+    string Email,
+    Guid? PortalUserId);
+
 public record SqlAccountChildEnrollmentDto(
+    int DocKey,
+    int Seq,
     string DocNo,
     string? DocDate,
     string ClassName,
@@ -159,9 +227,174 @@ public record SqlAccountChildEnrollmentDto(
     string? Qty,
     string? UnitPrice,
     string? Amount,
-    string? DeliveryDate);
+    string? DeliveryDate,
+    string? ClassDay = null,
+    string? ClassTime = null,
+    string? StudentName = null,
+    string? ConductedBy = null,
+    string? ClassDate = null,
+    Guid? LinkedClassId = null,
+    string? LinkedClassName = null,
+    string? LinkedClassDayOfWeek = null,
+    string? LinkedClassStartTime = null,
+    string? LinkedClassEndTime = null,
+    string? LinkedClassTeacherName = null,
+    string? NextSessionDate = null);
 
 public record SqlAccountChildEnrollmentsDto(
     string CustomerCode,
     string BranchName,
     IReadOnlyList<SqlAccountChildEnrollmentDto> Enrollments);
+
+public record ItemCodeClassLinkDto(
+    Guid Id,
+    string ItemCode,
+    Guid PortalClassId,
+    string? PortalClassName,
+    DateTime CreatedAt);
+
+public record CreateItemCodeClassLinkRequest(string ItemCode, Guid PortalClassId);
+
+public record CreateSqlAccountChildEnrollmentRequest(
+    string CustomerCode,
+    string BranchName,
+    string ItemCode,
+    string StartDate,
+    string EndDate,
+    Guid TeacherUserId);
+
+public record SqlAccountCourseOptionDto(
+    string ItemCode,
+    string Description,
+    string? DayOfWeek,
+    string? StartTime,
+    string? EndTime,
+    string? TeacherName);
+
+public record SqlAccountErpCalendarLineDto(
+    int DocKey,
+    int Seq,
+    string CustomerCode,
+    string BranchName,
+    string? ItemCode,
+    string? Description,
+    DateTime? ClassDateTime,
+    string? ClassDay,
+    string? ClassTime,
+    string? StudentName,
+    string? ConductedBy);
+
+public record ErpCalendarEventDto(
+    string Id,
+    int DocKey,
+    int Seq,
+    Guid? ClassId,
+    Guid? CourseId,
+    string ClassName,
+    string? CourseName,
+    Guid? TeacherUserId,
+    string? TeacherName,
+    string? StudentName,
+    string? BranchName,
+    string? ItemCode,
+    string? CustomerCode,
+    string SessionDate,
+    string StartTime,
+    string EndTime,
+    string Status);
+
+public record CalendarEventCancelRequest(string Reason);
+
+public record CalendarEventReplaceRequest(
+    string SessionDate,
+    string StartTime,
+    string EndTime,
+    string Reason,
+    string? Notes);
+
+public record PortalClassSessionDto(
+    string Id,
+    int DocKey,
+    int Seq,
+    string? ItemCode,
+    string CustomerCode,
+    string BranchName,
+    string? StudentName,
+    string ClassName,
+    string? ConductedBy,
+    int OccurrenceIndex,
+    string SessionDate,
+    string StartTime,
+    string EndTime,
+    string Status,
+    string? Reason);
+
+public record PortalHomeworkDto(
+    string Id,
+    int DocKey,
+    int Seq,
+    string CustomerCode,
+    string BranchName,
+    string? ClassName,
+    string? ItemCode,
+    string? Title,
+    string? Note,
+    string? FileName,
+    string SubmittedBy,
+    DateTime CreatedAt);
+
+public record CreatePortalHomeworkRequest(
+    int DocKey,
+    int Seq,
+    string BranchName,
+    string? Title,
+    string? Note,
+    string? FileName);
+
+public record PortalLeaveRequestDto(
+    string Id,
+    string? OccurrenceId,
+    int DocKey,
+    int Seq,
+    string CustomerCode,
+    string BranchName,
+    string? ClassName,
+    string SessionDate,
+    string Reason,
+    string Status,
+    string? AdminNote,
+    bool NeedsReplacement,
+    string? ReplDate,
+    string? ReplStart,
+    string? ReplEnd,
+    string? ReplTeacher,
+    string? TeacherResponse,
+    string? CounterDate,
+    string? CounterStart,
+    string? CounterEnd,
+    string? CounterMsg,
+    string? RequestedBy,
+    DateTime CreatedAt,
+    DateTime UpdatedAt);
+
+public record CreatePortalLeaveRequest(
+    string? OccurrenceId,
+    int DocKey,
+    int Seq,
+    string BranchName,
+    string SessionDate,
+    string Reason);
+
+public record AdminLeaveReviewRequest(string AdminNote, bool Approve, bool NeedsReplacement);
+
+public record AdminLeaveReplacementRequest(
+    string ReplDate,
+    string ReplStart,
+    string ReplEnd,
+    string ReplTeacher);
+
+public record TeacherLeaveCounterRequest(
+    string CounterDate,
+    string CounterStart,
+    string CounterEnd,
+    string? CounterMsg);

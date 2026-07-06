@@ -12,19 +12,13 @@ import { SkeletonListRows } from '@/components/ui/Skeleton';
 import { ParentChildRecordPanel } from '@/components/parent/ParentChildRecordPanel';
 import { ParentProgressSection } from '@/components/parent/ParentProgressSection';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
-import { cn } from '@/utils/cn';
-import { formatDateDDMMYYYY } from '@/utils/dateFormat';
 import { useParentChildren } from '@/hooks/useParentChildren';
-import { loadNotifications, NOTIFICATION_CATEGORY_LABELS } from '@/utils/notifications';
 
 export default function ParentDashboard() {
   const { user } = useAuth();
   const { records, pending, loading } = useParentChildren(user?.id);
   const [unpaidTotal, setUnpaidTotal] = useState(0);
   const [unpaidCount, setUnpaidCount] = useState(0);
-  const [recentNotifications, setRecentNotifications] = useState<
-    Awaited<ReturnType<typeof loadNotifications>>
-  >([]);
 
   const studentUserIds = useMemo(
     () => records.map((r) => r.child.userId).filter(Boolean) as string[],
@@ -57,13 +51,7 @@ export default function ParentDashboard() {
     loadBilling();
   }, [loadBilling]);
 
-  useEffect(() => {
-    if (!user?.id) return;
-    loadNotifications(user.id).then((list) => setRecentNotifications(list.slice(0, 4)));
-  }, [user?.id]);
-
   const hasAny = records.length > 0 || pending.length > 0;
-  const unreadNotifications = recentNotifications.filter((n) => !n.isRead).length;
 
   return (
     <div>
@@ -88,46 +76,6 @@ export default function ParentDashboard() {
             Pay now →
           </Link>
         </div>
-      )}
-
-      {recentNotifications.length > 0 && (
-        <Card className="mb-6">
-          <CardHeader className="flex flex-row items-center justify-between pb-3">
-            <CardTitle className="text-base">
-              Recent notifications
-              {unreadNotifications > 0 && (
-                <span className="ml-2 rounded-full bg-primary-100 px-2 py-0.5 text-xs font-semibold text-primary-700">
-                  {unreadNotifications} new
-                </span>
-              )}
-            </CardTitle>
-            <Link
-              to="/parent/notifications"
-              className="text-sm font-medium text-primary-600 hover:text-primary-700"
-            >
-              View all
-            </Link>
-          </CardHeader>
-          <CardContent className="divide-y divide-slate-100 p-0 pt-0">
-            {recentNotifications.map((item) => (
-              <Link
-                key={item.id}
-                to={item.linkPath ?? '/parent/notifications'}
-                className={cn(
-                  'block px-4 py-3 hover:bg-slate-50',
-                  !item.isRead && 'bg-primary-50/30'
-                )}
-              >
-                <p className="text-sm font-medium text-slate-900">{item.title}</p>
-                <p className="mt-0.5 line-clamp-1 text-xs text-slate-600">{item.message}</p>
-                <p className="mt-1 text-[10px] uppercase tracking-wide text-slate-400">
-                  {NOTIFICATION_CATEGORY_LABELS[item.category] ?? item.category} ·{' '}
-                  {formatDateDDMMYYYY(item.createdAt)}
-                </p>
-              </Link>
-            ))}
-          </CardContent>
-        </Card>
       )}
 
       <Card className="mb-6">

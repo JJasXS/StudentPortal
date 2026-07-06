@@ -1,42 +1,44 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { RefreshCw } from 'lucide-react';
 import { PageHeader } from '@/components/PageHeader';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input, Label, Textarea } from '@/components/ui/Input';
 import { StatusBadge } from '@/components/ui/StatusBadge';
-import { useAuth } from '@/context/AuthContext';
+import { useToast } from '@/context/ToastContext';
+import { leaveApi } from '@/api/resources';
 import { formatDateDDMMYYYY } from '@/utils/dateFormat';
-import {
-  ensureLeaveSeeded,
-  formatSlotDate,
-  getReplacementRequestsForTeacher,
-  leaveStatusLabel,
-  loadLeaveRequests,
-  teacherAcceptReplacement,
-  teacherCounterReplacement,
-} from '@/utils/leaveRequestStore';
-import type { LeaveRequest } from '@/types/leaveRequest';
+import { formatPortalSlotDate, portalLeaveStatusLabel } from '@/utils/portalLeave';
+import { getApiErrorMessage } from '@/utils/apiError';
+import type { PortalLeaveRequest } from '@/types/portal';
 
 export default function TeacherReplacementPage() {
-  const { user } = useAuth();
-  ensureLeaveSeeded();
-
-  const [requests, setRequests] = useState<LeaveRequest[]>(() =>
-    user ? getReplacementRequestsForTeacher(user.id) : []
-  );
+  const { error: showError } = useToast();
+  const [requests, setRequests] = useState<PortalLeaveRequest[]>([]);
+  const [loading, setLoading] = useState(true);
   const [counterForms, setCounterForms] = useState<
     Record<string, { date: string; start: string; end: string; message: string }>
   >({});
 
-  const refresh = () => {
-    if (!user) return;
-    setRequests(getReplacementRequestsForTeacher(user.id));
-    loadLeaveRequests();
-  };
+  const refresh = useCallback(async () => {
+    try {
+      const data = await leaveApi.getForTeacher();
+      setRequests(data);
+    } catch (err) {
+      showError(getApiErrorMessage(err, 'Could not load replacement requests.'));
+    }
+  }, [showError]);
+
+  useEffect(() => {
+    setLoading(true);
+    void refresh().finally(() => setLoading(false));
+  }, [refresh]);
 
   const pending = useMemo(
-    () => requests.filter((r) => r.status === 'AwaitingTeacher' && r.replacement?.teacherResponse === 'Pending'),
+    () =>
+      requests.filter(
+        (r) => r.status === 'AwaitingTeacher' && r.teacherResponse !== 'Accepted' && r.teacherResponse !== 'Countered'
+      ),
     [requests]
   );
 
@@ -53,14 +55,16 @@ export default function TeacherReplacementPage() {
         title="Replacement classes"
         description="Accept or suggest another time for make-up sessions."
         actions={
-          <Button type="button" variant="outline" size="sm" onClick={refresh}>
+          <Button type="button" variant="outline" size="sm" onClick={() => void refresh()}>
             <RefreshCw className="mr-1.5 h-4 w-4" />
             Refresh
           </Button>
         }
       />
 
-      {pending.length === 0 ? (
+      {loading ? (
+        <p className="text-sm text-slate-500">Loading…</p>
+      ) : pending.length === 0 ? (
         <Card>
           <CardContent className="py-10 text-center text-sm text-slate-500">
             No pending replacement requests.
@@ -69,35 +73,31 @@ export default function TeacherReplacementPage() {
       ) : (
         <div className="space-y-4">
           {pending.map((req) => {
-            const rep = req.replacement!;
             const counter = getCounter(req.id);
             return (
               <Card key={req.id}>
                 <CardHeader className="pb-3">
                   <div className="flex flex-wrap items-start justify-between gap-2">
                     <div>
-                      <CardTitle className="text-base">{req.studentName}</CardTitle>
+                      <CardTitle className="text-base">{req.requestedBy ?? req.branchName}</CardTitle>
                       <p className="text-sm text-slate-500">
                         {req.className} · Original leave{' '}
                         {formatDateDDMMYYYY(req.sessionDate)}
                       </p>
                     </div>
-                    <StatusBadge status={req.status} label={leaveStatusLabel(req.status)} />
+                    <StatusBadge status={req.status} label={portalLeaveStatusLabel(req.status)} />
                   </div>
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
                     <p className="font-medium text-slate-800">Proposed slot</p>
                     <p className="text-slate-600">
-                      {formatSlotDate(rep.proposedDate, rep.proposedStartTime, rep.proposedEndTime)}
+                      {formatPortalSlotDate(req.replDate, req.replStart, req.replEnd)}
                     </p>
                   </div>
 
                   <div className="flex flex-wrap gap-2">
-                    <Button type="button" onClick={() => {
-                      teacherAcceptReplacement(req.id);
-                      refresh();
-                    }}>
+                    <Button type="button" onClick={() => void leaveApi.accept(req.id).then(() => refresh())}>
                       Accept
                     </Button>
                   </div>
@@ -144,15 +144,16 @@ export default function TeacherReplacementPage() {
                       variant="outline"
                       className="mt-3"
                       disabled={!counter.date}
-                      onClick={() => {
-                        teacherCounterReplacement(req.id, {
-                          teacherCounterDate: counter.date,
-                          teacherCounterStartTime: counter.start,
-                          teacherCounterEndTime: counter.end,
-                          teacherMessage: counter.message.trim() || undefined,
-                        });
-                        refresh();
-                      }}
+                      onClick={() =>
+                        void leaveApi
+                          .counter(req.id, {
+                            counterDate: counter.date,
+                            counterStart: counter.start,
+                            counterEnd: counter.end,
+                            counterMsg: counter.message.trim() || undefined,
+                          })
+                          .then(() => refresh())
+                      }
                     >
                       Send counter-proposal
                     </Button>
@@ -164,18 +165,18 @@ export default function TeacherReplacementPage() {
         </div>
       )}
 
-      {requests.filter((r) => r.status !== 'AwaitingTeacher' || r.replacement?.teacherResponse !== 'Pending').length > 0 && (
+      {requests.filter((r) => !pending.includes(r)).length > 0 && (
         <div className="space-y-3">
           <h2 className="text-sm font-semibold text-slate-700">Recent</h2>
           {requests
-            .filter((r) => r.status !== 'AwaitingTeacher' || r.replacement?.teacherResponse !== 'Pending')
+            .filter((r) => !pending.includes(r))
             .map((req) => (
               <Card key={`recent-${req.id}`} className="border-slate-100 bg-slate-50/40">
                 <CardContent className="flex flex-wrap items-center justify-between gap-2 py-3 text-sm">
                   <span>
-                    {req.studentName} · {req.className}
+                    {req.requestedBy ?? req.branchName} · {req.className}
                   </span>
-                  <StatusBadge status={req.status} label={leaveStatusLabel(req.status)} />
+                  <StatusBadge status={req.status} label={portalLeaveStatusLabel(req.status)} />
                 </CardContent>
               </Card>
             ))}

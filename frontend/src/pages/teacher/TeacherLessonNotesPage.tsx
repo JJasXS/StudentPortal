@@ -1,17 +1,21 @@
 import { useEffect, useMemo, useState } from 'react';
-import { X } from 'lucide-react';
+import { Plus, X } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
+import { useToast } from '@/context/ToastContext';
 import { PageHeader } from '@/components/PageHeader';
 import { SearchBox } from '@/components/SearchBox';
 import { DataTable } from '@/components/ui/DataTable';
 import { SlidingTabs } from '@/components/ui/SlidingTabs';
 import { Card, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
+import { Input, Label, Select, Textarea } from '@/components/ui/Input';
 import { Modal } from '@/components/ui/Modal';
-import { lessonNotesApi } from '@/api/resources';
+import { calendarApi, lessonNotesApi } from '@/api/resources';
 import { mockLessonNotes } from '@/utils/mockData';
 import { formatDateDDMMYYYY } from '@/utils/dateFormat';
+import { getApiErrorMessage } from '@/utils/apiError';
 import type { LessonNote } from '@/types';
+import type { ErpCalendarEvent } from '@/types/sqlAccount';
 
 function uniqueClassNames(notes: LessonNote[]): string[] {
   const names = new Set<string>();
@@ -37,13 +41,23 @@ function noteMatchesSearch(note: LessonNote, query: string): boolean {
 
 export default function TeacherLessonNotesPage() {
   const { user } = useAuth();
+  const { success: showSuccess, error: showError } = useToast();
   const [notes, setNotes] = useState<LessonNote[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [classTab, setClassTab] = useState('All');
   const [selected, setSelected] = useState<LessonNote | null>(null);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [createStep, setCreateStep] = useState<'class' | 'session' | 'note'>('class');
+  const [calendarEvents, setCalendarEvents] = useState<ErpCalendarEvent[]>([]);
+  const [selectedClassName, setSelectedClassName] = useState('');
+  const [selectedEvent, setSelectedEvent] = useState<ErpCalendarEvent | null>(null);
+  const [noteTitle, setNoteTitle] = useState('');
+  const [noteContent, setNoteContent] = useState('');
+  const [practiceInstructions, setPracticeInstructions] = useState('');
+  const [saving, setSaving] = useState(false);
 
-  useEffect(() => {
+  const loadNotes = () => {
     if (!user?.id) return;
     setLoading(true);
     lessonNotesApi
@@ -51,7 +65,73 @@ export default function TeacherLessonNotesPage() {
       .then((data) => setNotes(data.filter((n) => n.teacherUserId === user.id)))
       .catch(() => setNotes(mockLessonNotes.filter((n) => n.teacherUserId === user.id)))
       .finally(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    loadNotes();
   }, [user?.id]);
+
+  useEffect(() => {
+    if (!createOpen || !user?.fullName) return;
+    calendarApi
+      .getEvents()
+      .then((events) =>
+        setCalendarEvents(
+          events.filter(
+            (e) =>
+              e.teacherName?.toLowerCase() === user.fullName.toLowerCase() && e.status !== 'Cancelled'
+          )
+        )
+      )
+      .catch(() => setCalendarEvents([]));
+  }, [createOpen, user?.fullName]);
+
+  const classNamesFromCalendar = useMemo(() => {
+    const names = new Set<string>();
+    for (const e of calendarEvents) {
+      if (e.className?.trim()) names.add(e.className.trim());
+    }
+    return [...names].sort((a, b) => a.localeCompare(b));
+  }, [calendarEvents]);
+
+  const sessionsForClass = useMemo(() => {
+    if (!selectedClassName) return [];
+    return calendarEvents
+      .filter((e) => e.className === selectedClassName)
+      .sort((a, b) => new Date(b.sessionDate).getTime() - new Date(a.sessionDate).getTime());
+  }, [calendarEvents, selectedClassName]);
+
+  const resetCreate = () => {
+    setCreateStep('class');
+    setSelectedClassName('');
+    setSelectedEvent(null);
+    setNoteTitle('');
+    setNoteContent('');
+    setPracticeInstructions('');
+  };
+
+  const handleCreate = async () => {
+    if (!user?.id || !selectedEvent || !noteTitle.trim() || !noteContent.trim()) return;
+    setSaving(true);
+    try {
+      await lessonNotesApi.create({
+        teacherUserId: user.id,
+        className: selectedEvent.className,
+        studentName: selectedEvent.studentName ?? undefined,
+        noteTitle: noteTitle.trim(),
+        noteContent: noteContent.trim(),
+        practiceInstructions: practiceInstructions.trim() || undefined,
+      });
+      setCreateOpen(false);
+      resetCreate();
+      loadNotes();
+      showSuccess('Lesson note created.');
+    } catch (err) {
+      showError(getApiErrorMessage(err, 'Could not create lesson note.'));
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const classTabs = useMemo(() => ['All', ...uniqueClassNames(notes)], [notes]);
 
@@ -102,6 +182,19 @@ export default function TeacherLessonNotesPage() {
       <PageHeader
         title="Lesson Notes"
         description={`Record homework and progress for your students · ${countLabel}`}
+        actions={
+          <Button
+            type="button"
+            size="sm"
+            onClick={() => {
+              resetCreate();
+              setCreateOpen(true);
+            }}
+          >
+            <Plus className="mr-1.5 h-4 w-4" />
+            New note
+          </Button>
+        }
       />
 
       <Card>
@@ -260,6 +353,132 @@ export default function TeacherLessonNotesPage() {
             <div className="flex justify-end pt-2">
               <Button type="button" onClick={() => setSelected(null)}>
                 Close
+              </Button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      <Modal
+        open={createOpen}
+        onClose={() => setCreateOpen(false)}
+        title="Create lesson note"
+        className="max-w-lg"
+      >
+        {createStep === 'class' && (
+          <div className="space-y-3">
+            <p className="text-sm text-slate-600">Choose a class from your schedule.</p>
+            {classNamesFromCalendar.length === 0 ? (
+              <p className="text-sm text-slate-500">No classes found on your calendar.</p>
+            ) : (
+              <div className="space-y-2">
+                {classNamesFromCalendar.map((name) => (
+                  <button
+                    key={name}
+                    type="button"
+                    onClick={() => {
+                      setSelectedClassName(name);
+                      setCreateStep('session');
+                    }}
+                    className="flex w-full rounded-lg border border-slate-200 px-4 py-3 text-left text-sm font-medium text-slate-900 hover:bg-slate-50"
+                  >
+                    {name}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {createStep === 'session' && (
+          <div className="space-y-4">
+            <button
+              type="button"
+              className="text-sm font-medium text-primary-600 hover:underline"
+              onClick={() => setCreateStep('class')}
+            >
+              ← Back to classes
+            </button>
+            <div className="space-y-1.5">
+              <Label htmlFor="sessionPick">Session</Label>
+              <Select
+                id="sessionPick"
+                value={selectedEvent?.id ?? ''}
+                onChange={(e) => {
+                  const picked = sessionsForClass.find((s) => s.id === e.target.value);
+                  setSelectedEvent(picked ?? null);
+                }}
+              >
+                <option value="">Select session…</option>
+                {sessionsForClass.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {formatDateDDMMYYYY(s.sessionDate)}
+                    {s.studentName ? ` · ${s.studentName}` : ''}
+                  </option>
+                ))}
+              </Select>
+            </div>
+            <Button
+              type="button"
+              disabled={!selectedEvent}
+              onClick={() => setCreateStep('note')}
+            >
+              Continue
+            </Button>
+          </div>
+        )}
+
+        {createStep === 'note' && selectedEvent && (
+          <div className="space-y-4">
+            <button
+              type="button"
+              className="text-sm font-medium text-primary-600 hover:underline"
+              onClick={() => setCreateStep('session')}
+            >
+              ← Back to session
+            </button>
+            <p className="text-sm text-slate-600">
+              {selectedEvent.className}
+              {selectedEvent.studentName ? ` · ${selectedEvent.studentName}` : ''} ·{' '}
+              {formatDateDDMMYYYY(selectedEvent.sessionDate)}
+            </p>
+            <div className="space-y-1.5">
+              <Label htmlFor="noteTitle">Title</Label>
+              <Input
+                id="noteTitle"
+                value={noteTitle}
+                onChange={(e) => setNoteTitle(e.target.value)}
+                placeholder="e.g. Scales and arpeggios"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="noteContent">Lesson summary</Label>
+              <Textarea
+                id="noteContent"
+                rows={4}
+                value={noteContent}
+                onChange={(e) => setNoteContent(e.target.value)}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="practice">Practice at home (optional)</Label>
+              <Textarea
+                id="practice"
+                rows={2}
+                value={practiceInstructions}
+                onChange={(e) => setPracticeInstructions(e.target.value)}
+              />
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button type="button" variant="outline" onClick={() => setCreateOpen(false)}>
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                disabled={saving || !noteTitle.trim() || !noteContent.trim()}
+                onClick={() => void handleCreate()}
+              >
+                Save note
               </Button>
             </div>
           </div>

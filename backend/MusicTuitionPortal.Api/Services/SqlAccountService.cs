@@ -24,16 +24,12 @@ public record SqlAccountCustomerMatch(
     string? ParentEmail,
     IReadOnlyList<SqlAccountChildDto> Children);
 
-public record SqlAccountAdminUserMatch(string UserId, string UserName, string Email);
+public record SqlAccountStaffUserMatch(string UserId, string UserName, string Email, bool IsAdmin);
 
 public class SqlAccountService
 {
-    private const string CustomersSql = """
-        SELECT * FROM AR_CUSTOMER ORDER BY COMPANYNAME
-        """;
-
-    private const int PageSize = 500;
-    private const int MaxCustomers = 5000;
+    private const string CustomerResource = "customer/*";
+    private const string UserResource = "user/*";
 
     private readonly SqlAccountSettings _settings;
     private readonly IHttpClientFactory _httpClientFactory;
@@ -54,7 +50,7 @@ public class SqlAccountService
 
     public bool IsConfigured => _settings.IsConfigured;
 
-    public async Task<SqlAccountAdminUserMatch?> FindAdminByUdfEmailAsync(
+    public async Task<SqlAccountStaffUserMatch?> FindStaffByEmailAsync(
         string email,
         CancellationToken cancellationToken = default)
     {
@@ -67,25 +63,45 @@ public class SqlAccountService
         {
             try
             {
-                var escaped = normalized.Replace("'", "''", StringComparison.Ordinal);
-                var sql = $"""
-                    SELECT * FROM SY_USER
-                    WHERE udf_email = '{escaped}' OR udf_emaill = '{escaped}'
-                    """;
-                var rows = await QueryBizObjectsAsync(sql, cancellationToken);
+                var rows = await GetDocumentsAsync(UserResource, cancellationToken);
                 var match = rows
-                    .Select(MapAdminUser)
+                    .Select(MapStaffUser)
                     .FirstOrDefault(a => EmailMatches(a.Email, normalized));
                 if (match != null)
                     return match;
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "SQL Account SY_USER udf_email lookup failed for {Email}", normalized);
+                _logger.LogWarning(ex, "SQL Account user email lookup failed for {Email}", normalized);
             }
         }
 
-        return await _localDb.FindAdminByUdfEmailAsync(normalized, cancellationToken);
+        return await _localDb.FindStaffByEmailAsync(normalized, cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<SqlAccountStaffUserMatch>> GetStaffTeachersAsync(
+        CancellationToken cancellationToken = default)
+    {
+        if (IsConfigured)
+        {
+            try
+            {
+                var rows = await GetDocumentsAsync(UserResource, cancellationToken);
+                var teachers = rows
+                    .Select(MapStaffUser)
+                    .Where(s => !s.IsAdmin)
+                    .OrderBy(s => s.UserName, StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+                if (teachers.Count > 0)
+                    return teachers;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "SQL Account user teacher list failed; trying local database");
+            }
+        }
+
+        return await _localDb.GetStaffTeachersAsync(cancellationToken);
     }
 
     public async Task<SqlAccountCustomerMatch?> FindCustomerByUdfEmailAsync(
@@ -99,61 +115,31 @@ public class SqlAccountService
 
         try
         {
-            var escaped = normalized.Replace("'", "''", StringComparison.Ordinal);
-            var sql = $"""
-                SELECT * FROM AR_CUSTOMER
-                WHERE udf_email = '{escaped}' OR udf_emaill = '{escaped}'
-                """;
-            var match = await MatchFromQueryAsync(sql, normalized, cancellationToken);
-            if (match != null)
-                return match;
+            var fromScan = await MatchFromAllCustomersAsync(normalized, cancellationToken);
+            if (fromScan != null)
+                return fromScan;
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "SQL Account udf_email WHERE lookup failed for {Email}", normalized);
+            _logger.LogWarning(ex, "SQL Account udf_email lookup failed for {Email}", normalized);
         }
 
-        var fromScan = await MatchFromAllCustomersAsync(normalized, cancellationToken);
-        if (fromScan != null)
-            return fromScan;
-
         return await _localDb.FindCustomerByUdfEmailAsync(normalized, cancellationToken);
-    }
-
-    private async Task<SqlAccountCustomerMatch?> MatchFromQueryAsync(
-        string sql,
-        string normalized,
-        CancellationToken cancellationToken)
-    {
-        var customers = await QueryCustomersAsync(sql, offset: 0, limit: 10, cancellationToken);
-        return customers
-            .Select(MapCustomer)
-            .Where(c => EmailMatches(c.ParentEmail, normalized))
-            .Select(ToMatch)
-            .FirstOrDefault();
     }
 
     private async Task<SqlAccountCustomerMatch?> MatchFromAllCustomersAsync(
         string normalized,
         CancellationToken cancellationToken)
     {
-        try
-        {
-            var parents = await GetParentChildrenAsync(cancellationToken);
-            var match = parents.FirstOrDefault(p => EmailMatches(p.ParentEmail, normalized));
-            return match == null
-                ? null
-                : new SqlAccountCustomerMatch(
-                    match.CustomerCode,
-                    match.ParentName,
-                    match.ParentEmail,
-                    match.Children);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "SQL Account udf_email scan failed for {Email}", normalized);
-            return null;
-        }
+        var parents = await GetParentChildrenAsync(cancellationToken);
+        var match = parents.FirstOrDefault(p => EmailMatches(p.ParentEmail, normalized));
+        return match == null
+            ? null
+            : new SqlAccountCustomerMatch(
+                match.CustomerCode,
+                match.ParentName,
+                match.ParentEmail,
+                match.Children);
     }
 
     public async Task<SqlAccountCustomerMatch?> FindCustomerByCodeAsync(
@@ -189,7 +175,7 @@ public class SqlAccountService
     public async Task<bool> TestConnectionAsync(CancellationToken cancellationToken = default)
     {
         EnsureConfigured();
-        var page = await QueryCustomersAsync(offset: 0, limit: 1, cancellationToken);
+        var page = await GetDocumentsAsync(CustomerResource, cancellationToken);
         return page.Count >= 0;
     }
 
@@ -202,23 +188,7 @@ public class SqlAccountService
             {
                 EnsureConfigured();
 
-                var customers = new List<JsonElement>();
-                var offset = 0;
-
-                while (customers.Count < MaxCustomers)
-                {
-                    var limit = Math.Min(PageSize, MaxCustomers - customers.Count);
-                    var page = await QueryCustomersAsync(offset, limit, cancellationToken);
-                    if (page.Count == 0)
-                        break;
-
-                    customers.AddRange(page);
-                    if (page.Count < limit)
-                        break;
-
-                    offset += page.Count;
-                }
-
+                var customers = await GetDocumentsAsync(CustomerResource, cancellationToken);
                 var fromApi = customers
                     .Select(MapCustomer)
                     .Where(p => !string.IsNullOrWhiteSpace(p.ParentName) || !string.IsNullOrWhiteSpace(p.CustomerCode))
@@ -237,22 +207,16 @@ public class SqlAccountService
         return await _localDb.GetParentChildrenAsync(cancellationToken);
     }
 
-    public async Task<List<JsonElement>> QueryBizObjectsAsync(
-        string sql,
+    public async Task<List<JsonElement>> GetDocumentsAsync(
+        string resource,
         CancellationToken cancellationToken = default)
     {
         if (!IsConfigured)
             return [];
 
-        try
-        {
-            return await QueryCustomersAsync(sql, offset: 0, limit: 500, cancellationToken);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "SQL Account biz-objects query failed");
-            return [];
-        }
+        EnsureConfigured();
+        var responseBody = await GetResourceAsync(resource, cancellationToken);
+        return ParseDocumentElements(responseBody);
     }
 
     private void EnsureConfigured()
@@ -262,83 +226,141 @@ public class SqlAccountService
                 "SQL Account is not configured. Set SqlAccount__AccessKey and SqlAccount__SecretKey in .env.");
     }
 
-    private async Task<List<JsonElement>> QueryCustomersAsync(
-        int offset,
-        int limit,
-        CancellationToken cancellationToken) =>
-        await QueryCustomersAsync(CustomersSql, offset, limit, cancellationToken);
-
-    private async Task<List<JsonElement>> QueryCustomersAsync(
-        string sql,
-        int offset,
-        int limit,
-        CancellationToken cancellationToken)
-    {
-        var responseBody = await PostQueryAsync(sql, offset, limit, cancellationToken);
-        return ParseCustomerElements(responseBody);
-    }
-
-    private async Task<string> PostQueryAsync(
-        string sql,
-        int offset,
-        int limit,
+    private async Task<string> GetResourceAsync(
+        string resource,
         CancellationToken cancellationToken)
     {
         var baseUrl = _settings.ApiBaseUrl.TrimEnd('/');
-        var requestUri = new Uri($"{baseUrl}/api/biz-objects/query");
-        var body = JsonSerializer.Serialize(new { sql, offset, limit });
-        var payload = Encoding.UTF8.GetBytes(body);
+        var path = resource.TrimStart('/');
+        var requestUri = new Uri($"{baseUrl}/{path}");
+        var payload = Array.Empty<byte>();
 
         var client = _httpClientFactory.CreateClient("SqlAccount");
-        using var response = await SendSignedQueryAsync(
-            client, requestUri, payload,
-            _settings.AccessKey, _settings.SecretKey, _settings.Region, _settings.Service,
-            cancellationToken);
-
-        var responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
-
-        if (!response.IsSuccessStatusCode &&
-            (!_settings.Service.Equals("execute-api", StringComparison.OrdinalIgnoreCase) ||
-             !_settings.Region.Equals("ap-southeast-1", StringComparison.OrdinalIgnoreCase)))
+        var attempts = new (string Region, string Service)[]
         {
-            _logger.LogWarning(
-                "SQL Account query failed ({Status}), retrying with execute-api / ap-southeast-1",
-                (int)response.StatusCode);
+            (_settings.Region, _settings.Service),
+            ("ap-southeast-1", "execute-api"),
+            ("ap-southeast-5", "sqlaccount"),
+        };
 
-            using var retryResponse = await SendSignedQueryAsync(
-                client, requestUri, payload,
-                _settings.AccessKey, _settings.SecretKey, "ap-southeast-1", "execute-api",
+        string? lastBody = null;
+        System.Net.HttpStatusCode lastStatus = 0;
+
+        foreach (var (region, service) in attempts.Distinct())
+        {
+            using var response = await SendSignedRequestAsync(
+                client, HttpMethod.Get, requestUri, payload,
+                _settings.AccessKey, _settings.SecretKey, region, service,
                 cancellationToken);
 
-            responseBody = await retryResponse.Content.ReadAsStringAsync(cancellationToken);
-            if (!retryResponse.IsSuccessStatusCode)
-            {
-                _logger.LogWarning(
-                    "SQL Account query failed ({Status}): {Body}",
-                    (int)retryResponse.StatusCode,
-                    Truncate(responseBody, 500));
-                throw new InvalidOperationException(
-                    $"SQL Account API returned {(int)retryResponse.StatusCode}. Check AccessKey, SecretKey, Service, and Region in .env.");
-            }
+            var responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
+            if (response.IsSuccessStatusCode)
+                return responseBody;
 
-            return responseBody;
+            lastBody = responseBody;
+            lastStatus = response.StatusCode;
+
+            if ((int)response.StatusCode is not (401 or 403 or 500))
+                break;
         }
 
-        if (!response.IsSuccessStatusCode)
-        {
-            _logger.LogWarning(
-                "SQL Account query failed ({Status}): {Body}",
-                (int)response.StatusCode,
-                Truncate(responseBody, 500));
-            throw new InvalidOperationException(
-                $"SQL Account API returned {(int)response.StatusCode}. Check AccessKey, SecretKey, Service, and Region in .env.");
-        }
-
-        return responseBody;
+        LogApiFailure("GET", resource, lastStatus, lastBody ?? string.Empty);
+        throw new InvalidOperationException(BuildApiErrorMessage(lastStatus));
     }
 
-    private static async Task<HttpResponseMessage> SendSignedQueryAsync(
+    public async Task<string> PostResourceAsync(
+        string resource,
+        string jsonPayload,
+        CancellationToken cancellationToken = default)
+    {
+        EnsureConfigured();
+        var baseUrl = _settings.ApiBaseUrl.TrimEnd('/');
+        var path = resource.TrimStart('/');
+        var requestUri = new Uri($"{baseUrl}/{path}");
+        var payload = Encoding.UTF8.GetBytes(jsonPayload);
+
+        var client = _httpClientFactory.CreateClient("SqlAccount");
+        var attempts = new (string Region, string Service)[]
+        {
+            (_settings.Region, _settings.Service),
+            ("ap-southeast-1", "execute-api"),
+            ("ap-southeast-5", "sqlaccount"),
+        };
+
+        string? lastBody = null;
+        System.Net.HttpStatusCode lastStatus = 0;
+
+        foreach (var (region, service) in attempts.Distinct())
+        {
+            using var response = await SendSignedRequestAsync(
+                client, HttpMethod.Post, requestUri, payload,
+                _settings.AccessKey, _settings.SecretKey, region, service,
+                cancellationToken);
+
+            var responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
+            if (response.IsSuccessStatusCode)
+                return responseBody;
+
+            lastBody = responseBody;
+            lastStatus = response.StatusCode;
+
+            if ((int)response.StatusCode is not (401 or 403 or 500))
+                break;
+        }
+
+        LogApiFailure("POST", resource, lastStatus, lastBody ?? string.Empty);
+        throw new InvalidOperationException(BuildApiErrorMessage(lastStatus));
+    }
+
+    private void LogApiFailure(string method, string resource, System.Net.HttpStatusCode statusCode, string responseBody)
+    {
+        var status = (int)statusCode;
+        var snippet = Truncate(responseBody, 500);
+
+        if (status is 401 or 403)
+        {
+            _logger.LogWarning(
+                "SQL Account {Method} {Resource} auth failed ({Status}): check AccessKey and SecretKey in .env. Body: {Body}",
+                method,
+                resource,
+                status,
+                snippet);
+            return;
+        }
+
+        if (status >= 500)
+        {
+            _logger.LogWarning(
+                "SQL Account {Method} {Resource} server error ({Status}): endpoint may be wrong or cloud service unavailable. Body: {Body}",
+                method,
+                resource,
+                status,
+                snippet);
+            return;
+        }
+
+        _logger.LogWarning(
+            "SQL Account {Method} {Resource} failed ({Status}): {Body}",
+            method,
+            resource,
+            status,
+            snippet);
+    }
+
+    private static string BuildApiErrorMessage(System.Net.HttpStatusCode statusCode) =>
+        (int)statusCode switch
+        {
+            401 or 403 =>
+                $"SQL Account API returned {(int)statusCode} (authentication failed). Check AccessKey and SecretKey in .env.",
+            >= 500 =>
+                $"SQL Account API returned {(int)statusCode} (server error). Verify the endpoint path and API credentials in .env.",
+            _ =>
+                $"SQL Account API returned {(int)statusCode}. Check AccessKey, SecretKey, Service, and Region in .env."
+        };
+
+    private static async Task<HttpResponseMessage> SendSignedRequestAsync(
         HttpClient client,
+        HttpMethod method,
         Uri requestUri,
         byte[] payload,
         string accessKey,
@@ -347,16 +369,19 @@ public class SqlAccountService
         string service,
         CancellationToken cancellationToken)
     {
-        using var request = new HttpRequestMessage(HttpMethod.Post, requestUri);
-        request.Content = new ByteArrayContent(payload);
-        request.Content.Headers.ContentType = new MediaTypeHeaderValue("application/json");
+        using var request = new HttpRequestMessage(method, requestUri);
+        if (payload.Length > 0)
+        {
+            request.Content = new ByteArrayContent(payload);
+            request.Content.Headers.ContentType = new MediaTypeHeaderValue("application/json");
+        }
 
         AwsSigV4Signer.Sign(request, accessKey, secretKey, region, service, payload);
 
         return await client.SendAsync(request, cancellationToken);
     }
 
-    private static List<JsonElement> ParseCustomerElements(string json)
+    private static List<JsonElement> ParseDocumentElements(string json)
     {
         using var document = JsonDocument.Parse(json);
         var root = document.RootElement;
@@ -416,12 +441,46 @@ public class SqlAccountService
             GetString(branch, "phone1") ?? GetString(branch, "mobile"));
     }
 
-    private static SqlAccountAdminUserMatch MapAdminUser(JsonElement row)
+    private static SqlAccountStaffUserMatch MapStaffUser(JsonElement row)
     {
-        var email = GetString(row, "udf_email") ?? GetString(row, "udf_emaill") ?? string.Empty;
+        var email = GetString(row, "email") ?? string.Empty;
         var userId = GetString(row, "code") ?? GetString(row, "userid") ?? string.Empty;
         var userName = GetString(row, "name") ?? GetString(row, "username") ?? email;
-        return new SqlAccountAdminUserMatch(userId, userName, email);
+        var isAdmin = ParseIsAdmin(row);
+        return new SqlAccountStaffUserMatch(userId, userName, email, isAdmin);
+    }
+
+    private static bool ParseIsAdmin(JsonElement row)
+    {
+        foreach (var property in row.EnumerateObject())
+        {
+            if (!string.Equals(property.Name, "udf_isadmin", StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            return property.Value.ValueKind switch
+            {
+                JsonValueKind.True => true,
+                JsonValueKind.False => false,
+                JsonValueKind.Number => property.Value.TryGetInt32(out var n) && n != 0,
+                JsonValueKind.String => IsTruthy(property.Value.GetString()),
+                _ => false
+            };
+        }
+
+        return false;
+    }
+
+    private static bool IsTruthy(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return false;
+
+        var normalized = value.Trim();
+        return normalized.Equals("T", StringComparison.OrdinalIgnoreCase)
+            || normalized.Equals("Y", StringComparison.OrdinalIgnoreCase)
+            || normalized.Equals("1", StringComparison.OrdinalIgnoreCase)
+            || normalized.Equals("TRUE", StringComparison.OrdinalIgnoreCase)
+            || normalized.Equals("YES", StringComparison.OrdinalIgnoreCase);
     }
 
     private static string? GetString(JsonElement element, string propertyName)

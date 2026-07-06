@@ -1,6 +1,7 @@
 import { mockUsers } from '@/utils/mockData';
 import type { ClassItem, ClassSession } from '@/types';
 import type { ScheduleLessonItem } from '@/components/schedule/ScheduleLessonCard';
+import type { ErpCalendarEvent } from '@/types/sqlAccount';
 
 export function resolveMockStudentUserId(email?: string): string {
   if (!email) return '4';
@@ -42,5 +43,29 @@ export function sessionToScheduleItem(
     isMakeup:
       /make-?up|replacement/i.test(session.topic ?? '') ||
       /make-?up|replacement/i.test(session.notes ?? ''),
+  };
+}
+
+export function erpEventToScheduleItem(
+  erp: ErpCalendarEvent,
+  options?: { showBranch?: boolean }
+): ScheduleLessonItem {
+  const minutes = durationMinutes(erp.startTime, erp.endTime);
+  const courseName = erp.courseName ?? erp.className;
+  const branchSuffix =
+    options?.showBranch && erp.branchName ? ` · ${erp.branchName}` : '';
+
+  return {
+    id: erp.id,
+    sessionDate: erp.sessionDate,
+    startTime: erp.startTime,
+    endTime: erp.endTime,
+    title: `${erp.className}, ${formatTime(erp.startTime)}`,
+    teacherName: erp.teacherName ?? undefined,
+    courseLabel: `${courseName} (${minutes} min)${branchSuffix}`,
+    status:
+      (erp.status as ScheduleLessonItem['status']) === 'Cancelled'
+        ? 'Cancelled'
+        : (erp.status as ScheduleLessonItem['status']) ?? 'Scheduled',
   };
 }

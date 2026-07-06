@@ -56,6 +56,12 @@ export const parentsApi = {
         `/parents/me/sql-account-children/${encodeURIComponent(branchName)}/enrollments`
       )
       .then((r) => r.data),
+  getMyCalendarEvents: (branchName?: string) =>
+    apiClient
+      .get<import('@/types/sqlAccount').ErpCalendarEvent[]>('/parents/me/calendar-events', {
+        params: branchName ? { branchName } : undefined,
+      })
+      .then((r) => r.data),
   create: (data: Partial<ParentProfile> & { password?: string; email?: string; fullName?: string }) =>
     apiClient.post<ParentProfile>('/parents', data).then((r) => r.data),
   update: (id: string, data: Partial<ParentProfile>) =>
@@ -65,6 +71,10 @@ export const parentsApi = {
 
 export const teachersApi = {
   getAll: () => apiClient.get<TeacherProfile[]>('/teachers').then((r) => r.data),
+  getCalendarFilter: () =>
+    apiClient
+      .get<import('@/types/sqlAccount').SqlAccountCalendarTeacher[]>('/teachers/calendar-filter')
+      .then((r) => r.data),
   getById: (id: string) => apiClient.get<TeacherProfile>(`/teachers/${id}`).then((r) => r.data),
   create: (data: Partial<TeacherProfile> & { password?: string; email?: string; fullName?: string }) =>
     apiClient.post<TeacherProfile>('/teachers', data).then((r) => r.data),
@@ -105,9 +115,20 @@ export const classSessionsApi = {
   getAll: () => apiClient.get<ClassSession[]>('/class-sessions').then((r) => r.data),
   getById: (id: string) => apiClient.get<ClassSession>(`/class-sessions/${id}`).then((r) => r.data),
   create: (data: Partial<ClassSession>) => apiClient.post<ClassSession>('/class-sessions', data).then((r) => r.data),
-  update: (id: string, data: Partial<ClassSession>) =>
-    apiClient.put<ClassSession>(`/class-sessions/${id}`, data).then((r) => r.data),
-  remove: (id: string) => apiClient.delete(`/class-sessions/${id}`),
+  update: (id: string, data: Partial<ClassSession>, reason?: string) =>
+    apiClient
+      .put<ClassSession>(`/class-sessions/${id}`, data, { params: reason ? { reason } : undefined })
+      .then((r) => r.data),
+  remove: (id: string, reason?: string) =>
+    apiClient.delete(`/class-sessions/${id}`, { params: reason ? { reason } : undefined }),
+  replace: (
+    id: string,
+    data: { sessionDate: string; startTime: string; endTime: string; reason?: string; notes?: string }
+  ) => apiClient.post<ClassSession>(`/class-sessions/${id}/replace`, data).then((r) => r.data),
+  getChanges: (params?: { classId?: string; sessionId?: string }) =>
+    apiClient
+      .get<import('@/types').ClassSessionChangeHistory[]>('/class-sessions/changes', { params })
+      .then((r) => r.data),
   generate: (data: { classId?: string; fromDate: string; toDate: string }) =>
     apiClient
       .post<{ createdCount: number; skippedCount: number; sessions: ClassSession[] }>(
@@ -119,18 +140,81 @@ export const classSessionsApi = {
     apiClient.post<ClassSession>(`/class-sessions/today/${classId}`).then((r) => r.data),
 };
 
-export const notificationsApi = {
-  getAll: (unreadOnly?: boolean) =>
+export const classAssignmentLogsApi = {
+  getAll: (params?: { classId?: string }) =>
     apiClient
-      .get<import('@/types/notification').AppNotification[]>('/notifications', {
-        params: unreadOnly ? { unreadOnly: true } : undefined,
-      })
+      .get<import('@/types').ClassAssignmentChangeLog[]>('/class-assignment-logs', { params })
       .then((r) => r.data),
-  getUnreadCount: () =>
-    apiClient.get<{ count: number }>('/notifications/unread-count').then((r) => r.data.count),
-  markRead: (id: string) =>
-    apiClient.put<import('@/types/notification').AppNotification>(`/notifications/${id}/read`).then((r) => r.data),
-  markAllRead: () => apiClient.put('/notifications/read-all'),
+};
+
+import type { PortalHomework, PortalLeaveRequest } from '@/types/portal';
+
+export const homeworkApi = {
+  getAll: (teacher?: string) =>
+    apiClient
+      .get<PortalHomework[]>('/homework', { params: teacher ? { teacher } : undefined })
+      .then((r) => r.data),
+  getMine: (branchName?: string) =>
+    apiClient
+      .get<PortalHomework[]>('/homework/mine', { params: branchName ? { branchName } : undefined })
+      .then((r) => r.data),
+  submit: (data: {
+    docKey: number;
+    seq: number;
+    branchName: string;
+    title?: string;
+    note?: string;
+    fileName?: string;
+  }) => apiClient.post<PortalHomework>('/homework', data).then((r) => r.data),
+};
+
+export const leaveApi = {
+  getAll: () => apiClient.get<PortalLeaveRequest[]>('/leave').then((r) => r.data),
+  getMine: () => apiClient.get<PortalLeaveRequest[]>('/leave/mine').then((r) => r.data),
+  getForTeacher: () => apiClient.get<PortalLeaveRequest[]>('/leave/teacher').then((r) => r.data),
+  submit: (data: {
+    occurrenceId?: string;
+    docKey: number;
+    seq: number;
+    branchName: string;
+    sessionDate: string;
+    reason: string;
+  }) => apiClient.post<PortalLeaveRequest>('/leave', data).then((r) => r.data),
+  review: (id: string, data: { adminNote?: string; approve: boolean; needsReplacement: boolean }) =>
+    apiClient.post<PortalLeaveRequest>(`/leave/${id}/review`, data).then((r) => r.data),
+  proposeReplacement: (
+    id: string,
+    data: { replDate: string; replStart: string; replEnd: string; replTeacher: string }
+  ) => apiClient.post<PortalLeaveRequest>(`/leave/${id}/propose-replacement`, data).then((r) => r.data),
+  accept: (id: string) => apiClient.post<PortalLeaveRequest>(`/leave/${id}/accept`).then((r) => r.data),
+  counter: (
+    id: string,
+    data: { counterDate: string; counterStart: string; counterEnd: string; counterMsg?: string }
+  ) => apiClient.post<PortalLeaveRequest>(`/leave/${id}/counter`, data).then((r) => r.data),
+  confirm: (id: string) => apiClient.post<PortalLeaveRequest>(`/leave/${id}/confirm`).then((r) => r.data),
+};
+
+export const calendarApi = {
+  getEvents: () =>
+    apiClient.get<import('@/types/sqlAccount').ErpCalendarEvent[]>('/calendar/events').then((r) => r.data),
+  cancelEvent: (id: string, data: { reason: string }) =>
+    apiClient.post(`/calendar/events/${encodeURIComponent(id)}/cancel`, data),
+  replaceEvent: (
+    id: string,
+    data: {
+      sessionDate: string;
+      startTime: string;
+      endTime: string;
+      reason: string;
+      notes?: string;
+    }
+  ) =>
+    apiClient
+      .post<import('@/types/sqlAccount').ErpCalendarEvent>(
+        `/calendar/events/${encodeURIComponent(id)}/replace`,
+        data
+      )
+      .then((r) => r.data),
 };
 
 export const attendanceApi = {
@@ -230,4 +314,31 @@ export const sqlAccountApi = {
     apiClient
       .get<import('@/types/sqlAccount').SqlAccountParent[]>('/sqlaccount/parent-children')
       .then((r) => r.data),
+  getItemCodeLinks: () =>
+    apiClient
+      .get<import('@/types/sqlAccount').ItemCodeClassLink[]>('/sqlaccount/item-code-links')
+      .then((r) => r.data),
+  createItemCodeLink: (data: { itemCode: string; portalClassId: string }) =>
+    apiClient
+      .post<import('@/types/sqlAccount').ItemCodeClassLink>('/sqlaccount/item-code-links', data)
+      .then((r) => r.data),
+  deleteItemCodeLink: (id: string) => apiClient.delete(`/sqlaccount/item-code-links/${id}`),
+  getCourseOptions: () =>
+    apiClient
+      .get<import('@/types/sqlAccount').SqlAccountCourseOption[]>('/sqlaccount/course-options')
+      .then((r) => r.data),
+  getChildEnrollments: (customerCode: string, branchName: string) =>
+    apiClient
+      .get<{ customerCode: string; branchName: string; enrollments: import('@/types/sqlAccount').SqlAccountChildEnrollment[] }>(
+        `/sqlaccount/parents/${encodeURIComponent(customerCode)}/children/${encodeURIComponent(branchName)}/enrollments`
+      )
+      .then((r) => r.data),
+  assignChildEnrollment: (data: {
+    customerCode: string;
+    branchName: string;
+    itemCode: string;
+    startDate: string;
+    endDate: string;
+    teacherUserId: string;
+  }) => apiClient.post('/sqlaccount/child-enrollments', data).then((r) => r.data),
 };

@@ -48,4 +48,46 @@ public static class PasswordHelper
 public static class TimeHelper
 {
     public static string FormatTime(TimeSpan time) => time.ToString(@"hh\:mm");
+
+    /// <summary>Format SQL Account UDF_CLASSTIME: 14.5 → 14:30, 1430 → 14:30, else raw.</summary>
+    public static string? FormatUdfClassTime(object? value)
+    {
+        if (value is null)
+            return null;
+
+        var raw = value.ToString()?.Trim();
+        if (string.IsNullOrWhiteSpace(raw))
+            return null;
+
+        if (!double.TryParse(raw, System.Globalization.NumberStyles.Any,
+                System.Globalization.CultureInfo.InvariantCulture, out var num))
+        {
+            return raw;
+        }
+
+        if (num >= 100 && num <= 2359 && Math.Abs(num - Math.Floor(num)) < 0.0001)
+        {
+            var intVal = (int)num;
+            var hours = intVal / 100;
+            var mins = intVal % 100;
+            if (hours is >= 0 and < 24 && mins is >= 0 and < 60)
+                return $"{hours:D2}:{mins:D2}";
+        }
+
+        if (num is >= 0 and < 24)
+        {
+            var hours = (int)Math.Floor(num);
+            var mins = (int)Math.Round((num - hours) * 60);
+            if (mins >= 60)
+            {
+                hours++;
+                mins = 0;
+            }
+
+            if (hours < 24)
+                return $"{hours:D2}:{mins:D2}";
+        }
+
+        return raw;
+    }
 }

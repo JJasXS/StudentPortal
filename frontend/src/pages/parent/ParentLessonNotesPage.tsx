@@ -17,7 +17,7 @@ export default function ParentLessonNotesPage() {
     ]).then(([parents, allNotes]) => {
       const parent = parents.find((p) => p.userId === user?.id);
       const childIds = parent?.children || [];
-      setNotes(allNotes.filter((n) => childIds.includes(n.studentUserId)));
+      setNotes(allNotes.filter((n) => n.studentUserId && childIds.includes(n.studentUserId)));
     });
   }, [user?.id]);
 
