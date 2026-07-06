@@ -177,7 +177,7 @@ export function MonthCalendar({
         open={Boolean(selectedDay)}
         onClose={() => setSelectedDay(null)}
         title={selectedDay ? formatDayLabel(selectedDay.dateKey) : 'Sessions'}
-        className="max-w-md"
+        className="max-w-3xl"
       >
         {selectedDay && (
           <div className="space-y-2">

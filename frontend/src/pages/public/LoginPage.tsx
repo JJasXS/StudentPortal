@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, Mail } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
@@ -7,17 +7,14 @@ import { CentreMark } from '@/components/branding/CentreMark';
 import { Button } from '@/components/ui/Button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Input, Label } from '@/components/ui/Input';
-import { dashboardPathForRole, canSignIn } from '@/utils/learnerPortal';
-import { getSavedAccounts, saveCurrentAccount, type SavedAccount } from '@/utils/savedAccounts';
-import { accountAvatarStyle, accountInitials } from '@/utils/accountDisplay';
-import { cn } from '@/utils/cn';
+import { dashboardPathForRole } from '@/utils/learnerPortal';
 import { getApiErrorMessage } from '@/utils/apiError';
 import type { UserRole } from '@/types';
 
 type LoginStep = 'email' | 'password';
 
 export default function LoginPage() {
-  const { login, loginWithUdfEmail, user, setSession } = useAuth();
+  const { login, loginWithUdfEmail, user } = useAuth();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const addingAccount = searchParams.get('addAccount') === '1';
@@ -29,21 +26,12 @@ export default function LoginPage() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const savedAccounts = useMemo(() => getSavedAccounts(), []);
-
   const finishLogin = (role: UserRole | undefined) => {
     if (role === 'Admin' || role === 'Teacher' || role === 'Student' || role === 'Parent') {
       navigate(dashboardPathForRole(role));
     } else {
       navigate('/');
     }
-  };
-
-  const quickSwitch = (account: SavedAccount) => {
-    if (!canSignIn(account.user.role)) return;
-    setSession(account.token, account.user);
-    saveCurrentAccount();
-    navigate(dashboardPathForRole(account.user.role as 'Admin' | 'Teacher' | 'Student' | 'Parent'));
   };
 
   const handleEmailContinue = async (e: React.FormEvent) => {
@@ -102,40 +90,6 @@ export default function LoginPage() {
           className="mb-8"
           subtitle="Sign in to manage classes, schedules, and student progress"
         />
-
-        {savedAccounts.length > 0 && step === 'email' && !addingAccount && (
-          <Card className="mb-4 border-slate-200/80 shadow-sm">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base font-semibold">Recent accounts</CardTitle>
-              <CardDescription>Pick an account you have used on this device</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-1 pt-0">
-              {savedAccounts.map((account) => (
-                <button
-                  key={account.user.id}
-                  type="button"
-                  onClick={() => quickSwitch(account)}
-                  className="flex w-full items-center gap-3 rounded-xl border border-transparent px-3 py-2.5 text-left transition hover:border-slate-200 hover:bg-slate-50"
-                >
-                  <div
-                    className={cn(
-                      'flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-sm font-semibold',
-                      accountAvatarStyle(account.user.role)
-                    )}
-                  >
-                    {accountInitials(account.user.fullName)}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium text-slate-900">
-                      {account.user.fullName}
-                    </p>
-                    <p className="truncate text-xs text-slate-500">{account.user.email}</p>
-                  </div>
-                </button>
-              ))}
-            </CardContent>
-          </Card>
-        )}
 
         <Card className="border-slate-200/80 shadow-md">
           <CardHeader className="space-y-1 pb-4">

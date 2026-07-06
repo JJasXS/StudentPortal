@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { History, X } from 'lucide-react';
 import { PageHeader } from '@/components/PageHeader';
 import { SearchBox } from '@/components/SearchBox';
@@ -11,6 +12,22 @@ import { formatAuditAction, loadAuditLogs, AUDIT_ACTION_LABELS } from '@/utils/a
 import type { AuditLogEntry } from '@/types/auditLog';
 
 const ACTION_OPTIONS = [...new Set(Object.keys(AUDIT_ACTION_LABELS))].sort();
+
+function ActorCell({ entry }: { entry: AuditLogEntry }) {
+  if (!entry.actorName && !entry.actorRole) {
+    return <span className="text-slate-400">—</span>;
+  }
+  return (
+    <div className="min-w-0">
+      {entry.actorName && (
+        <div className="font-medium text-slate-800">{entry.actorName}</div>
+      )}
+      {entry.actorRole && (
+        <div className="text-xs text-slate-500">{entry.actorRole}</div>
+      )}
+    </div>
+  );
+}
 
 export default function AdminAuditLogPage() {
   const [entries, setEntries] = useState<AuditLogEntry[]>([]);
@@ -111,38 +128,41 @@ export default function AdminAuditLogPage() {
           <DataTable
             embedded
             data={filtered}
-            emptyMessage={loading ? 'Loading audit log…' : 'No audit entries match your filters.'}
+            emptyMessage={
+              loading
+                ? 'Loading audit log…'
+                : hasFilters
+                  ? 'No audit entries match your filters.'
+                  : 'No audit entries yet.'
+            }
             columns={[
               {
                 key: 'createdAt',
                 header: 'Date',
                 sortable: true,
                 sortType: 'date',
-                colWidth: '6.5rem',
+                colWidth: '7rem',
                 getSortValue: (e) => e.createdAt,
                 render: (e) => (
-                  <span className="text-slate-700">{formatDateDDMMYYYY(e.createdAt)}</span>
+                  <span className="tabular-nums text-slate-700">
+                    {formatDateDDMMYYYY(e.createdAt)}
+                  </span>
                 ),
               },
               {
                 key: 'actor',
                 header: 'Who',
-                colWidth: '9rem',
-                render: (e) => (
-                  <span className="text-slate-800">
-                    {e.actorName ?? '—'}
-                    {e.actorRole && (
-                      <span className="text-slate-400"> · {e.actorRole}</span>
-                    )}
-                  </span>
-                ),
+                colWidth: '11rem',
+                wrap: true,
+                render: (e) => <ActorCell entry={e} />,
               },
               {
                 key: 'action',
                 header: 'Action',
                 sortable: true,
                 sortType: 'text',
-                colWidth: '10rem',
+                colWidth: '16rem',
+                wrap: true,
                 getSortValue: (e) => e.action,
                 render: (e) => (
                   <span className="font-medium text-slate-800">{formatAuditAction(e.action)}</span>
@@ -151,19 +171,33 @@ export default function AdminAuditLogPage() {
               {
                 key: 'details',
                 header: 'Details',
-                className: 'max-w-md whitespace-normal text-xs text-slate-600',
-                render: (e) => e.details ?? '—',
+                wrap: true,
+                className: 'text-slate-600',
+                render: (e) => (
+                  <span className="text-xs leading-relaxed">{e.details?.trim() || '—'}</span>
+                ),
               },
             ]}
           />
+
+          {!loading && (
+            <div className="flex items-center gap-2 border-t border-slate-200 px-4 py-3 text-sm text-slate-500">
+              <History className="h-4 w-4 shrink-0" />
+              {filtered.length} entr{filtered.length === 1 ? 'y' : 'ies'}
+            </div>
+          )}
         </CardContent>
       </Card>
 
-      <p className="mt-4 flex items-center gap-2 text-sm text-slate-500">
-        <History className="h-4 w-4" />
-        {filtered.length} entr{filtered.length === 1 ? 'y' : 'ies'}
-        {import.meta.env.VITE_USE_MOCK === 'true' ? ' (stored locally in demo mode)' : ''}
-      </p>
+      {!loading && filtered.length === 0 && !hasFilters && (
+        <p className="mt-4 text-center text-sm text-slate-600">
+          Actions like creating{' '}
+          <Link to="/admin/announcements" className="font-medium text-primary-600 hover:underline">
+            announcements
+          </Link>{' '}
+          or editing students will appear here.
+        </p>
+      )}
     </div>
   );
 }

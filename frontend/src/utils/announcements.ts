@@ -11,7 +11,9 @@ export function getAnnouncementCategory(announcement: Announcement): Announcemen
 
 /** Whether an announcement is visible to a given role (not used for admin management lists). */
 export function isAnnouncementForRole(announcement: Announcement, role: UserRole) {
-  return announcement.targetRole === 'All' || announcement.targetRole === role;
+  if (announcement.targetRole === 'All') return true;
+  if (role === 'Parent' && announcement.targetRole === 'Student') return true;
+  return announcement.targetRole === role;
 }
 
 export function filterAnnouncementsForRole(announcements: Announcement[], role: UserRole) {

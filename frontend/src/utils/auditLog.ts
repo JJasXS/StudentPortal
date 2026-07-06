@@ -146,25 +146,17 @@ export async function loadAuditLogs(filters?: {
   from?: string;
   to?: string;
 }): Promise<AuditLogEntry[]> {
-  const local = loadLocalAuditLogs(filters);
-
   if (import.meta.env.VITE_USE_MOCK === 'true') {
-    return mergeWithMockAuditLogs(local);
+    return mergeWithMockAuditLogs(loadLocalAuditLogs(filters));
   }
 
   try {
     const { auditLogsApi } = await import('@/api/resources');
     const remote = await auditLogsApi.getAll(filters);
-    const byId = new Map<string, AuditLogEntry>();
-    for (const e of [...remote, ...local]) {
-      byId.set(e.id, e);
-    }
-    const merged = [...byId.values()].sort(
+    return [...remote].sort(
       (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
     );
-    return merged.length > 0 ? merged : mergeWithMockAuditLogs([]);
   } catch {
-    const fallback = mergeWithMockAuditLogs(local);
-    return fallback.length > 0 ? fallback : [...mockAuditLogs];
+    return [];
   }
 }

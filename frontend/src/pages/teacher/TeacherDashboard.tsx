@@ -1,72 +1,32 @@
 import { useEffect, useMemo, useState } from 'react';
-import {
-  isTeacherTodoListEnabled,
-  TEACHER_TODO_PREF_UPDATED,
-} from '@/utils/teacherTodoPreferences';
-import {
-  Calendar,
-  ClipboardCheck,
-  Lightbulb,
-  NotebookPen,
-  CalendarDays,
-} from 'lucide-react';
+import { CalendarDays } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { PageHeader } from '@/components/PageHeader';
-import { StatCard } from '@/components/StatCard';
 import { TodayClassesList } from '@/components/TodayClassesList';
-import { TeacherTodoList } from '@/components/teacher/TeacherTodoList';
-import { Modal } from '@/components/ui/Modal';
-import { Button } from '@/components/ui/Button';
-import { classesApi, classSessionsApi, lessonNotesApi } from '@/api/resources';
-import { mockClassSessions, mockLessonNotes } from '@/utils/mockData';
-import { mergeTeacherClasses, mockTeacherUserId } from '@/utils/teacherClasses';
+import { classesApi, classSessionsApi } from '@/api/resources';
+import { mockClassSessions } from '@/utils/mockData';
+import { mergeTeacherClasses } from '@/utils/teacherClasses';
 import { buildTodaySchedule, formatTodayHeading } from '@/utils/teacherSchedule';
 import type { ClassItem, ClassSession } from '@/types';
 
 export default function TeacherDashboard() {
   const { user } = useAuth();
-  const [todoListEnabled, setTodoListEnabled] = useState(() =>
-    isTeacherTodoListEnabled(user?.id)
-  );
   const [classes, setClasses] = useState<ClassItem[]>([]);
   const [sessions, setSessions] = useState<ClassSession[]>([]);
-  const [notesCount, setNotesCount] = useState(0);
   const [loading, setLoading] = useState(true);
-  const [tipsOpen, setTipsOpen] = useState(false);
-
-  useEffect(() => {
-    setTodoListEnabled(isTeacherTodoListEnabled(user?.id));
-  }, [user?.id]);
-
-  useEffect(() => {
-    const onPrefUpdate = (event: Event) => {
-      const detail = (event as CustomEvent<{ userId?: string }>).detail;
-      if (!detail?.userId || detail.userId === user?.id) {
-        setTodoListEnabled(isTeacherTodoListEnabled(user?.id));
-      }
-    };
-    window.addEventListener(TEACHER_TODO_PREF_UPDATED, onPrefUpdate);
-    return () => window.removeEventListener(TEACHER_TODO_PREF_UPDATED, onPrefUpdate);
-  }, [user?.id]);
 
   useEffect(() => {
     if (!user?.id) return;
-
     setLoading(true);
     Promise.all([
       classesApi.getAll().catch(() => []),
       classSessionsApi.getAll().catch(() => mockClassSessions),
-      lessonNotesApi.getAll().catch(() => mockLessonNotes),
     ])
-      .then(([allClasses, allSessions, notes]) => {
+      .then(([allClasses, allSessions]) => {
         const myClasses = mergeTeacherClasses(allClasses, user);
         const myClassIds = new Set(myClasses.map((c) => c.id));
-        const teacherKey = mockTeacherUserId(user);
         setClasses(myClasses);
         setSessions(allSessions.filter((s) => myClassIds.has(s.classId)));
-        setNotesCount(
-          notes.filter((n) => n.teacherUserId === user.id || n.teacherUserId === teacherKey).length
-        );
       })
       .catch(() => {
         const myClasses = mergeTeacherClasses([], user);
@@ -82,74 +42,25 @@ export default function TeacherDashboard() {
     [classes, sessions]
   );
 
-  const todayLabel = formatTodayHeading();
-
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <PageHeader
         title="Dashboard"
         description={
           user?.fullName
-            ? `Welcome back, ${user.fullName} · ${todayLabel}`
-            : todayLabel
-        }
-        actions={
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => setTipsOpen(true)}
-            className="gap-2 border-amber-200 bg-amber-50 text-amber-900 hover:bg-amber-100"
-          >
-            <Lightbulb className="h-4 w-4 text-amber-600" />
-            Quick tips
-          </Button>
+            ? `Welcome back, ${user.fullName} · ${formatTodayHeading()}`
+            : formatTodayHeading()
         }
       />
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <StatCard title="My classes" value={classes.length} icon={Calendar} />
-        <StatCard
-          title="Today"
-          value={todayClasses.length}
-          icon={CalendarDays}
-          description={todayClasses.length === 1 ? 'class today' : 'classes today'}
-        />
-        <StatCard title="Sessions" value={sessions.length} icon={ClipboardCheck} />
-        <StatCard
-          title="Lesson notes"
-          value={notesCount}
-          icon={NotebookPen}
-          description="Recorded for your students"
-        />
-      </div>
-
-      {todoListEnabled && <TeacherTodoList userId={user?.id} />}
+      {!loading && todayClasses.length === 0 && (
+        <p className="flex items-center gap-2 rounded-lg border border-dashed border-slate-200 px-4 py-6 text-sm text-slate-500">
+          <CalendarDays className="h-5 w-5 text-slate-400" />
+          No classes scheduled for today.
+        </p>
+      )}
 
       <TodayClassesList items={todayClasses} loading={loading} />
-
-      <Modal open={tipsOpen} onClose={() => setTipsOpen(false)} title="Quick tips" className="max-w-md">
-        <ul className="space-y-3 text-sm text-slate-600">
-          <li className="flex gap-3 rounded-lg bg-slate-50 p-3">
-            <Calendar className="mt-0.5 h-5 w-5 shrink-0 text-primary-600" />
-            <span>
-              <strong className="text-slate-900">Today&apos;s schedule</strong> — your classes for
-              the day appear at the top with times and rooms.
-            </span>
-          </li>
-          <li className="flex gap-3 rounded-lg bg-slate-50 p-3">
-            <NotebookPen className="mt-0.5 h-5 w-5 shrink-0 text-primary-600" />
-            <span>
-              <strong className="text-slate-900">Lesson notes</strong> — record homework and
-              progress so students and parents can review.
-            </span>
-          </li>
-        </ul>
-        <div className="mt-4 flex justify-end">
-          <Button type="button" onClick={() => setTipsOpen(false)}>
-            Got it
-          </Button>
-        </div>
-      </Modal>
     </div>
   );
 }

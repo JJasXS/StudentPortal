@@ -21,6 +21,10 @@ export interface Column<T> {
   align?: ColumnAlign;
   /** Fixed column width (e.g. `10rem`) — enables table-fixed layout when set on any column */
   colWidth?: string;
+  /** Pin column to the right edge when table scrolls horizontally */
+  sticky?: 'end';
+  /** Allow cell text to wrap instead of truncating on one line */
+  wrap?: boolean;
   sortable?: boolean;
   sortType?: ColumnSortType;
   getSortValue?: (item: T) => string | number | null | undefined;
@@ -162,7 +166,12 @@ export function DataTable<T extends object>({
   }
 
   return (
-    <div className={cn('overflow-x-auto', !embedded && 'rounded-lg border border-slate-200')}>
+    <div
+      className={cn(
+        'overflow-x-auto [scrollbar-gutter:stable]',
+        !embedded && 'rounded-lg border border-slate-200'
+      )}
+    >
       <table
         className={cn(
           'w-full divide-y divide-slate-200',
@@ -190,6 +199,8 @@ export function DataTable<T extends object>({
                     className={cn(
                       'px-4 py-3 text-xs font-semibold uppercase tracking-wider text-slate-600',
                       columnAlignClass(col),
+                      col.sticky === 'end' &&
+                        'sticky right-0 z-20 bg-slate-50 pl-2 pr-3 shadow-[-4px_0_8px_-4px_rgba(15,23,42,0.08)]',
                       col.className
                     )}
                   >
@@ -204,6 +215,8 @@ export function DataTable<T extends object>({
                   className={cn(
                     'px-4 py-3 text-xs font-semibold uppercase tracking-wider text-slate-600',
                     columnAlignClass(col),
+                    col.sticky === 'end' &&
+                      'sticky right-0 z-20 bg-slate-50 pl-2 pr-3 shadow-[-4px_0_8px_-4px_rgba(15,23,42,0.08)]',
                     col.className
                   )}
                 >
@@ -232,13 +245,16 @@ export function DataTable<T extends object>({
         </thead>
         <tbody className="divide-y divide-slate-200 bg-white">
           {sortedData.map((item) => (
-            <tr key={String(item[keyField])} className="hover:bg-slate-50">
+            <tr key={String(item[keyField])} className="group hover:bg-slate-50">
               {columns.map((col) => (
                 <td
                   key={col.key}
                   className={cn(
-                    'whitespace-nowrap px-4 py-3 text-sm text-slate-700',
+                    'px-4 py-3 text-sm text-slate-700',
+                    col.wrap ? 'min-w-0 whitespace-normal break-words' : 'whitespace-nowrap',
                     columnAlignClass(col),
+                    col.sticky === 'end' &&
+                      'sticky right-0 z-10 bg-white pl-2 pr-3 shadow-[-4px_0_8px_-4px_rgba(15,23,42,0.08)] group-hover:bg-slate-50',
                     col.className
                   )}
                 >

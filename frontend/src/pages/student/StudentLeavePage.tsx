@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
-import { CalendarOff, ChevronLeft, ChevronRight, Plus } from 'lucide-react';
+import { CalendarOff, ChevronLeft, ChevronRight, MoreVertical, Plus } from 'lucide-react';
 import { PageHeader } from '@/components/PageHeader';
 import { LeaveWorkflowSteps } from '@/components/leave/LeaveWorkflowSteps';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
+import { DataTable } from '@/components/ui/DataTable';
+import { Modal } from '@/components/ui/Modal';
 import { Label, Select, Textarea } from '@/components/ui/Input';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { EmptyState } from '@/components/ui/EmptyState';
@@ -70,6 +72,7 @@ export default function StudentLeavePage() {
   const [loading, setLoading] = useState(true);
   const [reason, setReason] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [selectedRequest, setSelectedRequest] = useState<PortalLeaveRequest | null>(null);
 
   const refresh = useCallback(async () => {
     try {
@@ -281,37 +284,80 @@ export default function StudentLeavePage() {
               description="Submit a request when your child cannot attend a class."
             />
           ) : (
-            <div className="space-y-4">
-              {requests.map((req) => (
-                <Card key={req.id} className="overflow-hidden">
-                  <CardHeader className="border-b border-slate-100 bg-slate-50/50 pb-3">
-                    <div className="flex flex-wrap items-start justify-between gap-2">
-                      <div>
-                        <CardTitle className="text-base">{req.className}</CardTitle>
-                        <p className="text-sm text-slate-500">
-                          {req.branchName} · Leave for {formatDateDDMMYYYY(req.sessionDate)}
-                        </p>
-                      </div>
-                      <StatusBadge status={req.status} label={portalLeaveStatusLabel(req.status)} />
-                    </div>
-                  </CardHeader>
-                  <CardContent className="space-y-3 pt-4">
-                    <p className="text-sm text-slate-700">{req.reason}</p>
-                    {req.adminNote && (
-                      <p className="text-sm text-slate-500">
-                        <span className="font-medium">Admin: </span>
-                        {req.adminNote}
-                      </p>
-                    )}
-                    {req.needsReplacement && <ReplacementDetails request={req} />}
-                    <LeaveWorkflowSteps status={req.status} compact />
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
+            <Card>
+              <CardContent className="p-0">
+                <DataTable
+                  embedded
+                  data={requests}
+                  columns={[
+                    {
+                      key: 'className',
+                      header: 'Class',
+                      render: (r) => r.className ?? '—',
+                    },
+                    {
+                      key: 'branchName',
+                      header: 'Child',
+                      render: (r) => r.branchName,
+                    },
+                    {
+                      key: 'sessionDate',
+                      header: 'Leave date',
+                      render: (r) => formatDateDDMMYYYY(r.sessionDate),
+                    },
+                    {
+                      key: 'status',
+                      header: 'Status',
+                      render: (r) => (
+                        <StatusBadge status={r.status} label={portalLeaveStatusLabel(r.status)} />
+                      ),
+                    },
+                    {
+                      key: 'actions',
+                      header: '',
+                      colWidth: '3rem',
+                      render: (r) => (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setSelectedRequest(r)}
+                        >
+                          <MoreVertical className="h-4 w-4" />
+                        </Button>
+                      ),
+                    },
+                  ]}
+                />
+              </CardContent>
+            </Card>
           )}
         </>
       )}
+
+      <Modal
+        open={Boolean(selectedRequest)}
+        onClose={() => setSelectedRequest(null)}
+        title={selectedRequest?.className ?? 'Leave request'}
+        className="max-w-lg"
+      >
+        {selectedRequest && (
+          <div className="space-y-4">
+            <p className="text-sm text-slate-600">
+              {selectedRequest.branchName} · {formatDateDDMMYYYY(selectedRequest.sessionDate)}
+            </p>
+            <p className="text-sm text-slate-800">{selectedRequest.reason}</p>
+            {selectedRequest.adminNote && (
+              <p className="text-sm text-slate-500">
+                <span className="font-medium">Admin: </span>
+                {selectedRequest.adminNote}
+              </p>
+            )}
+            {selectedRequest.needsReplacement && <ReplacementDetails request={selectedRequest} />}
+            <LeaveWorkflowSteps status={selectedRequest.status} />
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }

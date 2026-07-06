@@ -1,9 +1,8 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Calendar, CalendarDays, Clock, ClipboardCheck, Eye, MapPin, Users } from 'lucide-react';
+import { Calendar, CalendarDays, Clock, Eye, MapPin, Users } from 'lucide-react';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { SkeletonListRows } from '@/components/ui/Skeleton';
-import { teacherClassAttendanceUrl, teacherClassSessionsUrl } from '@/utils/attendanceLinks';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Modal } from '@/components/ui/Modal';
 import { Button } from '@/components/ui/Button';
@@ -32,7 +31,7 @@ function TodayClassDetailModal({
   const upcoming = isUpcomingToday(item.startTime);
 
   return (
-    <Modal open onClose={onClose} title={item.className} className="max-w-md">
+    <Modal open onClose={onClose} title={item.className} className="max-w-lg">
       <div className="space-y-4">
         <div className="flex flex-wrap items-center gap-2">
           <StatusBadge status={item.status} />
@@ -47,9 +46,7 @@ function TodayClassDetailModal({
             </span>
           )}
         </div>
-        {item.courseName && (
-          <p className="text-sm text-slate-600">{item.courseName}</p>
-        )}
+        {item.courseName && <p className="text-sm text-slate-600">{item.courseName}</p>}
         {item.topic && (
           <p className="rounded-lg bg-slate-50 p-3 text-sm text-slate-700">{item.topic}</p>
         )}
@@ -73,17 +70,12 @@ function TodayClassDetailModal({
             </li>
           )}
         </ul>
-        <div className="flex flex-wrap justify-end gap-2 border-t border-slate-100 pt-4">
+        <div className="flex justify-end gap-2 border-t border-slate-100 pt-4">
           <Button type="button" variant="outline" onClick={onClose}>
             Close
           </Button>
-          <Link to={teacherClassSessionsUrl(item.classId)}>
-            <Button type="button" variant="outline">
-              Sessions
-            </Button>
-          </Link>
-          <Link to={teacherClassAttendanceUrl(item.classId)}>
-            <Button type="button">Attendance</Button>
+          <Link to={`/teacher/classes/${item.classId}`}>
+            <Button type="button">Open class</Button>
           </Link>
         </div>
       </div>
@@ -97,10 +89,10 @@ export function TodayClassesList({ items, loading }: TodayClassesListProps) {
 
   return (
     <Card>
-      <CardHeader className="border-b border-slate-100 pb-4">
+      <CardHeader className="border-b border-slate-100 pb-3">
         <div className="flex flex-wrap items-start justify-between gap-2">
           <div>
-            <CardTitle className="text-lg">Today&apos;s schedule</CardTitle>
+            <CardTitle className="text-lg">Upcoming today</CardTitle>
             <p className="text-sm font-normal text-slate-500">{heading}</p>
           </div>
           {!loading && items.length > 0 && (
@@ -120,7 +112,7 @@ export function TodayClassesList({ items, loading }: TodayClassesListProps) {
             <EmptyState
               icon={CalendarDays}
               title="No sessions today"
-              description="You have no classes or sessions scheduled for today."
+              description="You have no classes scheduled for today."
               compact
               actions={[
                 { label: 'Open calendar', href: '/teacher/calendar' },
@@ -158,9 +150,6 @@ export function TodayClassesList({ items, loading }: TodayClassesListProps) {
                     {item.courseName && (
                       <p className="mt-0.5 text-sm text-slate-500">{item.courseName}</p>
                     )}
-                    {item.topic && (
-                      <p className="mt-1 text-sm text-slate-600">{item.topic}</p>
-                    )}
                     <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm text-slate-600">
                       <span className="inline-flex items-center gap-1">
                         <Clock className="h-4 w-4 text-slate-400" />
@@ -178,26 +167,18 @@ export function TodayClassesList({ items, loading }: TodayClassesListProps) {
                       )}
                     </div>
                   </div>
-                  <div className="flex shrink-0 flex-wrap gap-2">
+                  <div className="flex shrink-0 gap-2">
                     <Link
-                      to={teacherClassAttendanceUrl(item.classId)}
+                      to={`/teacher/classes/${item.classId}`}
                       className="inline-flex h-8 items-center justify-center rounded-lg bg-primary-600 px-3 text-sm font-medium text-white hover:bg-primary-700"
                     >
-                      <ClipboardCheck className="mr-1 h-4 w-4" />
-                      Attendance
-                    </Link>
-                    <Link
-                      to={teacherClassSessionsUrl(item.classId)}
-                      className="inline-flex h-8 items-center justify-center rounded-lg border border-slate-300 bg-white px-3 text-sm font-medium text-slate-900 hover:bg-slate-50"
-                    >
-                      Sessions
+                      Open class
                     </Link>
                     <button
                       type="button"
                       onClick={() => setViewItem(item)}
                       className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-600 hover:bg-slate-50"
                       aria-label={`Details for ${item.className}`}
-                      title="Details"
                     >
                       <Eye className="h-4 w-4" />
                     </button>
@@ -209,9 +190,7 @@ export function TodayClassesList({ items, loading }: TodayClassesListProps) {
         )}
       </CardContent>
 
-      {viewItem && (
-        <TodayClassDetailModal item={viewItem} onClose={() => setViewItem(null)} />
-      )}
+      {viewItem && <TodayClassDetailModal item={viewItem} onClose={() => setViewItem(null)} />}
     </Card>
   );
 }

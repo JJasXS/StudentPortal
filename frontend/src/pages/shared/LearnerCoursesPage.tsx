@@ -4,16 +4,21 @@ import { ChevronLeft, Users } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { PageHeader } from '@/components/PageHeader';
 import { CourseClassLessonNotesExplorer } from '@/components/student/CourseClassLessonNotesExplorer';
-import { SqlAccountBranchCard } from '@/components/parent/SqlAccountBranchCard';
-import { SqlAccountChildEnrollmentsList } from '@/components/parent/SqlAccountChildEnrollmentsList';
+import { ParentChildHomeworkPanel } from '@/components/parent/ParentChildHomeworkPanel';
+import { DataTable } from '@/components/ui/DataTable';
+import { SlidingTabs } from '@/components/ui/SlidingTabs';
+import { Card, CardContent } from '@/components/ui/Card';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { SkeletonCard } from '@/components/ui/Skeleton';
 import { useSqlAccountChildren } from '@/hooks/useSqlAccountChildren';
 import { useSqlAccountChildEnrollments } from '@/hooks/useSqlAccountChildEnrollments';
 import type { SqlAccountChild } from '@/types/sqlAccount';
 import { mockLessonNotes } from '@/utils/mockData';
+import { formatDateDDMMYYYY } from '@/utils/dateFormat';
 import { resolveLearnerStudentId } from '@/utils/learnerCourses';
 import { learnerCoursesPath } from '@/utils/learnerPortal';
+
+type ChildTab = 'classes' | 'homework';
 
 export default function LearnerCoursesPage() {
   const { user, isLoading: authLoading } = useAuth();
@@ -23,6 +28,7 @@ export default function LearnerCoursesPage() {
   const { courseId } = useParams();
   const selectedBranchKey = searchParams.get('child');
   const activeChildKey = resolveActiveChildKey(selectedBranchKey, courseId);
+  const childTab = (searchParams.get('tab') === 'homework' ? 'homework' : 'classes') as ChildTab;
 
   const { children, loading, hasFetched, error, reload } = useSqlAccountChildren(isParent);
 
@@ -51,29 +57,31 @@ export default function LearnerCoursesPage() {
 
   const showChildDetail = Boolean(activeChildKey);
 
+  const setChildTab = (tab: ChildTab) => {
+    const params = new URLSearchParams(searchParams);
+    if (tab === 'homework') params.set('tab', 'homework');
+    else params.delete('tab');
+    setSearchParams(params);
+  };
+
   if (isParent) {
     const childLabel = selectedChild
       ? displayBranchName(selectedChild)
       : activeChildKey || 'Child';
 
-    const displayChild: SqlAccountChild | null = selectedChild
-      ?? (activeChildKey
-        ? { branchName: activeChildKey, attention: null, email: null, phone: null }
-        : null);
-
     return (
-      <div className="mx-auto max-w-4xl">
+      <div className="mx-auto max-w-3xl space-y-4">
         <PageHeader
           title="My Children"
           description={
             showChildDetail
-              ? `Enrolled classes for ${childLabel} from SQL Account`
-              : 'Children linked to your SQL Account family record'
+              ? `Classes and homework for ${childLabel}`
+              : 'Children linked to your SQL Account'
           }
         />
 
         {showChildDetail ? (
-          <div className="space-y-4">
+          <div className="space-y-3">
             <button
               type="button"
               onClick={() => setSearchParams({})}
@@ -83,29 +91,70 @@ export default function LearnerCoursesPage() {
               All children
             </button>
 
-            {displayChild ? (
-              loading && !selectedChild ? (
-                <SkeletonCard />
-              ) : (
-                <SqlAccountBranchCard child={displayChild} selected />
-              )
-            ) : null}
-
-            <SqlAccountChildEnrollmentsList
-              branchName={childLabel}
-              enrollments={enrollments}
-              loading={enrollmentsLoading}
-              error={enrollmentsError}
-              title={`${childLabel} — enrolled classes`}
-            />
+            <Card>
+              <SlidingTabs
+                tabs={['classes', 'homework'] as const}
+                value={childTab}
+                onChange={(v) => setChildTab(v as ChildTab)}
+                labels={{ classes: 'Classes', homework: 'Homework' }}
+              />
+              <CardContent className="p-0">
+                {childTab === 'classes' && (
+                  enrollmentsLoading ? (
+                    <p className="px-4 py-8 text-sm text-slate-500">Loading classes…</p>
+                  ) : enrollmentsError ? (
+                    <p className="px-4 py-8 text-sm text-red-600">{enrollmentsError}</p>
+                  ) : (
+                    <DataTable
+                      embedded
+                      data={enrollments}
+                      emptyMessage={`No classes enrolled for ${childLabel}.`}
+                      columns={[
+                        {
+                          key: 'className',
+                          header: 'Class',
+                          render: (e) => e.className ?? '—',
+                        },
+                        {
+                          key: 'conductedBy',
+                          header: 'Teacher',
+                          render: (e) => e.conductedBy ?? '—',
+                        },
+                        {
+                          key: 'schedule',
+                          header: 'Day / time',
+                          render: (e) =>
+                            e.classDay && e.classTime
+                              ? `${e.classDay} ${e.classTime}`
+                              : e.classDay ?? '—',
+                        },
+                        {
+                          key: 'from',
+                          header: 'From',
+                          render: (e) =>
+                            e.classDate ? formatDateDDMMYYYY(e.classDate.slice(0, 10)) : '—',
+                        },
+                      ]}
+                    />
+                  )
+                )}
+                {childTab === 'homework' && selectedChild && (
+                  <div className="p-4">
+                    <ParentChildHomeworkPanel branchName={selectedChild.branchName} />
+                  </div>
+                )}
+                {childTab === 'homework' && !selectedChild && activeChildKey && (
+                  <div className="p-4">
+                    <ParentChildHomeworkPanel branchName={activeChildKey} />
+                  </div>
+                )}
+              </CardContent>
+            </Card>
           </div>
         ) : (
           <>
             {childrenLoading ? (
-              <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
-                <SkeletonCard />
-                <SkeletonCard />
-              </div>
+              <SkeletonCard />
             ) : error ? (
               <EmptyState
                 icon={Users}
@@ -117,19 +166,42 @@ export default function LearnerCoursesPage() {
               <EmptyState
                 icon={Users}
                 title="No children found"
-                description="Sign in with a parent email linked in SQL Account (AR_CUSTOMER udf_email), e.g. parent@gmail.com."
+                description="Sign in with a parent email linked in SQL Account."
               />
             ) : (
-              <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
-                {children.map((child, index) => (
-                  <SqlAccountBranchCard
-                    key={branchKey(child)}
-                    child={child}
-                    index={index}
-                    onClick={() => setSearchParams({ child: branchKey(child) })}
+              <Card>
+                <CardContent className="p-0">
+                  <DataTable
+                    embedded
+                    data={children}
+                    columns={[
+                      {
+                        key: 'branchName',
+                        header: 'Branch',
+                        render: (c: SqlAccountChild) => (
+                          <button
+                            type="button"
+                            className="font-medium text-primary-600 hover:underline"
+                            onClick={() => setSearchParams({ child: branchKey(c) })}
+                          >
+                            {displayBranchName(c)}
+                          </button>
+                        ),
+                      },
+                      {
+                        key: 'attention',
+                        header: 'Attention',
+                        render: (c: SqlAccountChild) => c.attention || '—',
+                      },
+                      {
+                        key: 'email',
+                        header: 'Email',
+                        render: (c: SqlAccountChild) => c.email || '—',
+                      },
+                    ]}
                   />
-                ))}
-              </div>
+                </CardContent>
+              </Card>
             )}
           </>
         )}
@@ -166,7 +238,6 @@ function normalizeBranchKey(key: string | null): string {
 const GUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-/** Child drill-in from ?child= or legacy /parent/children/:courseId path (branch name). */
 function resolveActiveChildKey(childParam: string | null, courseId: string | undefined): string {
   const fromQuery = normalizeBranchKey(childParam);
   if (fromQuery) return fromQuery;

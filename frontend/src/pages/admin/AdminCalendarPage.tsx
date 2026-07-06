@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { CalendarDays, ChevronRight, GraduationCap, RefreshCw } from 'lucide-react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { PageHeader } from '@/components/PageHeader';
 import { CalendarSessionDetailModal } from '@/components/calendar/CalendarSessionDetailModal';
 import {
@@ -10,23 +9,16 @@ import {
 import { MonthCalendar } from '@/components/calendar/MonthCalendar';
 import type { CalendarEvent } from '@/components/calendar/WeekCalendar';
 import { Button } from '@/components/ui/Button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
+import { Card, CardContent } from '@/components/ui/Card';
 import { Select } from '@/components/ui/Input';
-import { StatusBadge } from '@/components/ui/StatusBadge';
 import { classesApi, calendarApi, classSessionsApi, coursesApi, enrollmentsApi, sqlAccountApi, teachersApi } from '@/api/resources';
 import { mockClasses, mockClassSessions, mockCourses, mockEnrollments, mockTeachers } from '@/utils/mockData';
 import { erpEventToCalendarEvent, erpEventsInRange } from '@/utils/erpCalendar';
 import { loadMockEnrollments } from '@/utils/mockEnrollmentStore';
-import { generateMockSessions, loadAllSessions, seedAdminCalendarSessions } from '@/utils/mockSessionStore';
+import { loadAllSessions, seedAdminCalendarSessions } from '@/utils/mockSessionStore';
 import { monthRange, sessionsInRange } from '@/utils/sessionGeneration';
 import type { ClassItem, ClassSession, Course, Enrollment } from '@/types';
 import type { ErpCalendarEvent, SqlAccountCalendarTeacher } from '@/types/sqlAccount';
-
-function addDays(date: Date, days: number) {
-  const next = new Date(date);
-  next.setDate(next.getDate() + days);
-  return next.toISOString().slice(0, 10);
-}
 
 export default function AdminCalendarPage() {
   const navigate = useNavigate();
@@ -39,7 +31,6 @@ export default function AdminCalendarPage() {
   const [sessions, setSessions] = useState<ClassSession[]>([]);
   const [erpEvents, setErpEvents] = useState<ErpCalendarEvent[]>([]);
   const [anchorDate, setAnchorDate] = useState(() => new Date());
-  const [generating, setGenerating] = useState(false);
   const [message, setMessage] = useState('');
   const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
   const [cancelTarget, setCancelTarget] = useState<CalendarEvent | null>(null);
@@ -270,76 +261,16 @@ export default function AdminCalendarPage() {
     });
   }, [events, teacherFilter, studentFilter, classIdsForStudent, studentOptions]);
 
-  const courseSummaries = useMemo(() => {
-    return courses
-      .map((course) => {
-        const courseClasses = classes.filter((c) => c.courseId === course.id);
-        const activeClasses = courseClasses.filter((c) => c.isActive);
-        const monthClassIds = new Set(courseClasses.map((c) => c.id));
-        const sessionsThisMonth = isMock
-          ? monthSessions.filter((s) => monthClassIds.has(s.classId)).length
-          : monthErpEvents.filter((e) => e.classId && monthClassIds.has(e.classId)).length;
-        return {
-          course,
-          classCount: activeClasses.length,
-          sessionsThisMonth,
-        };
-      })
-      .sort((a, b) => a.course.courseName.localeCompare(b.course.courseName));
-  }, [courses, classes, monthSessions, monthErpEvents, isMock]);
-
   const displayMonthCount = isMock ? monthSessions.length : monthErpEvents.length;
   const upcomingCount = isMock
     ? sessions.filter((s) => s.status === 'Scheduled').length
     : erpEvents.filter((e) => e.status === 'Scheduled').length;
 
-  const handleGenerate = async (weeks: number) => {
-    setGenerating(true);
-    setMessage('');
-    const from = new Date().toISOString().slice(0, 10);
-    const to = addDays(new Date(), weeks * 7);
-
-    try {
-      if (isMock) {
-        const result = generateMockSessions(classes, from, to);
-        setSessions(result.sessions);
-        setMessage(
-          `Generated ${result.createdCount} sessions (${result.skippedCount} skipped — already exist or holidays).`
-        );
-      } else {
-        const result = await classSessionsApi.generate({ fromDate: from, toDate: to });
-        setSessions((prev) => {
-          const byId = new Map(prev.map((s) => [s.id, s]));
-          for (const s of result.sessions) byId.set(s.id, s);
-          return [...byId.values()];
-        });
-        setMessage(`Generated ${result.createdCount} sessions (${result.skippedCount} skipped).`);
-        loadData();
-      }
-    } catch {
-      setMessage('Could not generate sessions — try again or use mock mode.');
-    } finally {
-      setGenerating(false);
-    }
-  };
-
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Calendar & Courses"
-        description="Monthly class schedule and course management in one place"
-        actions={
-          <div className="flex flex-wrap gap-2">
-            <Button type="button" variant="outline" disabled={generating} onClick={() => handleGenerate(4)}>
-              <RefreshCw className="mr-1.5 h-4 w-4" />
-              Generate 4 weeks
-            </Button>
-            <Button type="button" disabled={generating} onClick={() => handleGenerate(8)}>
-              <CalendarDays className="mr-1.5 h-4 w-4" />
-              Generate 8 weeks
-            </Button>
-          </div>
-        }
+        title="Calendar"
+        description="Monthly class schedule"
       />
 
       {message && (
@@ -451,37 +382,6 @@ export default function AdminCalendarPage() {
         onClose={() => setCancelTarget(null)}
         onConfirm={handleCancelConfirm}
       />
-
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
-          <div className="flex items-center gap-2">
-            <GraduationCap className="h-5 w-5 text-slate-500" />
-            <CardTitle className="text-base">Courses</CardTitle>
-          </div>
-          <p className="text-sm text-slate-500">{courses.length} total</p>
-        </CardHeader>
-        <CardContent className="divide-y divide-slate-100 p-0 pt-0">
-          {courseSummaries.map(({ course, classCount, sessionsThisMonth }) => (
-            <Link
-              key={course.id}
-              to={`/admin/courses/${course.id}`}
-              className="flex items-center justify-between gap-3 px-6 py-3.5 transition hover:bg-slate-50"
-            >
-              <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-2">
-                  <p className="font-medium text-slate-900">{course.courseName}</p>
-                  <StatusBadge status={course.isActive ? 'Active' : 'Inactive'} />
-                </div>
-                <p className="text-sm text-slate-500">
-                  {course.category} · {course.level} · {classCount} class{classCount === 1 ? '' : 'es'}
-                  {sessionsThisMonth > 0 && ` · ${sessionsThisMonth} sessions this month`}
-                </p>
-              </div>
-              <ChevronRight className="h-4 w-4 shrink-0 text-slate-400" />
-            </Link>
-          ))}
-        </CardContent>
-      </Card>
     </div>
   );
 }

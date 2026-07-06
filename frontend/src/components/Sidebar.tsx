@@ -7,7 +7,6 @@ import {
   CalendarDays,
   Megaphone,
   Settings,
-  NotebookPen,
   LogOut,
   X,
   History,
@@ -45,8 +44,6 @@ const teacherNav: NavItem[] = [
   { label: 'Dashboard', path: '/teacher/dashboard', icon: LayoutDashboard },
   { label: 'Schedule', path: '/teacher/calendar', icon: CalendarDays },
   { label: 'My Classes', path: '/teacher/classes', icon: Calendar },
-  { label: 'Lesson Notes', path: '/teacher/lesson-notes', icon: NotebookPen },
-  { label: 'Homework', path: '/teacher/homework', icon: BookOpenCheck },
   { label: 'Replacements', path: '/teacher/replacements', icon: RefreshCw },
   { label: 'Announcements', path: '/teacher/announcements', icon: Megaphone },
 ];
@@ -76,11 +73,13 @@ export default function Sidebar({ role, open, onClose }: SidebarProps) {
   const { logout } = useAuth();
   const { centreName } = useCentreBranding();
   const items = isStudentPortalRole(role)
-    ? learnerNav.map((item) => ({
-        ...item,
-        label: role === 'Parent' && item.parentLabel ? item.parentLabel : item.label,
-        path: learnerPortalPath(item.path, role),
-      }))
+    ? learnerNav
+        .filter((item) => !(role === 'Parent' && item.path === '/student/homework'))
+        .map((item) => ({
+          ...item,
+          label: role === 'Parent' && item.parentLabel ? item.parentLabel : item.label,
+          path: learnerPortalPath(item.path, role),
+        }))
     : navByRole[role as Exclude<UserRole, 'Parent'>];
 
   const handleLogout = () => {

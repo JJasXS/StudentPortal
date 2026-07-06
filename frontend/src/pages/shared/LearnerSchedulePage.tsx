@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ChevronLeft, ChevronRight, MoreVertical } from 'lucide-react';
 import { ScheduleLessonCard } from '@/components/schedule/ScheduleLessonCard';
 import { Button } from '@/components/ui/Button';
 import { useAuth } from '@/context/AuthContext';
@@ -84,6 +84,100 @@ function weekContainingDate(weeks: MonthWeek[], isoDate: string) {
   return weeks.find((w) => isoDate >= w.from && isoDate <= w.to)?.weekNum ?? weeks[0]?.weekNum ?? 1;
 }
 
+/** Monday-based week start (ISO date). */
+function startOfWeekMonday(date: Date): string {
+  const day = date.getDay();
+  const diff = day === 0 ? -6 : 1 - day;
+  const monday = new Date(date);
+  monday.setDate(date.getDate() + diff);
+  return monday.toISOString().slice(0, 10);
+}
+
+function addDaysToIso(iso: string, days: number): string {
+  const [y, m, d] = iso.split('-').map(Number);
+  const next = new Date(y, m - 1, d);
+  next.setDate(next.getDate() + days);
+  return next.toISOString().slice(0, 10);
+}
+
+function weekRangeFromMonday(mondayIso: string): MonthWeek {
+  return {
+    weekNum: 1,
+    from: mondayIso,
+    to: addDaysToIso(mondayIso, 6),
+  };
+}
+
+function isCurrentWeek(mondayIso: string): boolean {
+  return mondayIso === startOfWeekMonday(new Date());
+}
+
+function ChildFilterMenu({
+  childOptions,
+  childFilter,
+  onSelect,
+}: {
+  childOptions: string[];
+  childFilter: string;
+  onSelect: (branch: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handleClick = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [open]);
+
+  const label = childFilter || 'All children';
+
+  return (
+    <div className="relative mb-4 flex justify-end" ref={menuRef}>
+      <Button type="button" variant="outline" size="sm" onClick={() => setOpen((v) => !v)}>
+        <MoreVertical className="mr-1.5 h-4 w-4" />
+        {label}
+      </Button>
+      {open && (
+        <div className="absolute right-0 top-full z-20 mt-1 min-w-[10rem] rounded-lg border border-slate-200 bg-white py-1 shadow-lg">
+          <button
+            type="button"
+            className={cn(
+              'block w-full px-3 py-2 text-left text-sm hover:bg-slate-50',
+              childFilter === '' && 'font-medium text-primary-700'
+            )}
+            onClick={() => {
+              onSelect('');
+              setOpen(false);
+            }}
+          >
+            All children
+          </button>
+          {childOptions.map((branch) => (
+            <button
+              key={branch}
+              type="button"
+              className={cn(
+                'block w-full px-3 py-2 text-left text-sm capitalize hover:bg-slate-50',
+                childFilter === branch && 'font-medium text-primary-700'
+              )}
+              onClick={() => {
+                onSelect(branch);
+                setOpen(false);
+              }}
+            >
+              {branch}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ensureMockSessionsForMonth(classIds: Set<string>, year: number, month: number) {
   const enrolledClasses = mockClasses.filter((c) => classIds.has(c.id));
   if (enrolledClasses.length === 0) return;
@@ -106,6 +200,7 @@ export default function LearnerSchedulePage() {
     const n = new Date();
     return { year: n.getFullYear(), month: n.getMonth() };
   });
+  const [weekStart, setWeekStart] = useState(() => startOfWeekMonday(new Date()));
   const [sessions, setSessions] = useState<ClassSession[]>([]);
   const [erpEvents, setErpEvents] = useState<ErpCalendarEvent[]>([]);
   const [loading, setLoading] = useState(true);
@@ -156,18 +251,24 @@ export default function LearnerSchedulePage() {
 
   const classById = useMemo(() => new Map(mockClasses.map((c) => [c.id, c])), []);
 
+  const parentWeekRange = useMemo(() => weekRangeFromMonday(weekStart), [weekStart]);
+
+  const parentWeekItems = useMemo(() => {
+    const { from, to } = parentWeekRange;
+    return erpEvents
+      .filter((e) => {
+        const d = e.sessionDate.slice(0, 10);
+        return d >= from && d <= to;
+      })
+      .map((e) => erpEventToScheduleItem(e, { showBranch: !childFilter }))
+      .sort((a, b) => {
+        const cmp = a.sessionDate.localeCompare(b.sessionDate);
+        return cmp !== 0 ? cmp : a.startTime.localeCompare(b.startTime);
+      });
+  }, [erpEvents, parentWeekRange, childFilter]);
+
   const monthItems = useMemo(() => {
     const { from: start, to: end } = monthRange(anchor.year, anchor.month);
-
-    if (isParent) {
-      return erpEvents
-        .filter((e) => e.sessionDate >= start && e.sessionDate <= end)
-        .map((e) => erpEventToScheduleItem(e, { showBranch: !childFilter }))
-        .sort((a, b) => {
-          const cmp = a.sessionDate.localeCompare(b.sessionDate);
-          return cmp !== 0 ? cmp : a.startTime.localeCompare(b.startTime);
-        });
-    }
 
     return sessions
       .filter((s) => {
@@ -179,7 +280,7 @@ export default function LearnerSchedulePage() {
         const cmp = a.sessionDate.localeCompare(b.sessionDate);
         return cmp !== 0 ? cmp : a.startTime.localeCompare(b.startTime);
       });
-  }, [sessions, classIds, classById, anchor, isParent, erpEvents, childFilter]);
+  }, [sessions, classIds, classById, anchor]);
 
   const weeks = useMemo(
     () => monthWeeks(anchor.year, anchor.month),
@@ -213,6 +314,10 @@ export default function LearnerSchedulePage() {
     });
   };
 
+  const prevWeek = () => setWeekStart((w) => addDaysToIso(w, -7));
+  const nextWeek = () => setWeekStart((w) => addDaysToIso(w, 7));
+  const showingCurrentWeek = isCurrentWeek(weekStart);
+
   const childOptions = useMemo(() => {
     return children
       .map((child) => child.branchName?.trim())
@@ -242,38 +347,12 @@ export default function LearnerSchedulePage() {
         )}
       </div>
 
-      {isParent && (
-        <div className="-mx-4 mb-4 overflow-x-auto px-4 pb-1 [scrollbar-width:none] sm:-mx-1 sm:px-1 [&::-webkit-scrollbar]:hidden">
-          <div className="flex min-w-min snap-x snap-mandatory gap-2">
-            <button
-              type="button"
-              onClick={() => setChildFilter('')}
-              className={cn(
-                'min-h-11 shrink-0 snap-start rounded-full border px-4 py-2.5 text-sm font-medium transition touch-manipulation',
-                childFilter === ''
-                  ? 'border-primary-600 bg-primary-50 text-primary-700'
-                  : 'border-slate-200 bg-white text-slate-600 active:bg-slate-50'
-              )}
-            >
-              All
-            </button>
-            {childOptions.map((branch) => (
-              <button
-                key={branch}
-                type="button"
-                onClick={() => setChildFilter(branch)}
-                className={cn(
-                  'min-h-11 shrink-0 snap-start rounded-full border px-4 py-2.5 text-sm font-medium capitalize transition touch-manipulation',
-                  childFilter === branch
-                    ? 'border-primary-600 bg-primary-50 text-primary-700'
-                    : 'border-slate-200 bg-white text-slate-600 active:bg-slate-50'
-                )}
-              >
-                {branch}
-              </button>
-            ))}
-          </div>
-        </div>
+      {isParent && childOptions.length > 0 && (
+        <ChildFilterMenu
+          childOptions={childOptions}
+          childFilter={childFilter}
+          onSelect={setChildFilter}
+        />
       )}
 
       {(error || childrenError) && (
@@ -282,6 +361,59 @@ export default function LearnerSchedulePage() {
         </p>
       )}
 
+      {isParent ? (
+        <>
+          <div className="mb-4 flex items-center justify-between gap-1 sm:mb-5 sm:gap-2">
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={prevWeek}
+              aria-label="Previous week"
+              className="h-11 w-11 shrink-0 touch-manipulation sm:h-9 sm:w-auto"
+            >
+              <ChevronLeft className="h-5 w-5" />
+            </Button>
+            <div className="flex min-w-0 flex-1 flex-col items-center gap-1 px-1">
+              <span className="max-w-full truncate rounded-full bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-700 sm:px-4 sm:text-sm">
+                {showingCurrentWeek
+                  ? 'This week'
+                  : formatWeekRange(parentWeekRange.from, parentWeekRange.to)}
+              </span>
+              {showingCurrentWeek && (
+                <span className="text-xs text-slate-500">
+                  {formatWeekRange(parentWeekRange.from, parentWeekRange.to)}
+                </span>
+              )}
+            </div>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={nextWeek}
+              aria-label="Next week"
+              className="h-11 w-11 shrink-0 touch-manipulation sm:h-9 sm:w-auto"
+            >
+              <ChevronRight className="h-5 w-5" />
+            </Button>
+          </div>
+
+          {pageLoading ? (
+            <p className="text-sm text-slate-500">Loading schedule…</p>
+          ) : parentWeekItems.length === 0 ? (
+            <p className="rounded-xl border border-dashed border-slate-200 px-4 py-8 text-center text-sm text-slate-500">
+              No lessons scheduled this week.
+            </p>
+          ) : (
+            <div className="space-y-3">
+              {parentWeekItems.map((item) => (
+                <ScheduleLessonCard key={item.id} item={item} />
+              ))}
+            </div>
+          )}
+        </>
+      ) : (
+        <>
       <div className="mb-4 flex items-center justify-between gap-1 sm:mb-5 sm:gap-2">
         <Button
           type="button"
@@ -314,7 +446,6 @@ export default function LearnerSchedulePage() {
         <div className="flex min-w-min snap-x snap-mandatory gap-2">
           {weeks.map((week) => {
             const selected = activeWeek === week.weekNum;
-            const count = itemsInWeek(monthItems, week).length;
             return (
               <button
                 key={week.weekNum}
@@ -338,11 +469,6 @@ export default function LearnerSchedulePage() {
                 <p className="mt-0.5 text-[11px] leading-tight text-slate-500">
                   {formatWeekRange(week.from, week.to)}
                 </p>
-                {count > 0 && (
-                  <p className="mt-1 text-[10px] font-medium text-primary-600">
-                    {count} lesson{count === 1 ? '' : 's'}
-                  </p>
-                )}
               </button>
             );
           })}
@@ -416,6 +542,8 @@ export default function LearnerSchedulePage() {
               );
             })}
           </div>
+        </>
+      )}
         </>
       )}
     </div>

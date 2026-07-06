@@ -6,7 +6,6 @@ import { AnnouncementFormModal } from '@/components/AnnouncementFormModal';
 import { MergedAnnouncementsPanel } from '@/components/announcements/MergedAnnouncementsPanel';
 import { Button } from '@/components/ui/Button';
 import { announcementsApi } from '@/api/resources';
-import { mockAnnouncements } from '@/utils/mockData';
 import { formToAnnouncementPayload } from '@/utils/announcementForm';
 import {
   splitAnnouncementsForAdmin,
@@ -59,12 +58,8 @@ export function AnnouncementsPageContent(props: AnnouncementsPageContentProps) {
   const loadAnnouncements = useCallback(() => {
     announcementsApi
       .getAll()
-      .then((data) => {
-        setAnnouncements(
-          data.length >= mockAnnouncements.length ? data : mockAnnouncements
-        );
-      })
-      .catch(() => setAnnouncements(mockAnnouncements));
+      .then((data) => setAnnouncements(data))
+      .catch(() => setAnnouncements([]));
   }, []);
 
   useEffect(() => {

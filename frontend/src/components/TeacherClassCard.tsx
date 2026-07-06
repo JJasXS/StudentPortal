@@ -1,5 +1,4 @@
 import { Link } from 'react-router-dom';
-import { teacherClassAttendanceUrl } from '@/utils/attendanceLinks';
 import { Calendar, Clock, MapPin, Users, GraduationCap } from 'lucide-react';
 import { cn } from '@/utils/cn';
 import type { ClassItem } from '@/types';
@@ -71,18 +70,12 @@ export function TeacherClassCard({ classItem, className }: TeacherClassCardProps
           </li>
         </ul>
 
-        <div className="mt-auto flex gap-2 border-t border-slate-100 pt-3">
+        <div className="mt-auto border-t border-slate-100 pt-3">
           <Link
-            to={`/teacher/classes/${classItem.id}/sessions`}
-            className="flex-1 rounded-lg bg-primary-50 px-3 py-2 text-center text-sm font-medium text-primary-700 transition-colors hover:bg-primary-100"
+            to={`/teacher/classes/${classItem.id}`}
+            className="block rounded-lg bg-primary-50 px-3 py-2 text-center text-sm font-medium text-primary-700 transition-colors hover:bg-primary-100"
           >
-            Sessions
-          </Link>
-          <Link
-            to={teacherClassAttendanceUrl(classItem.id)}
-            className="flex-1 rounded-lg border border-slate-200 px-3 py-2 text-center text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50"
-          >
-            Attendance
+            Open class
           </Link>
         </div>
       </div>

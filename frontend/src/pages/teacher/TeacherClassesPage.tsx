@@ -22,13 +22,11 @@ export default function TeacherClassesPage() {
       .finally(() => setLoading(false));
   }, [user?.id]);
 
-  const countLabel = `${classes.length} class${classes.length === 1 ? '' : 'es'}`;
-
   return (
     <div>
       <PageHeader
         title="My Classes"
-        description={`Your teaching groups — open a class for sessions and attendance · ${countLabel}`}
+        description="Your teaching groups"
       />
 
       <Card>
@@ -41,7 +39,7 @@ export default function TeacherClassesPage() {
               <p className="mt-1 text-sm text-slate-500">No classes are assigned to you yet.</p>
             </div>
           ) : (
-            <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-3">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
               {classes.map((classItem) => (
                 <TeacherClassCard key={classItem.id} classItem={classItem} />
               ))}

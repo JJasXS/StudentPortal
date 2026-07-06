@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
 import {
   GraduationCap,
   Users,
@@ -38,26 +37,24 @@ export default function AdminDashboard() {
   const [enrollments, setEnrollments] = useState<Enrollment[]>(mockEnrollments);
   const [invoices, setInvoices] = useState<Invoice[]>(mockInvoices);
   const [loading, setLoading] = useState(true);
+  const useMockCharts = import.meta.env.VITE_USE_MOCK === 'true';
 
   useEffect(() => {
     setLoading(true);
-    const useMockCharts = import.meta.env.VITE_USE_MOCK === 'true';
-
     Promise.all([
-      studentsApi.getAll().catch(() => mockStudents),
-      teachersApi.getAll().catch(() => mockTeachers),
-      enrollmentsApi.getAll().catch(() => mockEnrollments),
-      invoicesApi.getAll().catch(() => mockInvoices),
+      studentsApi.getAll().catch(() => (useMockCharts ? mockStudents : [])),
+      teachersApi.getAll().catch(() => (useMockCharts ? mockTeachers : [])),
+      enrollmentsApi.getAll().catch(() => (useMockCharts ? mockEnrollments : [])),
+      invoicesApi.getAll().catch(() => (useMockCharts ? mockInvoices : [])),
     ])
       .then(([s, t, e, inv]) => {
-        setStudents(useMockCharts || s.length < mockStudents.length ? mockStudents : s);
+        setStudents(s);
         setTeachers(t);
-        setEnrollments(useMockCharts || e.length < mockEnrollments.length ? mockEnrollments : e);
-        const mergedInv = loadAllInvoices();
-        setInvoices(useMockCharts || inv.length < mockInvoices.length ? mergedInv : mergedInv);
+        setEnrollments(e);
+        setInvoices(useMockCharts ? loadAllInvoices() : inv);
       })
       .finally(() => setLoading(false));
-  }, []);
+  }, [useMockCharts]);
 
   const activeEnrollments = useMemo(
     () => enrollments.filter((e) => e.status === 'Active').length,
@@ -65,7 +62,6 @@ export default function AdminDashboard() {
   );
 
   const invoiceSummary = useMemo(() => buildInvoiceStatusSummary(invoices), [invoices]);
-
   const invoiceSeries = useMemo(() => buildInvoiceMonthlySeries(invoices), [invoices]);
   const studentsJoinedSeries = useMemo(
     () => buildStudentsJoinedMonthlySeries(enrollments),
@@ -75,21 +71,20 @@ export default function AdminDashboard() {
     () => buildEnrollmentMonthlySeries(enrollments),
     [enrollments]
   );
-
   const joinedThisMonth = useMemo(() => countEnrollmentsThisMonth(enrollments), [enrollments]);
 
   return (
-    <div>
+    <div className="space-y-4">
       <PageHeader
         title="Admin Dashboard"
-        description="Centre overview — students, enrollments, and invoices"
+        description="Centre overview"
       />
 
-      <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
-        <StatCard title="Total Students" value={students.length} icon={GraduationCap} />
-        <StatCard title="Total Teachers" value={teachers.length} icon={Users} />
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+        <StatCard title="Students" value={students.length} icon={GraduationCap} />
+        <StatCard title="Teachers" value={teachers.length} icon={Users} />
         <StatCard
-          title="Active Enrollments"
+          title="Active enrollments"
           value={activeEnrollments}
           icon={ClipboardList}
           description={joinedThisMonth > 0 ? `${joinedThisMonth} new this month` : undefined}
@@ -98,18 +93,17 @@ export default function AdminDashboard() {
           title="Revenue"
           value={`RM ${invoiceSummary.collectedAmount.toLocaleString('en-MY')}`}
           icon={Banknote}
-          description="Collected from paid invoices"
+          description="Collected"
         />
         <StatCard
-          title="Students Joined"
+          title="Students joined"
           value={studentsJoinedSeries.reduce((sum, p) => sum + p.count, 0)}
           icon={UserPlus}
-          description="All time (first enrollment)"
         />
       </div>
 
       {loading ? (
-        <p className="py-12 text-center text-sm text-slate-500">Loading analytics…</p>
+        <p className="py-8 text-center text-sm text-slate-500">Loading analytics…</p>
       ) : (
         <AdminDashboardCharts
           invoiceSeries={invoiceSeries}
@@ -117,16 +111,6 @@ export default function AdminDashboard() {
           enrollmentsSeries={enrollmentsSeries}
         />
       )}
-
-      <p className="mt-4 text-center text-sm text-slate-500">
-        <Link to="/admin/reports" className="font-medium text-primary-600 hover:text-primary-700">
-          Full reports &amp; exports →
-        </Link>
-        <span className="mx-2 text-slate-300">·</span>
-        <Link to="/admin/invoices" className="font-medium text-primary-600 hover:text-primary-700">
-          Manage invoices →
-        </Link>
-      </p>
     </div>
   );
 }

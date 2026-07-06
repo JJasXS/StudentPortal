@@ -3,7 +3,6 @@ import { Link, useLocation, useParams } from 'react-router-dom';
 import { ArrowLeft } from 'lucide-react';
 import { Breadcrumbs } from '@/components/ui/Breadcrumbs';
 import { announcementsApi } from '@/api/resources';
-import { mockAnnouncements } from '@/utils/mockData';
 import { announcementsListPath } from '@/utils/announcementLinks';
 import { isAnnouncementForRole } from '@/utils/announcements';
 import type { Announcement, UserRole } from '@/types';
@@ -38,12 +37,8 @@ export default function AnnouncementDetailPage(props: AnnouncementDetailPageProp
     setLoading(true);
     announcementsApi
       .getAll()
-      .then((data) => {
-        setAnnouncements(
-          data.length >= mockAnnouncements.length ? data : mockAnnouncements
-        );
-      })
-      .catch(() => setAnnouncements(mockAnnouncements))
+      .then(setAnnouncements)
+      .catch(() => setAnnouncements([]))
       .finally(() => setLoading(false));
   }, []);
 

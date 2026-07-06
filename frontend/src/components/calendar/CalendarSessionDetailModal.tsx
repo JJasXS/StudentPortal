@@ -130,7 +130,7 @@ export function CalendarSessionDetailModal({
       open={Boolean(event)}
       onClose={onClose}
       title="Class session"
-      className="max-w-md"
+      className="max-w-2xl"
       headerExtra={
         <EventActionsMenu event={event} onReplace={onReplace} onCancel={onCancel} onClose={onClose} />
       }

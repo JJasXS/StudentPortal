@@ -23,13 +23,11 @@ import AdminLeavePage from '@/pages/admin/AdminLeavePage';
 import SettingsPage from '@/pages/admin/SettingsPage';
 import TeacherDashboard from '@/pages/teacher/TeacherDashboard';
 import TeacherClassesPage from '@/pages/teacher/TeacherClassesPage';
-import ClassSessionsPage from '@/pages/teacher/ClassSessionsPage';
-import TakeAttendancePage from '@/pages/teacher/TakeAttendancePage';
-import TeacherLessonNotesPage from '@/pages/teacher/TeacherLessonNotesPage';
+import TeacherClassDetailPage from '@/pages/teacher/TeacherClassDetailPage';
 import TeacherAnnouncementsPage from '@/pages/teacher/TeacherAnnouncementsPage';
 import TeacherCalendarPage from '@/pages/teacher/TeacherCalendarPage';
-import TeacherHomeworkPage from '@/pages/teacher/TeacherHomeworkPage';
 import TeacherReplacementPage from '@/pages/teacher/TeacherReplacementPage';
+import ParentDashboardPage from '@/pages/parent/ParentDashboardPage';
 import StudentDashboard from '@/pages/student/StudentDashboard';
 import StudentHomeworkPage from '@/pages/student/StudentHomeworkPage';
 import StudentHomeworkClassPage from '@/pages/student/StudentHomeworkClassPage';
@@ -43,10 +41,10 @@ import AnnouncementDetailPage from '@/pages/shared/AnnouncementDetailPage';
 import { ParentStudentPathRedirect } from '@/components/ParentStudentPathRedirect';
 import { dashboardPathForRole } from '@/utils/learnerPortal';
 
-function LegacyTeacherAttendanceRedirect() {
+function LegacyTeacherClassRedirect() {
   const { classId } = useParams<{ classId: string }>();
   if (!classId) return <Navigate to="/teacher/classes" replace />;
-  return <Navigate to={`/teacher/classes/${classId}/attendance`} replace />;
+  return <Navigate to={`/teacher/classes/${classId}`} replace />;
 }
 
 function RoleRedirect() {
@@ -98,17 +96,18 @@ export default function AppRoutes() {
             <Route path="/teacher/dashboard" element={<TeacherDashboard />} />
             <Route path="/teacher/calendar" element={<TeacherCalendarPage />} />
             <Route path="/teacher/classes" element={<TeacherClassesPage />} />
-            <Route path="/teacher/classes/:classId/sessions" element={<ClassSessionsPage />} />
+            <Route path="/teacher/classes/:classId" element={<TeacherClassDetailPage />} />
+            <Route path="/teacher/classes/:classId/sessions" element={<LegacyTeacherClassRedirect />} />
             <Route
               path="/teacher/classes/:classId/sessions/:sessionId/attendance"
-              element={<TakeAttendancePage />}
+              element={<Navigate to="/teacher/classes" replace />}
             />
-            <Route path="/teacher/classes/:classId/attendance" element={<TakeAttendancePage />} />
+            <Route path="/teacher/classes/:classId/attendance" element={<LegacyTeacherClassRedirect />} />
             <Route path="/teacher/sessions" element={<Navigate to="/teacher/classes" replace />} />
             <Route path="/teacher/attendance" element={<Navigate to="/teacher/classes" replace />} />
-            <Route path="/teacher/attendance/:classId" element={<LegacyTeacherAttendanceRedirect />} />
-            <Route path="/teacher/lesson-notes" element={<TeacherLessonNotesPage />} />
-            <Route path="/teacher/homework" element={<TeacherHomeworkPage />} />
+            <Route path="/teacher/attendance/:classId" element={<LegacyTeacherClassRedirect />} />
+            <Route path="/teacher/lesson-notes" element={<Navigate to="/teacher/classes" replace />} />
+            <Route path="/teacher/homework" element={<Navigate to="/teacher/classes" replace />} />
             <Route path="/teacher/replacements" element={<TeacherReplacementPage />} />
             <Route path="/teacher/announcements" element={<TeacherAnnouncementsPage />} />
             <Route
@@ -145,19 +144,19 @@ export default function AppRoutes() {
           </Route>
 
           <Route element={<ProtectedRoute allowedRoles={['Parent']} />}>
-            <Route path="/parent/dashboard" element={<StudentDashboard />} />
+            <Route path="/parent/dashboard" element={<ParentDashboardPage />} />
             <Route path="/parent/schedule" element={<LearnerSchedulePage />} />
             <Route path="/parent/children/:courseId/:classId" element={<LearnerCoursesPage />} />
             <Route path="/parent/children/:courseId" element={<LearnerCoursesPage />} />
             <Route path="/parent/children" element={<LearnerCoursesPage />} />
             <Route path="/parent/lesson-notes" element={<LearnerLessonNotesPage />} />
-            <Route path="/parent/homework" element={<StudentHomeworkPage />} />
-            <Route path="/parent/homework/:classId" element={<StudentHomeworkClassPage />} />
+            <Route path="/parent/homework" element={<Navigate to="/parent/children" replace />} />
+            <Route path="/parent/homework/:classId" element={<Navigate to="/parent/children" replace />} />
             <Route path="/parent/leave" element={<StudentLeavePage />} />
             <Route path="/parent/announcements" element={<ParentAnnouncementsPage />} />
             <Route
               path="/parent/announcements/:announcementId"
-              element={<AnnouncementDetailPage mode="viewer" audience="Student" />}
+              element={<AnnouncementDetailPage mode="viewer" audience="Parent" />}
             />
             <Route path="/parent/notifications" element={<Navigate to="/parent/announcements" replace />} />
             <Route path="/parent/classes" element={<Navigate to="/parent/schedule" replace />} />
