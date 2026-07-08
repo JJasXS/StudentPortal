@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, FileText, Plus } from 'lucide-react';
+import { ArrowLeft, Download, FileText, Plus } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { useToast } from '@/context/ToastContext';
 import { PageHeader } from '@/components/PageHeader';
@@ -95,6 +95,14 @@ export default function TeacherClassDetailPage() {
     }
   };
 
+  const handleDownload = async (entry: PortalHomework) => {
+    try {
+      await homeworkApi.downloadFile(entry.id, entry.fileName);
+    } catch (err) {
+      showError(getApiErrorMessage(err, 'Could not download file.'));
+    }
+  };
+
   if (loading) {
     return <p className="text-sm text-slate-500">Loading class…</p>;
   }
@@ -183,7 +191,19 @@ export default function TeacherClassDetailPage() {
                       <p className="text-sm text-slate-600">{entry.title || entry.fileName || 'Homework'}</p>
                       <p className="text-xs text-slate-400">{formatDateDDMMYYYY(entry.createdAt)}</p>
                     </div>
-                    <FileText className="h-4 w-4 shrink-0 text-slate-400" />
+                    {entry.hasFile || entry.filePath ? (
+                      <button
+                        type="button"
+                        onClick={() => void handleDownload(entry)}
+                        className="inline-flex shrink-0 items-center gap-1 text-sm text-primary-600 hover:underline"
+                        title={entry.fileName ?? 'Download attachment'}
+                      >
+                        <Download className="h-4 w-4" />
+                        <FileText className="h-4 w-4" />
+                      </button>
+                    ) : (
+                      <FileText className="h-4 w-4 shrink-0 text-slate-400" />
+                    )}
                   </div>
                 ))}
               </div>

@@ -350,6 +350,7 @@ public record PortalHomeworkDto(
     string? Title,
     string? Note,
     string? FileName,
+    string? FilePath,
     string SubmittedBy,
     DateTime CreatedAt);
 
@@ -358,8 +359,7 @@ public record CreatePortalHomeworkRequest(
     int Seq,
     string BranchName,
     string? Title,
-    string? Note,
-    string? FileName);
+    string? Note);
 
 public record PortalLeaveRequestDto(
     string Id,

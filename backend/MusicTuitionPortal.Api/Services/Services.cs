@@ -1518,19 +1518,22 @@ public class ClassSessionService
     private readonly ClassSessionChangeHistoryService _history;
     private readonly ClassAssignmentChangeLogService _assignmentLogs;
     private readonly SqlAccountSodtlUdfSyncService _sodtlSync;
+    private readonly AnnouncementService _announcements;
 
     public ClassSessionService(
         AppDbContext context,
         AuditLogService audit,
         ClassSessionChangeHistoryService history,
         ClassAssignmentChangeLogService assignmentLogs,
-        SqlAccountSodtlUdfSyncService sodtlSync)
+        SqlAccountSodtlUdfSyncService sodtlSync,
+        AnnouncementService announcements)
     {
         _context = context;
         _audit = audit;
         _history = history;
         _assignmentLogs = assignmentLogs;
         _sodtlSync = sodtlSync;
+        _announcements = announcements;
     }
 
     public async Task<List<ClassSessionDto>> GetAllAsync() =>
@@ -1768,10 +1771,10 @@ public class ClassSessionService
         var to = DateTime.Parse(request.ToDate).Date;
         if (to < from) throw new ArgumentException("ToDate must be on or after FromDate.");
 
-        var holidayDates = (await _context.Announcements
+        var holidayDates = (await _announcements.GetAllAsync())
             .Where(a => a.HolidayDate != null)
             .Select(a => a.HolidayDate!.Value.Date)
-            .ToListAsync()).ToHashSet();
+            .ToHashSet();
 
         var classesQuery = _context.Classes.Where(c => c.IsActive);
         if (request.ClassId.HasValue)

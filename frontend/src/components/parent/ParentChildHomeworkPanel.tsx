@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { BookOpenCheck } from 'lucide-react';
+import { BookOpenCheck, Download } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { DataTable } from '@/components/ui/DataTable';
 import { Input, Label, Textarea } from '@/components/ui/Input';
@@ -26,7 +26,7 @@ export function ParentChildHomeworkPanel({ branchName }: ParentChildHomeworkPane
   const [selectedClass, setSelectedClass] = useState<SqlAccountChildEnrollment | null>(null);
   const [title, setTitle] = useState('');
   const [note, setNote] = useState('');
-  const [fileName, setFileName] = useState('');
+  const [file, setFile] = useState<File | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
   const loadSubmissions = useCallback(async () => {
@@ -61,17 +61,25 @@ export function ParentChildHomeworkPanel({ branchName }: ParentChildHomeworkPane
         branchName,
         title: title.trim(),
         note: note.trim() || undefined,
-        fileName: fileName.trim() || undefined,
+        file: file ?? undefined,
       });
       setTitle('');
       setNote('');
-      setFileName('');
+      setFile(null);
       await loadSubmissions();
       showSuccess('Homework submitted.');
     } catch (err) {
       showError(getApiErrorMessage(err, 'Could not submit homework.'));
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const handleDownload = async (entry: PortalHomework) => {
+    try {
+      await homeworkApi.downloadFile(entry.id, entry.fileName);
+    } catch (err) {
+      showError(getApiErrorMessage(err, 'Could not download file.'));
     }
   };
 
@@ -112,8 +120,13 @@ export function ParentChildHomeworkPanel({ branchName }: ParentChildHomeworkPane
             <Input value={title} onChange={(e) => setTitle(e.target.value)} />
           </div>
           <div className="space-y-1">
-            <Label>File name (optional)</Label>
-            <Input value={fileName} onChange={(e) => setFileName(e.target.value)} />
+            <Label>Attachment (optional)</Label>
+            <Input
+              type="file"
+              accept=".pdf,.doc,.docx,.txt,.jpg,.jpeg,.png,.gif,.webp,.zip,.mp3,.mp4"
+              onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+            />
+            {file && <p className="text-xs text-slate-500">Selected: {file.name}</p>}
           </div>
           <div className="space-y-1">
             <Label>Note (optional)</Label>
@@ -142,6 +155,23 @@ export function ParentChildHomeworkPanel({ branchName }: ParentChildHomeworkPane
               key: 'title',
               header: 'Title',
               render: (s) => s.title || s.fileName || 'Homework',
+            },
+            {
+              key: 'file',
+              header: 'File',
+              render: (s) =>
+                s.hasFile || s.filePath ? (
+                  <button
+                    type="button"
+                    onClick={() => void handleDownload(s)}
+                    className="inline-flex items-center gap-1 text-sm font-medium text-primary-600 hover:underline"
+                  >
+                    <Download className="h-3.5 w-3.5" />
+                    {s.fileName || 'Download'}
+                  </button>
+                ) : (
+                  '—'
+                ),
             },
             {
               key: 'createdAt',

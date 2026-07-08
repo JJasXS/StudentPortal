@@ -11,6 +11,7 @@ public static class PortalFirebirdSchema
         await EnsurePortalClassSessionsTableAsync(connection, cancellationToken);
         await EnsurePortalSoLineScheduleTableAsync(connection, cancellationToken);
         await EnsurePortalHomeworkTableAsync(connection, cancellationToken);
+        await EnsurePortalHomeworkFilePathColumnAsync(connection, cancellationToken);
         await EnsurePortalLeaveRequestsTableAsync(connection, cancellationToken);
         await EnsurePortalAnnouncementsTableAsync(connection, cancellationToken);
     }
@@ -99,6 +100,7 @@ public static class PortalFirebirdSchema
                 TITLE VARCHAR(200),
                 NOTE VARCHAR(2000),
                 FILENAME VARCHAR(255),
+                FILEPATH VARCHAR(500),
                 SUBMITTEDBY VARCHAR(200) NOT NULL,
                 CREATEDAT TIMESTAMP NOT NULL
             )
@@ -109,6 +111,24 @@ public static class PortalFirebirdSchema
         {
             await using var cmd = new FbCommand(sql, connection);
             await cmd.ExecuteNonQueryAsync(ct);
+        }
+    }
+
+    private static async Task EnsurePortalHomeworkFilePathColumnAsync(FbConnection connection, CancellationToken ct)
+    {
+        if (!await TableExistsAsync(connection, "PORTAL_HOMEWORK", ct))
+            return;
+
+        try
+        {
+            await using var cmd = new FbCommand(
+                "ALTER TABLE PORTAL_HOMEWORK ADD FILEPATH VARCHAR(500)",
+                connection);
+            await cmd.ExecuteNonQueryAsync(ct);
+        }
+        catch
+        {
+            // Column already exists
         }
     }
 

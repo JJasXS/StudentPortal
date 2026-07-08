@@ -28,7 +28,7 @@ export default function StudentHomeworkPage() {
   const [loadingSubmissions, setLoadingSubmissions] = useState(false);
   const [title, setTitle] = useState('');
   const [note, setNote] = useState('');
-  const [fileName, setFileName] = useState('');
+  const [file, setFile] = useState<File | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
   const { enrollments, loading: loadingEnrollments } = useSqlAccountChildEnrollments(
@@ -84,11 +84,11 @@ export default function StudentHomeworkPage() {
         branchName: selectedChild.branchName,
         title: title.trim(),
         note: note.trim() || undefined,
-        fileName: fileName.trim() || undefined,
+        file: file ?? undefined,
       });
       setTitle('');
       setNote('');
-      setFileName('');
+      setFile(null);
       await loadSubmissions(selectedChild.branchName);
       showSuccess('Homework submitted — your teacher can review it.');
     } catch (err) {
@@ -251,13 +251,14 @@ export default function StudentHomeworkPage() {
                 />
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="hw-file">File name (optional)</Label>
+                <Label htmlFor="hw-file">Attachment (optional)</Label>
                 <Input
                   id="hw-file"
-                  value={fileName}
-                  onChange={(e) => setFileName(e.target.value)}
-                  placeholder="e.g. scales-week5.pdf"
+                  type="file"
+                  accept=".pdf,.doc,.docx,.txt,.jpg,.jpeg,.png,.gif,.webp,.zip,.mp3,.mp4"
+                  onChange={(e) => setFile(e.target.files?.[0] ?? null)}
                 />
+                {file && <p className="text-xs text-slate-500">Selected: {file.name}</p>}
               </div>
               <Button
                 type="button"

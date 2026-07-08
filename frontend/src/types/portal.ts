@@ -18,6 +18,8 @@ export interface PortalHomework {
   title?: string | null;
   note?: string | null;
   fileName?: string | null;
+  filePath?: string | null;
+  hasFile?: boolean;
   submittedBy: string;
   createdAt: string;
 }

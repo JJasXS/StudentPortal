@@ -12,10 +12,9 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { SkeletonCard } from '@/components/ui/Skeleton';
 import { useSqlAccountChildren } from '@/hooks/useSqlAccountChildren';
 import { useSqlAccountChildEnrollments } from '@/hooks/useSqlAccountChildEnrollments';
+import { useStudentPortalData } from '@/hooks/useStudentPortalData';
 import type { SqlAccountChild } from '@/types/sqlAccount';
-import { mockLessonNotes } from '@/utils/mockData';
 import { formatDateDDMMYYYY } from '@/utils/dateFormat';
-import { resolveLearnerStudentId } from '@/utils/learnerCourses';
 import { learnerCoursesPath } from '@/utils/learnerPortal';
 
 type ChildTab = 'classes' | 'homework';
@@ -50,10 +49,12 @@ export default function LearnerCoursesPage() {
 
   const childrenLoading = isParent && (authLoading || loading || !hasFetched);
 
-  const mockStudentId = useMemo(
-    () => resolveLearnerStudentId(user?.email, user?.id),
-    [user?.email, user?.id]
-  );
+  const {
+    studentUserId,
+    lessonNotes,
+    loading: studentPortalLoading,
+    error: studentPortalError,
+  } = useStudentPortalData(!isParent);
 
   const showChildDetail = Boolean(activeChildKey);
 
@@ -215,13 +216,19 @@ export default function LearnerCoursesPage() {
         title="My Courses"
         description="Course → class → lesson notes from your teachers"
       />
-      <CourseClassLessonNotesExplorer
-        studentUserId={mockStudentId}
-        notes={mockLessonNotes}
-        title="Courses"
-        coursesBasePath={coursesBasePath}
-        urlSync
-      />
+      {studentPortalLoading ? (
+        <SkeletonCard />
+      ) : studentPortalError ? (
+        <p className="text-sm text-red-600">{studentPortalError}</p>
+      ) : (
+        <CourseClassLessonNotesExplorer
+          studentUserId={studentUserId ?? ''}
+          notes={lessonNotes}
+          title="Courses"
+          coursesBasePath={coursesBasePath}
+          urlSync
+        />
+      )}
     </div>
   );
 }

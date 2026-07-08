@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using MusicTuitionPortal.Api.DTOs;
 using MusicTuitionPortal.Api.Services;
+using System.Security.Claims;
 
 namespace MusicTuitionPortal.Api.Controllers;
 
@@ -11,7 +12,13 @@ namespace MusicTuitionPortal.Api.Controllers;
 public class HomeworkController : ControllerBase
 {
     private readonly PortalHomeworkService _service;
-    public HomeworkController(PortalHomeworkService service) => _service = service;
+    private readonly HomeworkFileStorageService _files;
+
+    public HomeworkController(PortalHomeworkService service, HomeworkFileStorageService files)
+    {
+        _service = service;
+        _files = files;
+    }
 
     [HttpGet]
     [Authorize(Roles = "Admin,Teacher")]
@@ -22,26 +29,88 @@ public class HomeworkController : ControllerBase
     [Authorize(Roles = "Parent")]
     public async Task<IActionResult> GetMine([FromQuery] string? branchName, CancellationToken cancellationToken)
     {
-        var email = User.FindFirst(System.Security.Claims.ClaimTypes.Email)?.Value;
+        var email = User.FindFirst(ClaimTypes.Email)?.Value;
         if (string.IsNullOrWhiteSpace(email)) return Unauthorized();
         return Ok((await _service.GetForParentAsync(email, branchName, cancellationToken)).Select(MapHw).ToList());
     }
 
     [HttpPost]
     [Authorize(Roles = "Parent")]
-    public async Task<IActionResult> Submit([FromBody] CreatePortalHomeworkRequest request, CancellationToken cancellationToken)
+    [Consumes("multipart/form-data")]
+    [RequestSizeLimit(HomeworkFileStorageService.MaxBytes)]
+    public async Task<IActionResult> Submit(
+        [FromForm] int docKey,
+        [FromForm] int seq,
+        [FromForm] string branchName,
+        [FromForm] string? title,
+        [FromForm] string? note,
+        [FromForm] IFormFile? file,
+        CancellationToken cancellationToken)
     {
-        var email = User.FindFirst(System.Security.Claims.ClaimTypes.Email)?.Value;
+        var email = User.FindFirst(ClaimTypes.Email)?.Value;
         if (string.IsNullOrWhiteSpace(email)) return Unauthorized();
-        try { return Ok(MapHw(await _service.SubmitAsync(email, request, cancellationToken))); }
-        catch (InvalidOperationException ex) { return BadRequest(new { message = ex.Message }); }
+
+        var request = new CreatePortalHomeworkRequest(docKey, seq, branchName, title, note);
+        try
+        {
+            return Ok(MapHw(await _service.SubmitAsync(email, request, file, cancellationToken)));
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+    }
+
+    [HttpGet("{id}/file")]
+    public async Task<IActionResult> DownloadFile(string id, CancellationToken cancellationToken)
+    {
+        var homework = await _service.GetByIdAsync(id, cancellationToken);
+        if (homework == null || string.IsNullOrWhiteSpace(homework.FilePath))
+            return NotFound();
+
+        var email = User.FindFirst(ClaimTypes.Email)?.Value;
+        var role = User.FindFirst(ClaimTypes.Role)?.Value;
+        if (string.IsNullOrWhiteSpace(role))
+            return Unauthorized();
+
+        var allowed = role switch
+        {
+            "Admin" => true,
+            "Parent" when !string.IsNullOrWhiteSpace(email) =>
+                await _service.CanParentAccessAsync(email, homework, cancellationToken),
+            "Teacher" => await _service.CanTeacherAccessAsync(
+                User.Identity?.Name ?? string.Empty,
+                homework,
+                cancellationToken),
+            _ => false,
+        };
+
+        if (!allowed)
+            return Forbid();
+
+        if (!_files.TryOpenRead(homework.FilePath, out var stream) || stream == null)
+            return NotFound();
+
+        var downloadName = string.IsNullOrWhiteSpace(homework.FileName) ? "homework" : homework.FileName;
+        return File(stream, "application/octet-stream", downloadName);
     }
 
     private static object MapHw(PortalHomeworkDto h) => new
     {
-        id = h.Id, docKey = h.DocKey, seq = h.Seq, customerCode = h.CustomerCode, branchName = h.BranchName,
-        className = h.ClassName, itemCode = h.ItemCode, title = h.Title, note = h.Note, fileName = h.FileName,
-        submittedBy = h.SubmittedBy, createdAt = h.CreatedAt,
+        id = h.Id,
+        docKey = h.DocKey,
+        seq = h.Seq,
+        customerCode = h.CustomerCode,
+        branchName = h.BranchName,
+        className = h.ClassName,
+        itemCode = h.ItemCode,
+        title = h.Title,
+        note = h.Note,
+        fileName = h.FileName,
+        filePath = h.FilePath,
+        hasFile = !string.IsNullOrWhiteSpace(h.FilePath),
+        submittedBy = h.SubmittedBy,
+        createdAt = h.CreatedAt,
     };
 }
 
@@ -62,7 +131,7 @@ public class LeaveController : ControllerBase
     [Authorize(Roles = "Parent")]
     public async Task<IActionResult> GetMine(CancellationToken cancellationToken)
     {
-        var email = User.FindFirst(System.Security.Claims.ClaimTypes.Email)?.Value;
+        var email = User.FindFirst(ClaimTypes.Email)?.Value;
         if (string.IsNullOrWhiteSpace(email)) return Unauthorized();
         return Ok((await _service.GetForParentAsync(email, cancellationToken)).Select(MapLeave).ToList());
     }
@@ -79,7 +148,7 @@ public class LeaveController : ControllerBase
     [Authorize(Roles = "Parent")]
     public async Task<IActionResult> Submit([FromBody] CreatePortalLeaveRequest request, CancellationToken cancellationToken)
     {
-        var email = User.FindFirst(System.Security.Claims.ClaimTypes.Email)?.Value;
+        var email = User.FindFirst(ClaimTypes.Email)?.Value;
         if (string.IsNullOrWhiteSpace(email)) return Unauthorized();
         try { return Ok(MapLeave(await _service.SubmitAsync(email, request, cancellationToken))); }
         catch (InvalidOperationException ex) { return BadRequest(new { message = ex.Message }); }

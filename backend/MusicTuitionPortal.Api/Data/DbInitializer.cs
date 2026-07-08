@@ -22,7 +22,10 @@ public static class DbInitializer
             .Contains("Firebird", StringComparison.OrdinalIgnoreCase);
 
         if (isFirebird)
+        {
             await EnsureFirebirdEfTablesAsync(context);
+            await EnsureFirebirdIncrementalSchemaAsync(context);
+        }
         else
             await context.Database.EnsureCreatedAsync();
 
@@ -34,7 +37,6 @@ public static class DbInitializer
             await EnsureCentreSettingsColumnsAsync(context);
             await EnsurePasswordResetsTableAsync(context);
             await EnsureLoginOtpsTableAsync(context);
-            await EnsureDefaultCentreSettingsAsync(context, configuration);
             await EnsureInvoiceCourseColumnsAsync(context);
             await EnsureInvoiceBillingColumnsAsync(context);
             await EnsureAuditLogsTableAsync(context);
@@ -42,10 +44,8 @@ public static class DbInitializer
             await EnsureItemCodeClassLinksTableAsync(context);
             await EnsureClassSessionChangeHistoriesTableAsync(context);
         }
-        else
-        {
-            await EnsureDefaultCentreSettingsAsync(context, configuration);
-        }
+
+        await EnsureDefaultCentreSettingsAsync(context, configuration);
 
         await EnsurePortalFirebirdTablesAsync(scope.ServiceProvider);
 
@@ -919,6 +919,30 @@ public static class DbInitializer
 
         var creator = context.GetService<IRelationalDatabaseCreator>();
         await creator.CreateTablesAsync();
+    }
+
+    private static async Task EnsureFirebirdIncrementalSchemaAsync(AppDbContext context)
+    {
+        async Task TryAlter(string sql)
+        {
+            try { await context.Database.ExecuteSqlRawAsync(sql); } catch { }
+        }
+
+        await TryAlter("ALTER TABLE \"TeacherProfiles\" ADD \"EmploymentType\" VARCHAR(50) DEFAULT 'FullTime' NOT NULL");
+        await TryAlter("ALTER TABLE \"Classes\" ADD \"StartDate\" TIMESTAMP");
+        await TryAlter("ALTER TABLE \"Classes\" ADD \"EndDate\" TIMESTAMP");
+        await TryAlter("ALTER TABLE \"Invoices\" ADD \"BillingPeriod\" VARCHAR(100)");
+        await TryAlter("ALTER TABLE \"Invoices\" ADD \"PaidAt\" TIMESTAMP");
+        await TryAlter("ALTER TABLE \"Invoices\" ADD \"BillplzBillId\" VARCHAR(100)");
+        await TryAlter("ALTER TABLE \"Invoices\" ADD \"CourseName\" VARCHAR(500)");
+        await TryAlter("ALTER TABLE \"Invoices\" ADD \"ClassName\" VARCHAR(500)");
+        await TryAlter("ALTER TABLE \"CentreSettings\" ADD \"Address\" VARCHAR(1000)");
+        await TryAlter("ALTER TABLE \"CentreSettings\" ADD \"Phone\" VARCHAR(50)");
+        await TryAlter("ALTER TABLE \"CentreSettings\" ADD \"Email\" VARCHAR(255)");
+        await TryAlter("ALTER TABLE \"CentreSettings\" ADD \"BankName\" VARCHAR(255)");
+        await TryAlter("ALTER TABLE \"CentreSettings\" ADD \"BankAccountNo\" VARCHAR(100)");
+        await TryAlter("ALTER TABLE \"CentreSettings\" ADD \"InvoicePrefix\" VARCHAR(20) DEFAULT 'INV' NOT NULL");
+        await TryAlter("ALTER TABLE \"CentreSettings\" ADD \"LogoDataUrl\" BLOB SUB_TYPE TEXT");
     }
 
     private static async Task<bool> EfPortalTableExistsAsync(AppDbContext context, string tableName)

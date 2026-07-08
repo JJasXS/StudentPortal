@@ -1,21 +1,19 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronLeft, ChevronRight, MoreVertical } from 'lucide-react';
 import { ScheduleLessonCard } from '@/components/schedule/ScheduleLessonCard';
+import type { ScheduleLessonItem } from '@/components/schedule/ScheduleLessonCard';
 import { Button } from '@/components/ui/Button';
 import { useAuth } from '@/context/AuthContext';
-import { useLearnerContext } from '@/hooks/useLearnerContext';
 import { useSqlAccountChildren } from '@/hooks/useSqlAccountChildren';
+import { useStudentPortalData } from '@/hooks/useStudentPortalData';
 import { parentsApi } from '@/api/resources';
 import { cn } from '@/utils/cn';
-import { mockClasses, mockEnrollments } from '@/utils/mockData';
 import { generateMockSessions, loadAllSessions } from '@/utils/mockSessionStore';
 import {
   erpEventToScheduleItem,
-  resolveMockStudentUserId,
   sessionToScheduleItem,
 } from '@/utils/learnerSchedule';
-import type { ScheduleLessonItem } from '@/components/schedule/ScheduleLessonCard';
-import type { ClassSession } from '@/types';
+import type { ClassItem, ClassSession } from '@/types';
 import type { ErpCalendarEvent } from '@/types/sqlAccount';
 
 interface MonthWeek {
@@ -178,8 +176,13 @@ function ChildFilterMenu({
   );
 }
 
-function ensureMockSessionsForMonth(classIds: Set<string>, year: number, month: number) {
-  const enrolledClasses = mockClasses.filter((c) => classIds.has(c.id));
+function ensureMockSessionsForMonth(
+  classes: ClassItem[],
+  classIds: Set<string>,
+  year: number,
+  month: number
+) {
+  const enrolledClasses = classes.filter((c) => classIds.has(c.id));
   if (enrolledClasses.length === 0) return;
   const { from, to } = monthRange(year, month);
   generateMockSessions(enrolledClasses, from, to);
@@ -187,15 +190,17 @@ function ensureMockSessionsForMonth(classIds: Set<string>, year: number, month: 
 
 export default function LearnerSchedulePage() {
   const { user } = useAuth();
-  const { user: learnerUser } = useLearnerContext();
   const isParent = user?.role === 'Parent';
   const isMock = import.meta.env.VITE_USE_MOCK === 'true';
   const { children, loading: childrenLoading, error: childrenError } = useSqlAccountChildren(isParent);
-
-  const mockStudentId = useMemo(
-    () => resolveMockStudentUserId(learnerUser?.email),
-    [learnerUser?.email]
-  );
+  const {
+    classIds,
+    classes: studentClasses,
+    sessions: portalSessions,
+    loading: portalLoading,
+    error: portalError,
+    isMock: portalMock,
+  } = useStudentPortalData(!isParent);
   const [anchor, setAnchor] = useState(() => {
     const n = new Date();
     return { year: n.getFullYear(), month: n.getMonth() };
@@ -208,22 +213,12 @@ export default function LearnerSchedulePage() {
   const [activeWeek, setActiveWeek] = useState<number | null>(null);
   const [childFilter, setChildFilter] = useState('');
 
-  const classIds = useMemo(() => {
-    const ids = new Set<string>();
-    for (const e of mockEnrollments) {
-      if (e.studentUserId === mockStudentId && e.status === 'Active') {
-        ids.add(e.classId);
-      }
-    }
-    return ids;
-  }, [mockStudentId]);
-
   const loadStudentSchedule = useCallback(() => {
     setLoading(true);
-    ensureMockSessionsForMonth(classIds, anchor.year, anchor.month);
-    setSessions(loadAllSessions());
+    ensureMockSessionsForMonth(studentClasses, classIds, anchor.year, anchor.month);
+    setSessions(loadAllSessions().filter((s) => classIds.has(s.classId)));
     setLoading(false);
-  }, [anchor.month, anchor.year, classIds]);
+  }, [anchor.month, anchor.year, classIds, studentClasses]);
 
   const loadParentSchedule = useCallback(async () => {
     setLoading(true);
@@ -246,10 +241,27 @@ export default function LearnerSchedulePage() {
       void loadParentSchedule();
       return;
     }
-    loadStudentSchedule();
-  }, [isParent, loadParentSchedule, loadStudentSchedule]);
+    if (portalMock) {
+      loadStudentSchedule();
+      return;
+    }
+    setSessions(portalSessions);
+    setLoading(portalLoading);
+    setError(portalError);
+  }, [
+    isParent,
+    loadParentSchedule,
+    loadStudentSchedule,
+    portalMock,
+    portalSessions,
+    portalLoading,
+    portalError,
+  ]);
 
-  const classById = useMemo(() => new Map(mockClasses.map((c) => [c.id, c])), []);
+  const classById = useMemo(
+    () => new Map(studentClasses.map((c) => [c.id, c])),
+    [studentClasses]
+  );
 
   const parentWeekRange = useMemo(() => weekRangeFromMonday(weekStart), [weekStart]);
 
@@ -355,9 +367,9 @@ export default function LearnerSchedulePage() {
         />
       )}
 
-      {(error || childrenError) && (
+      {(error || childrenError || (!isParent && portalError)) && (
         <p className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800 sm:px-4">
-          {error || childrenError}
+          {error || childrenError || portalError}
         </p>
       )}
 

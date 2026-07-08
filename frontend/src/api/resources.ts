@@ -164,8 +164,28 @@ export const homeworkApi = {
     branchName: string;
     title?: string;
     note?: string;
-    fileName?: string;
-  }) => apiClient.post<PortalHomework>('/homework', data).then((r) => r.data),
+    file?: File;
+  }) => {
+    const form = new FormData();
+    form.append('docKey', String(data.docKey));
+    form.append('seq', String(data.seq));
+    form.append('branchName', data.branchName);
+    if (data.title) form.append('title', data.title);
+    if (data.note) form.append('note', data.note);
+    if (data.file) form.append('file', data.file);
+    return apiClient.post<PortalHomework>('/homework', form).then((r) => r.data);
+  },
+  downloadFile: async (id: string, fileName?: string | null) => {
+    const response = await apiClient.get(`/homework/${id}/file`, { responseType: 'blob' });
+    const url = window.URL.createObjectURL(response.data);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = fileName?.trim() || 'homework';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.URL.revokeObjectURL(url);
+  },
 };
 
 export const leaveApi = {

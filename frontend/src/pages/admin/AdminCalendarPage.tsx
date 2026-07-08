@@ -9,10 +9,9 @@ import {
 import { MonthCalendar } from '@/components/calendar/MonthCalendar';
 import type { CalendarEvent } from '@/components/calendar/WeekCalendar';
 import { Button } from '@/components/ui/Button';
-import { Card, CardContent } from '@/components/ui/Card';
 import { Select } from '@/components/ui/Input';
 import { classesApi, calendarApi, classSessionsApi, coursesApi, enrollmentsApi, sqlAccountApi, teachersApi } from '@/api/resources';
-import { mockClasses, mockClassSessions, mockCourses, mockEnrollments, mockTeachers } from '@/utils/mockData';
+import { mockClasses, mockCourses, mockTeachers } from '@/utils/mockData';
 import { erpEventToCalendarEvent, erpEventsInRange } from '@/utils/erpCalendar';
 import { loadMockEnrollments } from '@/utils/mockEnrollmentStore';
 import { loadAllSessions, seedAdminCalendarSessions } from '@/utils/mockSessionStore';
@@ -42,7 +41,7 @@ export default function AdminCalendarPage() {
   const loadData = useCallback(() => {
     const sessionsSource = isMock
       ? Promise.resolve(loadAllSessions())
-      : classSessionsApi.getAll().catch(() => mockClassSessions);
+      : classSessionsApi.getAll().catch(() => [] as ClassSession[]);
 
     const erpEventsSource = isMock
       ? Promise.resolve([] as ErpCalendarEvent[])
@@ -57,11 +56,11 @@ export default function AdminCalendarPage() {
             portalUserId: t.userId,
           }))
         )
-      : teachersApi.getCalendarFilter().catch(() => []);
+      : teachersApi.getCalendarFilter().catch(() => [] as SqlAccountCalendarTeacher[]);
 
     const enrollmentsSource = isMock
       ? Promise.resolve(loadMockEnrollments())
-      : enrollmentsApi.getAll().catch(() => mockEnrollments);
+      : enrollmentsApi.getAll().catch(() => [] as Enrollment[]);
 
     const branchesSource = isMock
       ? Promise.resolve([] as string[])
@@ -77,18 +76,24 @@ export default function AdminCalendarPage() {
           .catch(() => [] as string[]);
 
     Promise.all([
-      classesApi.getAll().catch(() => mockClasses),
-      coursesApi.getAll().catch(() => mockCourses),
+      isMock ? classesApi.getAll().catch(() => mockClasses) : classesApi.getAll().catch(() => []),
+      isMock ? coursesApi.getAll().catch(() => mockCourses) : coursesApi.getAll().catch(() => []),
       teachersSource,
       enrollmentsSource,
       branchesSource,
       sessionsSource,
       erpEventsSource,
     ]).then(([classList, courseList, teacherList, enrollmentList, branchList, sessionList, erpList]) => {
-      setClasses(classList.length >= mockClasses.length ? classList : mockClasses);
-      setCourses(courseList.length >= mockCourses.length ? courseList : mockCourses);
+      if (isMock) {
+        setClasses(classList.length >= mockClasses.length ? classList : mockClasses);
+        setCourses(courseList.length >= mockCourses.length ? courseList : mockCourses);
+        setEnrollments(enrollmentList.length ? enrollmentList : loadMockEnrollments());
+      } else {
+        setClasses(classList);
+        setCourses(courseList);
+        setEnrollments(enrollmentList);
+      }
       setTeachers(teacherList);
-      setEnrollments(enrollmentList.length ? enrollmentList : isMock ? loadMockEnrollments() : mockEnrollments);
       setErpBranches(branchList);
       setSessions(sessionList);
       setErpEvents(erpList);
@@ -177,6 +182,15 @@ export default function AdminCalendarPage() {
   }, [isMock, erpEvents.length, monthErpEvents, monthSessions, classById, courseById]);
 
   const teacherOptions = useMemo(() => {
+    if (!isMock) {
+      return teachers
+        .map((teacher) => ({
+          id: teacher.portalUserId ?? teacher.erpUserId,
+          name: teacher.fullName,
+        }))
+        .sort((a, b) => a.name.localeCompare(b.name));
+    }
+
     const byId = new Map<string, string>();
     for (const cls of classes) {
       if (cls.teacherUserId && cls.teacherName) {
@@ -184,14 +198,13 @@ export default function AdminCalendarPage() {
       }
     }
     for (const teacher of teachers) {
-      if (teacher.portalUserId) {
-        byId.set(teacher.portalUserId, teacher.fullName);
-      }
+      const id = teacher.portalUserId ?? teacher.erpUserId;
+      if (id) byId.set(id, teacher.fullName);
     }
     return [...byId.entries()]
       .map(([id, name]) => ({ id, name }))
       .sort((a, b) => a.name.localeCompare(b.name));
-  }, [classes, teachers]);
+  }, [classes, isMock, teachers]);
 
   const studentOptions = useMemo(() => {
     const branches = new Set<string>();
@@ -238,8 +251,19 @@ export default function AdminCalendarPage() {
       : null;
 
     return events.filter((event) => {
-      if (teacherFilter && event.teacherUserId !== teacherFilter) {
-        return false;
+      if (teacherFilter) {
+        const matchesTeacherId = event.teacherUserId === teacherFilter;
+        const selectedTeacher = teachers.find(
+          (t) => (t.portalUserId ?? t.erpUserId) === teacherFilter
+        );
+        const matchesTeacherName =
+          selectedTeacher != null &&
+          event.teacherName?.localeCompare(selectedTeacher.fullName, undefined, {
+            sensitivity: 'base',
+          }) === 0;
+        if (!matchesTeacherId && !matchesTeacherName) {
+          return false;
+        }
       }
       if (studentFilter) {
         if (event.branchName) {
@@ -259,12 +283,7 @@ export default function AdminCalendarPage() {
       }
       return true;
     });
-  }, [events, teacherFilter, studentFilter, classIdsForStudent, studentOptions]);
-
-  const displayMonthCount = isMock ? monthSessions.length : monthErpEvents.length;
-  const upcomingCount = isMock
-    ? sessions.filter((s) => s.status === 'Scheduled').length
-    : erpEvents.filter((e) => e.status === 'Scheduled').length;
+  }, [events, teacherFilter, studentFilter, classIdsForStudent, studentOptions, teachers]);
 
   return (
     <div className="space-y-6">
@@ -278,27 +297,6 @@ export default function AdminCalendarPage() {
           {message}
         </p>
       )}
-
-      <div className="grid gap-3 sm:grid-cols-3">
-        <Card>
-          <CardContent className="p-4">
-            <p className="text-xs uppercase tracking-wide text-slate-500">Active classes</p>
-            <p className="text-2xl font-bold text-slate-900">{classes.filter((c) => c.isActive).length}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4">
-            <p className="text-xs uppercase tracking-wide text-slate-500">This month</p>
-            <p className="text-2xl font-bold text-slate-900">{displayMonthCount}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4">
-            <p className="text-xs uppercase tracking-wide text-slate-500">Upcoming sessions</p>
-            <p className="text-2xl font-bold text-slate-900">{upcomingCount}</p>
-          </CardContent>
-        </Card>
-      </div>
 
       <div className="flex flex-wrap items-end gap-4">
         <div className="space-y-1">
