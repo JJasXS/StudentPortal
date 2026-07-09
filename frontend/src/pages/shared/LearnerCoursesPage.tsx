@@ -73,7 +73,7 @@ export default function LearnerCoursesPage() {
     return (
       <div className="mx-auto max-w-3xl space-y-4">
         <PageHeader
-          title="My Children"
+          title="Assignment"
           description={
             showChildDetail
               ? `Classes and homework for ${childLabel}`

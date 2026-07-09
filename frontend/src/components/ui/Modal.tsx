@@ -36,7 +36,7 @@ export function Modal({ open, onClose, title, children, className, headerExtra }
         aria-modal="true"
         aria-labelledby="modal-title"
         className={cn(
-          'relative z-10 w-full max-w-md rounded-xl border border-slate-200 bg-white shadow-xl',
+          'relative z-10 flex w-full max-w-md flex-col rounded-xl border border-slate-200 bg-white shadow-xl',
           className
         )}
       >
@@ -51,7 +51,7 @@ export function Modal({ open, onClose, title, children, className, headerExtra }
             </Button>
           </div>
         </div>
-        <div className="px-5 py-4">{children}</div>
+        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">{children}</div>
       </div>
     </div>
   );

@@ -9,13 +9,9 @@ import { useStudentPortalData } from '@/hooks/useStudentPortalData';
 import { parentsApi } from '@/api/resources';
 import { cn } from '@/utils/cn';
 import { generateMockSessions, loadAllSessions } from '@/utils/mockSessionStore';
-import {
-  erpEventToScheduleItem,
-  sessionToScheduleItem,
-} from '@/utils/learnerSchedule';
+import { erpEventToScheduleItem, sessionToScheduleItem } from '@/utils/learnerSchedule';
 import type { ClassItem, ClassSession } from '@/types';
 import type { ErpCalendarEvent } from '@/types/sqlAccount';
-
 interface MonthWeek {
   weekNum: number;
   from: string;
@@ -212,6 +208,7 @@ export default function LearnerSchedulePage() {
   const [error, setError] = useState('');
   const [activeWeek, setActiveWeek] = useState<number | null>(null);
   const [childFilter, setChildFilter] = useState('');
+  const [parentView, setParentView] = useState<'week' | 'month'>('week');
 
   const loadStudentSchedule = useCallback(() => {
     setLoading(true);
@@ -278,6 +275,23 @@ export default function LearnerSchedulePage() {
         return cmp !== 0 ? cmp : a.startTime.localeCompare(b.startTime);
       });
   }, [erpEvents, parentWeekRange, childFilter]);
+
+  const parentMonthItems = useMemo(() => {
+    const { from, to } = monthRange(anchor.year, anchor.month);
+    return erpEvents
+      .filter((e) => {
+        const d = e.sessionDate.slice(0, 10);
+        return d >= from && d <= to;
+      })
+      .map((e) => erpEventToScheduleItem(e, { showBranch: !childFilter }))
+      .sort((a, b) => {
+        const cmp = a.sessionDate.localeCompare(b.sessionDate);
+        return cmp !== 0 ? cmp : a.startTime.localeCompare(b.startTime);
+      });
+  }, [erpEvents, anchor.year, anchor.month, childFilter]);
+
+  const parentDisplayItems =
+    parentView === 'week' ? parentWeekItems : parentMonthItems;
 
   const monthItems = useMemo(() => {
     const { from: start, to: end } = monthRange(anchor.year, anchor.month);

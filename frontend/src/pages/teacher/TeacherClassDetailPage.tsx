@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, Download, FileText, Plus } from 'lucide-react';
+import { ArrowLeft, Download, Plus } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { useToast } from '@/context/ToastContext';
 import { PageHeader } from '@/components/PageHeader';
@@ -14,7 +14,6 @@ import { classesApi, homeworkApi, lessonNotesApi } from '@/api/resources';
 import { mockLessonNotes } from '@/utils/mockData';
 import { formatDateDDMMYYYY } from '@/utils/dateFormat';
 import { getApiErrorMessage } from '@/utils/apiError';
-import { accountInitials } from '@/utils/accountDisplay';
 import type { ClassItem, LessonNote } from '@/types';
 import type { PortalHomework } from '@/types/portal';
 
@@ -32,9 +31,11 @@ export default function TeacherClassDetailPage() {
   const [homework, setHomework] = useState<PortalHomework[]>([]);
   const [loading, setLoading] = useState(true);
   const [createOpen, setCreateOpen] = useState(false);
+  const [noteStudentName, setNoteStudentName] = useState('');
   const [noteTitle, setNoteTitle] = useState('');
   const [noteContent, setNoteContent] = useState('');
   const [practiceInstructions, setPracticeInstructions] = useState('');
+  const [homeworkIdForNote, setHomeworkIdForNote] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
   const setTab = (next: ClassTab) => {
@@ -72,19 +73,26 @@ export default function TeacherClassDetailPage() {
 
   const handleCreateNote = async () => {
     if (!user?.id || !classItem || !noteTitle.trim() || !noteContent.trim()) return;
+    const linkedHomework = homeworkIdForNote
+      ? homework.find((h) => h.id === homeworkIdForNote)
+      : null;
     setSaving(true);
     try {
       await lessonNotesApi.create({
         teacherUserId: user.id,
-        className: classItem.className,
+        className: linkedHomework?.className ?? classItem.className,
+        studentName: noteStudentName.trim() || undefined,
         noteTitle: noteTitle.trim(),
         noteContent: noteContent.trim(),
         practiceInstructions: practiceInstructions.trim() || undefined,
+        homeworkId: homeworkIdForNote ?? undefined,
       });
       setCreateOpen(false);
+      setNoteStudentName('');
       setNoteTitle('');
       setNoteContent('');
       setPracticeInstructions('');
+      setHomeworkIdForNote(null);
       const data = await lessonNotesApi.getAll();
       setNotes(data.filter((n) => n.teacherUserId === user.id && n.className === classItem.className));
       showSuccess('Lesson note created.');
@@ -93,6 +101,15 @@ export default function TeacherClassDetailPage() {
     } finally {
       setSaving(false);
     }
+  };
+
+  const openNoteFromHomework = (entry: PortalHomework) => {
+    setHomeworkIdForNote(entry.id);
+    setNoteStudentName(entry.branchName || entry.submittedBy);
+    setNoteTitle(`Feedback: ${entry.url || entry.fileName || 'homework'}`);
+    setNoteContent(entry.note ? `Regarding submission: ${entry.note}\n\n` : '');
+    setPracticeInstructions('');
+    setCreateOpen(true);
   };
 
   const handleDownload = async (entry: PortalHomework) => {
@@ -175,45 +192,86 @@ export default function TeacherClassDetailPage() {
           )}
 
           {tab === 'homework' && (
-            homework.length === 0 ? (
-              <p className="px-4 py-8 text-center text-sm text-slate-500">
-                No homework submissions for this class yet.
-              </p>
-            ) : (
-              <div className="divide-y divide-slate-100">
-                {homework.map((entry) => (
-                  <div key={entry.id} className="flex items-start gap-3 px-4 py-3">
-                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-xs font-semibold text-emerald-700">
-                      {accountInitials(entry.submittedBy)}
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="font-medium text-slate-900">{entry.submittedBy}</p>
-                      <p className="text-sm text-slate-600">{entry.title || entry.fileName || 'Homework'}</p>
-                      <p className="text-xs text-slate-400">{formatDateDDMMYYYY(entry.createdAt)}</p>
-                    </div>
-                    {entry.hasFile || entry.filePath ? (
+            <DataTable
+              embedded
+              data={homework}
+              emptyMessage="No homework submissions for this class yet."
+              columns={[
+                {
+                  key: 'submittedBy',
+                  header: 'Student',
+                  render: (entry) => entry.submittedBy,
+                },
+                {
+                  key: 'url',
+                  header: 'URL',
+                  render: (entry) =>
+                    entry.url ? (
+                      <a
+                        href={entry.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-sm text-primary-600 hover:underline"
+                      >
+                        Link
+                      </a>
+                    ) : (
+                      '—'
+                    ),
+                },
+                {
+                  key: 'file',
+                  header: 'File',
+                  render: (entry) =>
+                    entry.hasFile || entry.filePath ? (
                       <button
                         type="button"
                         onClick={() => void handleDownload(entry)}
-                        className="inline-flex shrink-0 items-center gap-1 text-sm text-primary-600 hover:underline"
-                        title={entry.fileName ?? 'Download attachment'}
+                        className="inline-flex items-center gap-1 text-sm text-primary-600 hover:underline"
                       >
-                        <Download className="h-4 w-4" />
-                        <FileText className="h-4 w-4" />
+                        <Download className="h-3.5 w-3.5" />
+                        {entry.fileName || 'Download'}
                       </button>
                     ) : (
-                      <FileText className="h-4 w-4 shrink-0 text-slate-400" />
-                    )}
-                  </div>
-                ))}
-              </div>
-            )
+                      '—'
+                    ),
+                },
+                {
+                  key: 'createdAt',
+                  header: 'Submitted',
+                  render: (entry) => formatDateDDMMYYYY(entry.createdAt),
+                },
+                {
+                  key: 'actions',
+                  header: '',
+                  align: 'right',
+                  render: (entry) => (
+                    <Button type="button" size="sm" variant="outline" onClick={() => openNoteFromHomework(entry)}>
+                      Write note
+                    </Button>
+                  ),
+                },
+              ]}
+            />
           )}
         </CardContent>
       </Card>
 
-      <Modal open={createOpen} onClose={() => setCreateOpen(false)} title="New lesson note">
+      <Modal
+        open={createOpen}
+        onClose={() => {
+          setCreateOpen(false);
+          setHomeworkIdForNote(null);
+        }}
+        title="New lesson note"
+      >
         <div className="space-y-3">
+          {noteStudentName && (
+            <div className="space-y-1">
+              <Label>Student</Label>
+              <Input value={noteStudentName} readOnly />
+            </div>
+          )}
           <div className="space-y-1">
             <Label>Title</Label>
             <Input value={noteTitle} onChange={(e) => setNoteTitle(e.target.value)} />

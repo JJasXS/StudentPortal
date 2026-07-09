@@ -1,11 +1,9 @@
-export type PortalLeaveStatus =
-  | 'Pending'
-  | 'Rejected'
-  | 'Approved'
-  | 'ReplacementNeeded'
-  | 'AwaitingTeacher'
-  | 'TeacherCountered'
-  | 'Confirmed';
+export type PortalLeaveStatus = 'Pending' | 'Rejected' | 'Approved' | 'Confirmed';
+
+export interface ReplacementOption {
+  date: string;
+  time: string;
+}
 
 export interface PortalHomework {
   id: string;
@@ -16,6 +14,7 @@ export interface PortalHomework {
   className?: string | null;
   itemCode?: string | null;
   title?: string | null;
+  url?: string | null;
   note?: string | null;
   fileName?: string | null;
   filePath?: string | null;
@@ -37,6 +36,7 @@ export interface PortalLeaveRequest {
   status: PortalLeaveStatus;
   adminNote?: string | null;
   needsReplacement: boolean;
+  replOptions?: ReplacementOption[];
   replDate?: string | null;
   replStart?: string | null;
   replEnd?: string | null;

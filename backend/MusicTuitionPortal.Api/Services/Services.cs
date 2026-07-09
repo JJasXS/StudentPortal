@@ -2040,10 +2040,12 @@ public class AttendanceService
 public class LessonNoteService
 {
     private readonly AppDbContext _context;
+    private readonly PortalHomeworkService _homework;
 
-    public LessonNoteService(AppDbContext context)
+    public LessonNoteService(AppDbContext context, PortalHomeworkService homework)
     {
         _context = context;
+        _homework = homework;
     }
 
     public async Task<List<LessonNoteDto>> GetAllAsync() =>
@@ -2061,6 +2063,34 @@ public class LessonNoteService
             .Where(n => n.StudentUserId == studentUserId)
             .Select(n => Map(n)).ToListAsync();
 
+    public async Task<List<LessonNoteDto>> GetForParentBranchAsync(
+        string email,
+        string branchName,
+        CancellationToken cancellationToken = default)
+    {
+        var homework = await _homework.GetForParentAsync(email, branchName, cancellationToken);
+        var homeworkIds = homework.Select(h => h.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var classNames = homework
+            .Select(h => h.ClassName)
+            .Where(c => !string.IsNullOrWhiteSpace(c))
+            .Select(c => c!)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var emailNorm = email.Trim();
+        var branchNorm = branchName.Trim();
+
+        var notes = await _context.LessonNotes
+            .Include(n => n.StudentUser)
+            .Include(n => n.TeacherUser)
+            .Include(n => n.ClassSession!).ThenInclude(s => s.Class)
+            .ToListAsync(cancellationToken);
+
+        return notes
+            .Where(n => MatchesParentBranch(n, homeworkIds, classNames, emailNorm, branchNorm))
+            .Select(Map)
+            .OrderByDescending(n => n.CreatedAt)
+            .ToList();
+    }
+
     public async Task<LessonNoteDto> CreateAsync(LessonNoteDto dto)
     {
         var note = new LessonNote
@@ -2073,7 +2103,8 @@ public class LessonNoteService
             TeacherUserId = dto.TeacherUserId,
             NoteTitle = dto.NoteTitle,
             NoteContent = dto.NoteContent,
-            PracticeInstructions = dto.PracticeInstructions
+            PracticeInstructions = dto.PracticeInstructions,
+            HomeworkId = dto.HomeworkId
         };
         _context.LessonNotes.Add(note);
         await _context.SaveChangesAsync();
@@ -2113,7 +2144,26 @@ public class LessonNoteService
             n.NoteTitle,
             n.NoteContent,
             n.PracticeInstructions,
+            n.HomeworkId,
             n.CreatedAt);
+
+    private static bool MatchesParentBranch(
+        LessonNote note,
+        HashSet<string> homeworkIds,
+        HashSet<string> classNames,
+        string emailNorm,
+        string branchNorm)
+    {
+        if (!string.IsNullOrWhiteSpace(note.HomeworkId) && homeworkIds.Contains(note.HomeworkId))
+            return true;
+
+        if (string.IsNullOrWhiteSpace(note.ClassName) || !classNames.Contains(note.ClassName))
+            return false;
+
+        var studentName = note.StudentName?.Trim() ?? string.Empty;
+        return string.Equals(studentName, emailNorm, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(studentName, branchNorm, StringComparison.OrdinalIgnoreCase);
+    }
 }
 
 public class AnnouncementService

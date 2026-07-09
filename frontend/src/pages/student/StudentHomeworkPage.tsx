@@ -7,12 +7,14 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { Input, Label, Textarea } from '@/components/ui/Input';
 import { useAuth } from '@/context/AuthContext';
 import { useToast } from '@/context/ToastContext';
-import { homeworkApi, parentsApi } from '@/api/resources';
+import { homeworkApi, lessonNotesApi, parentsApi } from '@/api/resources';
 import { useSqlAccountChildEnrollments } from '@/hooks/useSqlAccountChildEnrollments';
 import { formatDateDDMMYYYY } from '@/utils/dateFormat';
+import { lessonNotesForHomework } from '@/utils/homeworkLessonNotes';
 import { getApiErrorMessage } from '@/utils/apiError';
 import type { SqlAccountChild, SqlAccountChildEnrollment } from '@/types/sqlAccount';
 import type { PortalHomework } from '@/types/portal';
+import type { LessonNote } from '@/types';
 
 type Step = 'child' | 'class' | 'submit';
 
@@ -25,8 +27,9 @@ export default function StudentHomeworkPage() {
   const [selectedChild, setSelectedChild] = useState<SqlAccountChild | null>(null);
   const [selectedClass, setSelectedClass] = useState<SqlAccountChildEnrollment | null>(null);
   const [submissions, setSubmissions] = useState<PortalHomework[]>([]);
+  const [lessonNotes, setLessonNotes] = useState<LessonNote[]>([]);
   const [loadingSubmissions, setLoadingSubmissions] = useState(false);
-  const [title, setTitle] = useState('');
+  const [url, setUrl] = useState('');
   const [note, setNote] = useState('');
   const [file, setFile] = useState<File | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -52,10 +55,15 @@ export default function StudentHomeworkPage() {
   const loadSubmissions = useCallback(async (branchName: string) => {
     setLoadingSubmissions(true);
     try {
-      const data = await homeworkApi.getMine(branchName);
+      const [data, notes] = await Promise.all([
+        homeworkApi.getMine(branchName),
+        lessonNotesApi.getForBranch(branchName).catch(() => []),
+      ]);
       setSubmissions(data);
+      setLessonNotes(notes);
     } catch {
       setSubmissions([]);
+      setLessonNotes([]);
     } finally {
       setLoadingSubmissions(false);
     }
@@ -75,18 +83,18 @@ export default function StudentHomeworkPage() {
   }, [submissions, selectedClass]);
 
   const handleSubmit = async () => {
-    if (!selectedChild || !selectedClass || !title.trim()) return;
+    if (!selectedChild || !selectedClass) return;
     setSubmitting(true);
     try {
       await homeworkApi.submit({
         docKey: selectedClass.docKey,
         seq: selectedClass.seq,
         branchName: selectedChild.branchName,
-        title: title.trim(),
+        url: url.trim() || undefined,
         note: note.trim() || undefined,
         file: file ?? undefined,
       });
-      setTitle('');
+      setUrl('');
       setNote('');
       setFile(null);
       await loadSubmissions(selectedChild.branchName);
@@ -231,17 +239,17 @@ export default function StudentHomeworkPage() {
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="space-y-1.5">
-                <Label htmlFor="hw-title">Title</Label>
+                <Label htmlFor="hw-url">URL:</Label>
                 <Input
-                  id="hw-title"
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                  placeholder="e.g. Week 5 scale practice"
-                  required
+                  id="hw-url"
+                  type="url"
+                  value={url}
+                  onChange={(e) => setUrl(e.target.value)}
+                  placeholder="https://…"
                 />
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="hw-note">Note for teacher (optional)</Label>
+                <Label htmlFor="hw-note">Note</Label>
                 <Textarea
                   id="hw-note"
                   value={note}
@@ -263,7 +271,7 @@ export default function StudentHomeworkPage() {
               <Button
                 type="button"
                 className="w-full"
-                disabled={!title.trim() || submitting}
+                disabled={submitting}
                 onClick={() => void handleSubmit()}
               >
                 Submit homework
@@ -278,22 +286,63 @@ export default function StudentHomeworkPage() {
             <p className="text-sm text-slate-500">No submissions for this class yet.</p>
           ) : (
             <ul className="divide-y divide-slate-200 rounded-lg border border-slate-200 bg-white">
-              {classSubmissions.map((entry) => (
-                <li key={entry.id} className="px-4 py-3">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="font-medium text-slate-800">{entry.title || 'Homework'}</p>
-                      {entry.fileName && (
-                        <p className="text-sm text-slate-600">{entry.fileName}</p>
-                      )}
-                      {entry.note && <p className="mt-0.5 text-sm text-slate-500">{entry.note}</p>}
+              {classSubmissions.map((entry) => {
+                const feedback = lessonNotesForHomework(entry, lessonNotes);
+                return (
+                  <li key={entry.id} className="px-4 py-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="font-medium text-slate-800">
+                          {entry.url ? (
+                            <a
+                              href={entry.url}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="text-primary-600 hover:underline"
+                            >
+                              {entry.url}
+                            </a>
+                          ) : (
+                            'Homework'
+                          )}
+                        </p>
+                        {entry.fileName && (
+                          <p className="text-sm text-slate-600">{entry.fileName}</p>
+                        )}
+                        {entry.note && <p className="mt-0.5 text-sm text-slate-500">{entry.note}</p>}
+                      </div>
+                      <time className="shrink-0 text-xs text-slate-400">
+                        {formatDateDDMMYYYY(entry.createdAt)}
+                      </time>
                     </div>
-                    <time className="shrink-0 text-xs text-slate-400">
-                      {formatDateDDMMYYYY(entry.createdAt)}
-                    </time>
-                  </div>
-                </li>
-              ))}
+                    {feedback.length > 0 ? (
+                      feedback.map((teacherNote) => (
+                        <div
+                          key={teacherNote.id}
+                          className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50/60 px-3 py-2.5"
+                        >
+                          <p className="text-sm font-semibold text-emerald-950">{teacherNote.noteTitle}</p>
+                          {teacherNote.teacherName && (
+                            <p className="text-xs text-emerald-800">{teacherNote.teacherName}</p>
+                          )}
+                          <p className="mt-1 whitespace-pre-wrap text-sm text-emerald-900">
+                            {teacherNote.noteContent}
+                          </p>
+                          {teacherNote.practiceInstructions && (
+                            <p className="mt-1 text-sm text-emerald-800">
+                              {teacherNote.practiceInstructions}
+                            </p>
+                          )}
+                        </div>
+                      ))
+                    ) : (
+                      <p className="mt-2 text-xs text-slate-400">
+                        No teacher feedback yet for this submission.
+                      </p>
+                    )}
+                  </li>
+                );
+              })}
             </ul>
           )}
         </>

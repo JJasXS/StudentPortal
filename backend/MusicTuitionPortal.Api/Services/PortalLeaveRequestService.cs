@@ -1,3 +1,4 @@
+using System.Text.Json;
 using FirebirdSql.Data.FirebirdClient;
 using MusicTuitionPortal.Api.DTOs;
 
@@ -5,6 +6,8 @@ namespace MusicTuitionPortal.Api.Services;
 
 public class PortalLeaveRequestService
 {
+    private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
+
     private readonly SqlAccountLocalDbService _localDb;
     private readonly ParentService _parents;
     private readonly PortalClassSessionService _sessions;
@@ -33,19 +36,6 @@ public class PortalLeaveRequestService
         return await QueryAsync(email.Trim(), null, cancellationToken);
     }
 
-    public async Task<List<PortalLeaveRequestDto>> GetForTeacherAsync(
-        string teacherName,
-        CancellationToken cancellationToken = default)
-    {
-        await EnsureTableAsync(cancellationToken);
-        var all = await QueryAsync(null, null, cancellationToken);
-        return all
-            .Where(r =>
-                (r.Status is "AwaitingTeacher" or "TeacherCountered" or "Confirmed")
-                && string.Equals(r.ReplTeacher, teacherName, StringComparison.OrdinalIgnoreCase))
-            .ToList();
-    }
-
     public async Task<PortalLeaveRequestDto> SubmitAsync(
         string email,
         CreatePortalLeaveRequest request,
@@ -64,6 +54,14 @@ public class PortalLeaveRequestService
         if (!DateTime.TryParse(request.SessionDate, out var sessionDate))
             throw new InvalidOperationException("Invalid session date.");
 
+        ValidateSessionWindow(sessionDate, request.StartTime);
+
+        var replacementOptions = NormalizeReplacementOptions(request.ReplacementOptions);
+        var needsReplacement = replacementOptions.Count > 0;
+        var replOptionsJson = needsReplacement
+            ? JsonSerializer.Serialize(replacementOptions, JsonOptions)
+            : null;
+
         var className = await GetClassNameAsync(request.DocKey, request.Seq, cancellationToken);
 
         var id = Guid.NewGuid().ToString();
@@ -74,10 +72,12 @@ public class PortalLeaveRequestService
         const string sql = """
             INSERT INTO PORTAL_LEAVE_REQUESTS (
                 ID, OCCURRENCEID, DOCKEY, SEQ, CUSTOMERCODE, BRANCHNAME, CLASSNAME,
-                SESSIONDATE, REASON, STATUS, NEEDSREPLACEMENT, REQUESTEDBY, CREATEDAT, UPDATEDAT
+                SESSIONDATE, REASON, STATUS, NEEDSREPLACEMENT, REPL_OPTIONS,
+                REQUESTEDBY, CREATEDAT, UPDATEDAT
             ) VALUES (
                 @id, @occurrenceId, @docKey, @seq, @customerCode, @branchName, @className,
-                @sessionDate, @reason, 'Pending', 0, @requestedBy, @createdAt, @updatedAt
+                @sessionDate, @reason, 'Pending', @needsReplacement, @replOptions,
+                @requestedBy, @createdAt, @updatedAt
             )
             """;
 
@@ -91,6 +91,8 @@ public class PortalLeaveRequestService
         command.Parameters.AddWithValue("@className", (object?)className ?? DBNull.Value);
         command.Parameters.AddWithValue("@sessionDate", sessionDate);
         command.Parameters.AddWithValue("@reason", request.Reason.Trim());
+        command.Parameters.AddWithValue("@needsReplacement", needsReplacement ? 1 : 0);
+        command.Parameters.AddWithValue("@replOptions", (object?)replOptionsJson ?? DBNull.Value);
         command.Parameters.AddWithValue("@requestedBy", email.Trim());
         command.Parameters.AddWithValue("@createdAt", now);
         command.Parameters.AddWithValue("@updatedAt", now);
@@ -99,171 +101,154 @@ public class PortalLeaveRequestService
         return (await GetByIdAsync(id, cancellationToken))!;
     }
 
-    public async Task<PortalLeaveRequestDto?> AdminReviewAsync(
+    public async Task<PortalLeaveRequestDto?> AdminDecideAsync(
         string id,
-        AdminLeaveReviewRequest request,
+        AdminLeaveDecisionRequest request,
         CancellationToken cancellationToken = default)
     {
         var existing = await GetByIdAsync(id, cancellationToken)
             ?? throw new InvalidOperationException("Leave request not found.");
 
-        var status = request.Approve
-            ? (request.NeedsReplacement ? "ReplacementNeeded" : "Approved")
-            : "Rejected";
-
-        await UpdateStatusAsync(id, status, request.AdminNote, request.NeedsReplacement, cancellationToken);
-
-        if (request.Approve && !request.NeedsReplacement)
+        if (!request.Approve)
         {
-            if (!string.IsNullOrWhiteSpace(existing.OccurrenceId))
-            {
-                await _sessions.CancelOccurrenceAsync(
-                    existing.OccurrenceId,
-                    $"Leave approved: {request.AdminNote ?? existing.Reason}",
-                    cancellationToken);
-            }
-            else
-            {
-                var occs = await _sessions.GetOccurrencesAsync(
-                    branchName: existing.BranchName,
-                    cancellationToken: cancellationToken);
-                var match = occs.FirstOrDefault(o =>
-                    o.DocKey == existing.DocKey && o.Seq == existing.Seq
-                    && o.SessionDate == existing.SessionDate);
-                if (match != null)
-                {
-                    await _sessions.CancelOccurrenceAsync(
-                        match.Id,
-                        $"Leave approved: {request.AdminNote ?? existing.Reason}",
-                        cancellationToken);
-                }
-            }
+            await UpdateStatusAsync(id, "Rejected", request.AdminNote, existing.NeedsReplacement, cancellationToken);
+            return await GetByIdAsync(id, cancellationToken);
         }
 
+        var hasChosenSlot = !string.IsNullOrWhiteSpace(request.ChosenDate)
+            && !string.IsNullOrWhiteSpace(request.ChosenTime);
+
+        if (hasChosenSlot)
+        {
+            var chosenDate = request.ChosenDate!.Trim();
+            var chosenTime = request.ChosenTime!.Trim();
+            if (!existing.ReplOptions.Any(o =>
+                    string.Equals(o.Date, chosenDate, StringComparison.OrdinalIgnoreCase)
+                    && string.Equals(o.Time, chosenTime, StringComparison.OrdinalIgnoreCase)))
+            {
+                throw new InvalidOperationException("Chosen replacement slot was not proposed by the parent.");
+            }
+
+            if (!DateTime.TryParse(chosenDate, out var replDate))
+                throw new InvalidOperationException("Invalid replacement date.");
+
+            var replEnd = await ComputeReplacementEndAsync(existing, chosenTime, cancellationToken);
+
+            await using var connection = _localDb.OpenConnection();
+            await connection.OpenAsync(cancellationToken);
+
+            const string sql = """
+                UPDATE PORTAL_LEAVE_REQUESTS
+                SET STATUS = 'Confirmed', ADMINNOTE = @adminNote, NEEDSREPLACEMENT = 1,
+                    REPL_DATE = @replDate, REPL_START = @replStart, REPL_END = @replEnd,
+                    UPDATEDAT = @updatedAt
+                WHERE ID = @id
+                """;
+
+            await using var command = new FbCommand(sql, connection);
+            command.Parameters.AddWithValue("@id", id);
+            command.Parameters.AddWithValue("@adminNote", (object?)request.AdminNote ?? DBNull.Value);
+            command.Parameters.AddWithValue("@replDate", replDate);
+            command.Parameters.AddWithValue("@replStart", chosenTime);
+            command.Parameters.AddWithValue("@replEnd", replEnd);
+            command.Parameters.AddWithValue("@updatedAt", DateTime.UtcNow);
+            await command.ExecuteNonQueryAsync(cancellationToken);
+
+            await RescheduleLeaveOccurrenceAsync(existing, chosenDate, chosenTime, replEnd, cancellationToken);
+            return await GetByIdAsync(id, cancellationToken);
+        }
+
+        await UpdateStatusAsync(id, "Approved", request.AdminNote, false, cancellationToken);
+        await CancelLeaveOccurrenceAsync(existing, request.AdminNote, cancellationToken);
         return await GetByIdAsync(id, cancellationToken);
     }
 
-    public async Task<PortalLeaveRequestDto?> ProposeReplacementAsync(
-        string id,
-        AdminLeaveReplacementRequest request,
-        CancellationToken cancellationToken = default)
+    private async Task CancelLeaveOccurrenceAsync(
+        PortalLeaveRequestDto existing,
+        string? adminNote,
+        CancellationToken cancellationToken)
     {
-        var existing = await GetByIdAsync(id, cancellationToken)
-            ?? throw new InvalidOperationException("Leave request not found.");
-
-        if (!DateTime.TryParse(request.ReplDate, out var replDate))
-            throw new InvalidOperationException("Invalid replacement date.");
-
-        await using var connection = _localDb.OpenConnection();
-        await connection.OpenAsync(cancellationToken);
-
-        const string sql = """
-            UPDATE PORTAL_LEAVE_REQUESTS
-            SET STATUS = 'AwaitingTeacher', NEEDSREPLACEMENT = 1,
-                REPL_DATE = @replDate, REPL_START = @replStart, REPL_END = @replEnd,
-                REPL_TEACHER = @replTeacher, TEACHERRESPONSE = 'Pending',
-                UPDATEDAT = @updatedAt
-            WHERE ID = @id
-            """;
-
-        await using var command = new FbCommand(sql, connection);
-        command.Parameters.AddWithValue("@id", id);
-        command.Parameters.AddWithValue("@replDate", replDate);
-        command.Parameters.AddWithValue("@replStart", request.ReplStart.Trim());
-        command.Parameters.AddWithValue("@replEnd", request.ReplEnd.Trim());
-        command.Parameters.AddWithValue("@replTeacher", request.ReplTeacher.Trim());
-        command.Parameters.AddWithValue("@updatedAt", DateTime.UtcNow);
-        await command.ExecuteNonQueryAsync(cancellationToken);
-
-        return await GetByIdAsync(id, cancellationToken);
-    }
-
-    public async Task<PortalLeaveRequestDto?> TeacherAcceptAsync(
-        string id,
-        CancellationToken cancellationToken = default)
-    {
-        var existing = await GetByIdAsync(id, cancellationToken)
-            ?? throw new InvalidOperationException("Leave request not found.");
-
-        if (string.IsNullOrWhiteSpace(existing.ReplDate))
-            throw new InvalidOperationException("No replacement date proposed.");
-
-        await UpdateFieldAsync(id, "STATUS", "Confirmed", cancellationToken);
-        await UpdateFieldAsync(id, "TEACHERRESPONSE", "Accepted", cancellationToken);
-
+        var reason = $"Leave approved: {adminNote ?? existing.Reason}";
         if (!string.IsNullOrWhiteSpace(existing.OccurrenceId))
         {
-            await _sessions.RescheduleOccurrenceAsync(
-                existing.OccurrenceId,
-                existing.ReplDate!,
-                existing.ReplStart ?? "10:00",
-                existing.ReplEnd ?? "11:00",
-                "Teacher accepted replacement",
-                cancellationToken);
+            await _sessions.CancelOccurrenceAsync(existing.OccurrenceId, reason, cancellationToken);
+            return;
         }
 
-        return await GetByIdAsync(id, cancellationToken);
+        var occs = await _sessions.GetOccurrencesAsync(branchName: existing.BranchName, cancellationToken: cancellationToken);
+        var match = occs.FirstOrDefault(o =>
+            o.DocKey == existing.DocKey && o.Seq == existing.Seq
+            && o.SessionDate == existing.SessionDate);
+        if (match != null)
+            await _sessions.CancelOccurrenceAsync(match.Id, reason, cancellationToken);
     }
 
-    public async Task<PortalLeaveRequestDto?> TeacherCounterAsync(
-        string id,
-        TeacherLeaveCounterRequest request,
-        CancellationToken cancellationToken = default)
+    private async Task RescheduleLeaveOccurrenceAsync(
+        PortalLeaveRequestDto existing,
+        string replDate,
+        string replStart,
+        string replEnd,
+        CancellationToken cancellationToken)
     {
-        if (!DateTime.TryParse(request.CounterDate, out var counterDate))
-            throw new InvalidOperationException("Invalid counter date.");
-
-        await using var connection = _localDb.OpenConnection();
-        await connection.OpenAsync(cancellationToken);
-
-        const string sql = """
-            UPDATE PORTAL_LEAVE_REQUESTS
-            SET STATUS = 'TeacherCountered', TEACHERRESPONSE = 'Countered',
-                COUNTER_DATE = @counterDate, COUNTER_START = @counterStart,
-                COUNTER_END = @counterEnd, COUNTER_MSG = @counterMsg, UPDATEDAT = @updatedAt
-            WHERE ID = @id
-            """;
-
-        await using var command = new FbCommand(sql, connection);
-        command.Parameters.AddWithValue("@id", id);
-        command.Parameters.AddWithValue("@counterDate", counterDate);
-        command.Parameters.AddWithValue("@counterStart", request.CounterStart.Trim());
-        command.Parameters.AddWithValue("@counterEnd", request.CounterEnd.Trim());
-        command.Parameters.AddWithValue("@counterMsg", (object?)request.CounterMsg ?? DBNull.Value);
-        command.Parameters.AddWithValue("@updatedAt", DateTime.UtcNow);
-        await command.ExecuteNonQueryAsync(cancellationToken);
-
-        return await GetByIdAsync(id, cancellationToken);
-    }
-
-    public async Task<PortalLeaveRequestDto?> AdminConfirmReplacementAsync(
-        string id,
-        CancellationToken cancellationToken = default)
-    {
-        var existing = await GetByIdAsync(id, cancellationToken)
-            ?? throw new InvalidOperationException("Leave request not found.");
-
-        var replDate = existing.Status == "TeacherCountered" ? existing.CounterDate : existing.ReplDate;
-        var replStart = existing.Status == "TeacherCountered" ? existing.CounterStart : existing.ReplStart;
-        var replEnd = existing.Status == "TeacherCountered" ? existing.CounterEnd : existing.ReplEnd;
-
-        if (string.IsNullOrWhiteSpace(replDate))
-            throw new InvalidOperationException("No replacement slot to confirm.");
-
-        await UpdateFieldAsync(id, "STATUS", "Confirmed", cancellationToken);
-
         if (!string.IsNullOrWhiteSpace(existing.OccurrenceId))
         {
             await _sessions.RescheduleOccurrenceAsync(
                 existing.OccurrenceId,
                 replDate,
-                replStart ?? "10:00",
-                replEnd ?? "11:00",
-                "Replacement confirmed",
+                replStart,
+                replEnd,
+                "Replacement confirmed by admin",
                 cancellationToken);
+            return;
         }
 
-        return await GetByIdAsync(id, cancellationToken);
+        var occs = await _sessions.GetOccurrencesAsync(branchName: existing.BranchName, cancellationToken: cancellationToken);
+        var match = occs.FirstOrDefault(o =>
+            o.DocKey == existing.DocKey && o.Seq == existing.Seq
+            && o.SessionDate == existing.SessionDate);
+        if (match != null)
+        {
+            await _sessions.RescheduleOccurrenceAsync(
+                match.Id,
+                replDate,
+                replStart,
+                replEnd,
+                "Replacement confirmed by admin",
+                cancellationToken);
+        }
+    }
+
+    private async Task<string> ComputeReplacementEndAsync(
+        PortalLeaveRequestDto existing,
+        string chosenStart,
+        CancellationToken cancellationToken)
+    {
+        PortalClassSessionDto? occurrence = null;
+        if (!string.IsNullOrWhiteSpace(existing.OccurrenceId))
+            occurrence = await _sessions.GetOccurrenceByIdAsync(existing.OccurrenceId, cancellationToken);
+
+        if (occurrence == null)
+        {
+            var occs = await _sessions.GetOccurrencesAsync(branchName: existing.BranchName, cancellationToken: cancellationToken);
+            occurrence = occs.FirstOrDefault(o =>
+                o.DocKey == existing.DocKey && o.Seq == existing.Seq
+                && o.SessionDate == existing.SessionDate);
+        }
+
+        if (occurrence == null || !TryParseTime(occurrence.StartTime, out var start)
+            || !TryParseTime(occurrence.EndTime, out var end))
+        {
+            return AddHourToTime(chosenStart);
+        }
+
+        var duration = end - start;
+        if (duration <= TimeSpan.Zero)
+            duration = TimeSpan.FromHours(1);
+
+        if (!TryParseTime(chosenStart, out var chosen))
+            return AddHourToTime(chosenStart);
+
+        return chosen.Add(duration).ToString(@"hh\:mm");
     }
 
     private async Task<PortalLeaveRequestDto?> GetByIdAsync(string id, CancellationToken cancellationToken)
@@ -341,18 +326,6 @@ public class PortalLeaveRequestService
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
-    private async Task UpdateFieldAsync(string id, string field, string value, CancellationToken cancellationToken)
-    {
-        await using var connection = _localDb.OpenConnection();
-        await connection.OpenAsync(cancellationToken);
-        var sql = $"UPDATE PORTAL_LEAVE_REQUESTS SET {field} = @value, UPDATEDAT = @updatedAt WHERE ID = @id";
-        await using var command = new FbCommand(sql, connection);
-        command.Parameters.AddWithValue("@id", id);
-        command.Parameters.AddWithValue("@value", value);
-        command.Parameters.AddWithValue("@updatedAt", DateTime.UtcNow);
-        await command.ExecuteNonQueryAsync(cancellationToken);
-    }
-
     private async Task<string?> GetClassNameAsync(int docKey, int seq, CancellationToken cancellationToken)
     {
         if (!_localDb.CanReadLocalDb)
@@ -370,6 +343,33 @@ public class PortalLeaveRequestService
         return !string.IsNullOrWhiteSpace(desc) ? desc : reader["ITEMCODE"]?.ToString();
     }
 
+    private static void ValidateSessionWindow(DateTime sessionDate, string? startTime)
+    {
+        var sessionStart = sessionDate.Date;
+        if (!string.IsNullOrWhiteSpace(startTime) && TryParseTime(startTime, out var time))
+            sessionStart = sessionDate.Date.Add(time);
+
+        var now = DateTime.Now;
+        if (sessionStart <= now.AddHours(24))
+            throw new InvalidOperationException("Leave must be requested at least 24 hours before the session.");
+
+        if (sessionStart > now.AddMonths(1))
+            throw new InvalidOperationException("Leave can only be requested up to one month in advance.");
+    }
+
+    private static List<ReplacementOptionDto> NormalizeReplacementOptions(
+        IReadOnlyList<ReplacementOptionDto>? options)
+    {
+        if (options == null || options.Count == 0)
+            return [];
+
+        return options
+            .Where(o => !string.IsNullOrWhiteSpace(o.Date) && !string.IsNullOrWhiteSpace(o.Time))
+            .Select(o => new ReplacementOptionDto(o.Date.Trim(), o.Time.Trim()))
+            .DistinctBy(o => $"{o.Date}|{o.Time}", StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
     private static PortalLeaveRequestDto MapLeave(FbDataReader reader) =>
         new(
             reader["ID"]?.ToString() ?? string.Empty,
@@ -384,6 +384,7 @@ public class PortalLeaveRequestService
             reader["STATUS"]?.ToString() ?? "Pending",
             reader["ADMINNOTE"]?.ToString(),
             Convert.ToInt32(reader["NEEDSREPLACEMENT"]) != 0,
+            ParseReplOptions(ReadOptionalString(reader, "REPL_OPTIONS")),
             FormatDate(reader["REPL_DATE"]),
             reader["REPL_START"]?.ToString(),
             reader["REPL_END"]?.ToString(),
@@ -397,10 +398,53 @@ public class PortalLeaveRequestService
             Convert.ToDateTime(reader["CREATEDAT"]),
             Convert.ToDateTime(reader["UPDATEDAT"]));
 
+    private static IReadOnlyList<ReplacementOptionDto> ParseReplOptions(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+            return [];
+
+        try
+        {
+            return JsonSerializer.Deserialize<List<ReplacementOptionDto>>(json, JsonOptions) ?? [];
+        }
+        catch
+        {
+            return [];
+        }
+    }
+
+    private static string? ReadOptionalString(FbDataReader reader, string column)
+    {
+        try
+        {
+            var ordinal = reader.GetOrdinal(column);
+            return reader.IsDBNull(ordinal) ? null : reader.GetString(ordinal);
+        }
+        catch (IndexOutOfRangeException)
+        {
+            return null;
+        }
+    }
+
     private static string FormatDate(object? value)
     {
         if (value is DBNull or null)
             return string.Empty;
         return Convert.ToDateTime(value).ToString("yyyy-MM-dd");
+    }
+
+    private static bool TryParseTime(string? value, out TimeSpan time)
+    {
+        time = default;
+        if (string.IsNullOrWhiteSpace(value))
+            return false;
+        return TimeSpan.TryParse(value.Trim(), out time);
+    }
+
+    private static string AddHourToTime(string start)
+    {
+        if (!TryParseTime(start, out var time))
+            return "11:00";
+        return time.Add(TimeSpan.FromHours(1)).ToString(@"hh\:mm");
     }
 }

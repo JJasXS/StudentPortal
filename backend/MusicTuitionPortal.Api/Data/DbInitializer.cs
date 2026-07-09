@@ -943,6 +943,7 @@ public static class DbInitializer
         await TryAlter("ALTER TABLE \"CentreSettings\" ADD \"BankAccountNo\" VARCHAR(100)");
         await TryAlter("ALTER TABLE \"CentreSettings\" ADD \"InvoicePrefix\" VARCHAR(20) DEFAULT 'INV' NOT NULL");
         await TryAlter("ALTER TABLE \"CentreSettings\" ADD \"LogoDataUrl\" BLOB SUB_TYPE TEXT");
+        await TryAlter("ALTER TABLE \"LessonNotes\" ADD \"HomeworkId\" VARCHAR(36)");
     }
 
     private static async Task<bool> EfPortalTableExistsAsync(AppDbContext context, string tableName)

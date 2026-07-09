@@ -26,7 +26,6 @@ import TeacherClassesPage from '@/pages/teacher/TeacherClassesPage';
 import TeacherClassDetailPage from '@/pages/teacher/TeacherClassDetailPage';
 import TeacherAnnouncementsPage from '@/pages/teacher/TeacherAnnouncementsPage';
 import TeacherCalendarPage from '@/pages/teacher/TeacherCalendarPage';
-import TeacherReplacementPage from '@/pages/teacher/TeacherReplacementPage';
 import ParentDashboardPage from '@/pages/parent/ParentDashboardPage';
 import StudentDashboard from '@/pages/student/StudentDashboard';
 import StudentHomeworkPage from '@/pages/student/StudentHomeworkPage';
@@ -108,7 +107,6 @@ export default function AppRoutes() {
             <Route path="/teacher/attendance/:classId" element={<LegacyTeacherClassRedirect />} />
             <Route path="/teacher/lesson-notes" element={<Navigate to="/teacher/classes" replace />} />
             <Route path="/teacher/homework" element={<Navigate to="/teacher/classes" replace />} />
-            <Route path="/teacher/replacements" element={<TeacherReplacementPage />} />
             <Route path="/teacher/announcements" element={<TeacherAnnouncementsPage />} />
             <Route
               path="/teacher/announcements/:announcementId"

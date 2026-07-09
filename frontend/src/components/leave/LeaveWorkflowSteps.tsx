@@ -3,15 +3,11 @@ import { portalWorkflowStep } from '@/utils/portalLeave';
 import type { PortalLeaveStatus } from '@/types/portal';
 
 const STEPS = [
-  'Student submits',
+  'Parent submits',
   'Admin reviews',
   'Approve / reject',
-  'Replacement needed?',
-  'Pick teacher & time',
-  'Teacher notified',
-  'Accept / counter',
-  'Admin confirms',
-  'Student notified',
+  'Pick replacement slot',
+  'Confirmed',
 ];
 
 interface LeaveWorkflowStepsProps {
@@ -21,11 +17,11 @@ interface LeaveWorkflowStepsProps {
 
 export function LeaveWorkflowSteps({ status, compact }: LeaveWorkflowStepsProps) {
   const current = portalWorkflowStep(status);
-  const terminal = status === 'Rejected' || (status === 'Approved' && current === 3);
+  const terminal = status === 'Rejected' || status === 'Approved';
 
   return (
     <div className={cn('overflow-x-auto', compact ? 'pb-1' : 'pb-2')}>
-      <ol className="flex min-w-[36rem] gap-0">
+      <ol className="flex min-w-[24rem] gap-0">
         {STEPS.map((label, i) => {
           const stepNum = i + 1;
           const done = stepNum < current || (terminal && stepNum <= 3);

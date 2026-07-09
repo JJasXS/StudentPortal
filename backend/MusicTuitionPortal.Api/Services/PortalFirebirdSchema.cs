@@ -12,7 +12,9 @@ public static class PortalFirebirdSchema
         await EnsurePortalSoLineScheduleTableAsync(connection, cancellationToken);
         await EnsurePortalHomeworkTableAsync(connection, cancellationToken);
         await EnsurePortalHomeworkFilePathColumnAsync(connection, cancellationToken);
+        await EnsurePortalHomeworkUrlColumnAsync(connection, cancellationToken);
         await EnsurePortalLeaveRequestsTableAsync(connection, cancellationToken);
+        await EnsurePortalLeaveReplOptionsColumnAsync(connection, cancellationToken);
         await EnsurePortalAnnouncementsTableAsync(connection, cancellationToken);
     }
 
@@ -98,6 +100,7 @@ public static class PortalFirebirdSchema
                 CLASSNAME VARCHAR(200),
                 ITEMCODE VARCHAR(50),
                 TITLE VARCHAR(200),
+                URL VARCHAR(500),
                 NOTE VARCHAR(2000),
                 FILENAME VARCHAR(255),
                 FILEPATH VARCHAR(500),
@@ -123,6 +126,24 @@ public static class PortalFirebirdSchema
         {
             await using var cmd = new FbCommand(
                 "ALTER TABLE PORTAL_HOMEWORK ADD FILEPATH VARCHAR(500)",
+                connection);
+            await cmd.ExecuteNonQueryAsync(ct);
+        }
+        catch
+        {
+            // Column already exists
+        }
+    }
+
+    private static async Task EnsurePortalHomeworkUrlColumnAsync(FbConnection connection, CancellationToken ct)
+    {
+        if (!await TableExistsAsync(connection, "PORTAL_HOMEWORK", ct))
+            return;
+
+        try
+        {
+            await using var cmd = new FbCommand(
+                "ALTER TABLE PORTAL_HOMEWORK ADD URL VARCHAR(500)",
                 connection);
             await cmd.ExecuteNonQueryAsync(ct);
         }
@@ -162,6 +183,7 @@ public static class PortalFirebirdSchema
                 COUNTER_START VARCHAR(10),
                 COUNTER_END VARCHAR(10),
                 COUNTER_MSG VARCHAR(500),
+                REPL_OPTIONS VARCHAR(2000),
                 REQUESTEDBY VARCHAR(200),
                 CREATEDAT TIMESTAMP NOT NULL,
                 UPDATEDAT TIMESTAMP NOT NULL
@@ -173,6 +195,24 @@ public static class PortalFirebirdSchema
         {
             await using var cmd = new FbCommand(sql, connection);
             await cmd.ExecuteNonQueryAsync(ct);
+        }
+    }
+
+    private static async Task EnsurePortalLeaveReplOptionsColumnAsync(FbConnection connection, CancellationToken ct)
+    {
+        if (!await TableExistsAsync(connection, "PORTAL_LEAVE_REQUESTS", ct))
+            return;
+
+        try
+        {
+            await using var cmd = new FbCommand(
+                "ALTER TABLE PORTAL_LEAVE_REQUESTS ADD REPL_OPTIONS VARCHAR(2000)",
+                connection);
+            await cmd.ExecuteNonQueryAsync(ct);
+        }
+        catch
+        {
+            // Column already exists
         }
     }
 

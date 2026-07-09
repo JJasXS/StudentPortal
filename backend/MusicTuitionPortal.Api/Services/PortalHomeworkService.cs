@@ -36,7 +36,7 @@ public class PortalHomeworkService
 
         var sql = """
             SELECT H.ID, H.DOCKEY, H.SEQ, H.CUSTOMERCODE, H.BRANCHNAME, H.CLASSNAME, H.ITEMCODE,
-                   H.TITLE, H.NOTE, H.FILENAME, H.FILEPATH, H.SUBMITTEDBY, H.CREATEDAT
+                   H.URL, H.NOTE, H.FILENAME, H.FILEPATH, H.SUBMITTEDBY, H.CREATEDAT
             FROM PORTAL_HOMEWORK H
             INNER JOIN SL_SODTL B ON H.DOCKEY = B.DOCKEY AND H.SEQ = B.SEQ
             WHERE 1=1
@@ -90,7 +90,7 @@ public class PortalHomeworkService
         {
             const string sql = """
                 SELECT ID, DOCKEY, SEQ, CUSTOMERCODE, BRANCHNAME, CLASSNAME, ITEMCODE,
-                       TITLE, NOTE, FILENAME, FILEPATH, SUBMITTEDBY, CREATEDAT
+                       URL, NOTE, FILENAME, FILEPATH, SUBMITTEDBY, CREATEDAT
                 FROM PORTAL_HOMEWORK
                 WHERE BRANCHNAME = @branch
                 ORDER BY CREATEDAT DESC
@@ -142,10 +142,10 @@ public class PortalHomeworkService
         const string sql = """
             INSERT INTO PORTAL_HOMEWORK (
                 ID, DOCKEY, SEQ, CUSTOMERCODE, BRANCHNAME, CLASSNAME, ITEMCODE,
-                TITLE, NOTE, FILENAME, FILEPATH, SUBMITTEDBY, CREATEDAT
+                URL, NOTE, FILENAME, FILEPATH, SUBMITTEDBY, CREATEDAT
             ) VALUES (
                 @id, @docKey, @seq, @customerCode, @branchName, @className, @itemCode,
-                @title, @note, @fileName, @filePath, @submittedBy, @createdAt
+                @url, @note, @fileName, @filePath, @submittedBy, @createdAt
             )
             """;
 
@@ -157,7 +157,7 @@ public class PortalHomeworkService
         command.Parameters.AddWithValue("@branchName", branch);
         command.Parameters.AddWithValue("@className", (object?)className ?? DBNull.Value);
         command.Parameters.AddWithValue("@itemCode", (object?)itemCode ?? DBNull.Value);
-        command.Parameters.AddWithValue("@title", (object?)request.Title ?? DBNull.Value);
+        command.Parameters.AddWithValue("@url", (object?)request.Url ?? DBNull.Value);
         command.Parameters.AddWithValue("@note", (object?)request.Note ?? DBNull.Value);
         command.Parameters.AddWithValue("@fileName", (object?)fileName ?? DBNull.Value);
         command.Parameters.AddWithValue("@filePath", (object?)filePath ?? DBNull.Value);
@@ -167,7 +167,7 @@ public class PortalHomeworkService
 
         return new PortalHomeworkDto(
             id, request.DocKey, request.Seq, customerCode, branch, className, itemCode,
-            request.Title, request.Note, fileName, filePath, email.Trim(), now);
+            request.Url, request.Note, fileName, filePath, email.Trim(), now);
     }
 
     public async Task<PortalHomeworkDto?> GetByIdAsync(string id, CancellationToken cancellationToken = default)
@@ -184,7 +184,7 @@ public class PortalHomeworkService
 
         const string sql = """
             SELECT ID, DOCKEY, SEQ, CUSTOMERCODE, BRANCHNAME, CLASSNAME, ITEMCODE,
-                   TITLE, NOTE, FILENAME, FILEPATH, SUBMITTEDBY, CREATEDAT
+                   URL, NOTE, FILENAME, FILEPATH, SUBMITTEDBY, CREATEDAT
             FROM PORTAL_HOMEWORK
             WHERE ID = @id
             """;
@@ -274,12 +274,20 @@ public class PortalHomeworkService
             reader["BRANCHNAME"]?.ToString() ?? string.Empty,
             reader["CLASSNAME"]?.ToString(),
             reader["ITEMCODE"]?.ToString(),
-            reader["TITLE"]?.ToString(),
+            ReadHomeworkUrl(reader),
             reader["NOTE"]?.ToString(),
             reader["FILENAME"]?.ToString(),
             ReadOptionalString(reader, "FILEPATH"),
             reader["SUBMITTEDBY"]?.ToString() ?? string.Empty,
             Convert.ToDateTime(reader["CREATEDAT"]));
+
+    private static string? ReadHomeworkUrl(FbDataReader reader)
+    {
+        var url = ReadOptionalString(reader, "URL");
+        if (!string.IsNullOrWhiteSpace(url))
+            return url;
+        return ReadOptionalString(reader, "TITLE");
+    }
 
     private static string? ReadOptionalString(FbDataReader reader, string column)
     {

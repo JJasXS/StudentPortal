@@ -1076,6 +1076,15 @@ public class LessonNotesController : ControllerBase
     [HttpGet("student/{studentId:guid}")]
     public async Task<IActionResult> GetByStudent(Guid studentId) => Ok(MapList(await _service.GetByStudentAsync(studentId)));
 
+    [HttpGet("for-branch/{branchName}")]
+    [Authorize(Roles = "Parent")]
+    public async Task<IActionResult> GetForBranch(string branchName, CancellationToken cancellationToken)
+    {
+        var email = User.FindFirst(ClaimTypes.Email)?.Value;
+        if (string.IsNullOrWhiteSpace(email)) return Unauthorized();
+        return Ok(MapList(await _service.GetForParentBranchAsync(email, branchName, cancellationToken)));
+    }
+
     [HttpPost]
     [Authorize(Roles = "Admin,Teacher")]
     public async Task<IActionResult> Create([FromBody] LessonNoteDto request) => Ok(Map(await _service.CreateAsync(request)));
@@ -1108,6 +1117,7 @@ public class LessonNotesController : ControllerBase
         noteTitle = n.NoteTitle,
         noteContent = n.NoteContent,
         practiceInstructions = n.PracticeInstructions,
+        homeworkId = n.HomeworkId,
         createdAt = n.CreatedAt
     };
 

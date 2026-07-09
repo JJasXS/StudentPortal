@@ -162,7 +162,7 @@ export const homeworkApi = {
     docKey: number;
     seq: number;
     branchName: string;
-    title?: string;
+    url?: string;
     note?: string;
     file?: File;
   }) => {
@@ -170,7 +170,7 @@ export const homeworkApi = {
     form.append('docKey', String(data.docKey));
     form.append('seq', String(data.seq));
     form.append('branchName', data.branchName);
-    if (data.title) form.append('title', data.title);
+    if (data.url) form.append('url', data.url);
     if (data.note) form.append('note', data.note);
     if (data.file) form.append('file', data.file);
     return apiClient.post<PortalHomework>('/homework', form).then((r) => r.data);
@@ -191,27 +191,20 @@ export const homeworkApi = {
 export const leaveApi = {
   getAll: () => apiClient.get<PortalLeaveRequest[]>('/leave').then((r) => r.data),
   getMine: () => apiClient.get<PortalLeaveRequest[]>('/leave/mine').then((r) => r.data),
-  getForTeacher: () => apiClient.get<PortalLeaveRequest[]>('/leave/teacher').then((r) => r.data),
   submit: (data: {
     occurrenceId?: string;
     docKey: number;
     seq: number;
     branchName: string;
     sessionDate: string;
+    startTime?: string;
     reason: string;
+    replacementOptions?: { date: string; time: string }[];
   }) => apiClient.post<PortalLeaveRequest>('/leave', data).then((r) => r.data),
-  review: (id: string, data: { adminNote?: string; approve: boolean; needsReplacement: boolean }) =>
-    apiClient.post<PortalLeaveRequest>(`/leave/${id}/review`, data).then((r) => r.data),
-  proposeReplacement: (
+  decide: (
     id: string,
-    data: { replDate: string; replStart: string; replEnd: string; replTeacher: string }
-  ) => apiClient.post<PortalLeaveRequest>(`/leave/${id}/propose-replacement`, data).then((r) => r.data),
-  accept: (id: string) => apiClient.post<PortalLeaveRequest>(`/leave/${id}/accept`).then((r) => r.data),
-  counter: (
-    id: string,
-    data: { counterDate: string; counterStart: string; counterEnd: string; counterMsg?: string }
-  ) => apiClient.post<PortalLeaveRequest>(`/leave/${id}/counter`, data).then((r) => r.data),
-  confirm: (id: string) => apiClient.post<PortalLeaveRequest>(`/leave/${id}/confirm`).then((r) => r.data),
+    data: { approve: boolean; adminNote?: string; chosenDate?: string; chosenTime?: string }
+  ) => apiClient.post<PortalLeaveRequest>(`/leave/${id}/decide`, data).then((r) => r.data),
 };
 
 export const calendarApi = {
@@ -260,6 +253,10 @@ export const attendanceApi = {
 
 export const lessonNotesApi = {
   getAll: () => apiClient.get<LessonNote[]>('/lesson-notes').then((r) => r.data),
+  getForBranch: (branchName: string) =>
+    apiClient
+      .get<LessonNote[]>(`/lesson-notes/for-branch/${encodeURIComponent(branchName)}`)
+      .then((r) => r.data),
   getByStudent: (studentId: string) =>
     apiClient.get<LessonNote[]>(`/lesson-notes/student/${studentId}`).then((r) => r.data),
   create: (data: Partial<LessonNote>) => apiClient.post<LessonNote>('/lesson-notes', data).then((r) => r.data),

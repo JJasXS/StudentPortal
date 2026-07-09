@@ -5,16 +5,15 @@ import { LeaveWorkflowSteps } from '@/components/leave/LeaveWorkflowSteps';
 import { Card, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { DataTable } from '@/components/ui/DataTable';
-import { Input, Label, Select, Textarea } from '@/components/ui/Input';
+import { Label, Textarea } from '@/components/ui/Input';
 import { Modal } from '@/components/ui/Modal';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { useToast } from '@/context/ToastContext';
-import { leaveApi, teachersApi } from '@/api/resources';
+import { leaveApi } from '@/api/resources';
 import { formatDateDDMMYYYY } from '@/utils/dateFormat';
 import { formatPortalSlotDate, portalLeaveStatusLabel } from '@/utils/portalLeave';
 import { getApiErrorMessage } from '@/utils/apiError';
 import type { PortalLeaveRequest } from '@/types/portal';
-import type { SqlAccountCalendarTeacher } from '@/types/sqlAccount';
 
 function LeaveActionsMenu({ onManage }: { onManage: () => void }) {
   const [open, setOpen] = useState(false);
@@ -55,17 +54,11 @@ function LeaveActionsMenu({ onManage }: { onManage: () => void }) {
 export default function AdminLeavePage() {
   const { error: showError } = useToast();
   const [requests, setRequests] = useState<PortalLeaveRequest[]>([]);
-  const [erpTeachers, setErpTeachers] = useState<SqlAccountCalendarTeacher[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<'all' | 'action'>('action');
   const [selected, setSelected] = useState<PortalLeaveRequest | null>(null);
   const [note, setNote] = useState('');
-  const [replForm, setReplForm] = useState({
-    replTeacher: '',
-    date: '',
-    start: '10:00',
-    end: '11:00',
-  });
+  const [chosenSlot, setChosenSlot] = useState('');
 
   const refresh = useCallback(async () => {
     try {
@@ -82,43 +75,48 @@ export default function AdminLeavePage() {
 
   useEffect(() => {
     setLoading(true);
-    Promise.all([leaveApi.getAll(), teachersApi.getCalendarFilter()])
-      .then(([leaveData, teacherData]) => {
-        setRequests(leaveData);
-        setErpTeachers(teacherData);
-      })
-      .catch(() => {
-        setRequests([]);
-        setErpTeachers([]);
-      })
+    leaveApi
+      .getAll()
+      .then(setRequests)
+      .catch(() => setRequests([]))
       .finally(() => setLoading(false));
   }, []);
 
   const filtered = useMemo(() => {
     if (filter === 'all') return requests;
-    return requests.filter((r) =>
-      ['Pending', 'ReplacementNeeded', 'TeacherCountered'].includes(r.status)
-    );
+    return requests.filter((r) => r.status === 'Pending');
   }, [requests, filter]);
 
   const openManage = (req: PortalLeaveRequest) => {
     setSelected(req);
     setNote('');
-    setReplForm({
-      replTeacher: req.replTeacher ?? '',
-      date: req.replDate?.slice(0, 10) ?? '',
-      start: req.replStart ?? '10:00',
-      end: req.replEnd ?? '11:00',
-    });
+    setChosenSlot(req.replOptions?.[0] ? `${req.replOptions[0].date}|${req.replOptions[0].time}` : '');
   };
 
   const closeManage = () => setSelected(null);
+
+  const handleDecide = async (approve: boolean, withSlot = false) => {
+    if (!selected) return;
+    const [chosenDate, chosenTime] = withSlot ? chosenSlot.split('|') : [undefined, undefined];
+    try {
+      await leaveApi.decide(selected.id, {
+        approve,
+        adminNote: note || undefined,
+        chosenDate,
+        chosenTime,
+      });
+      await refresh();
+      closeManage();
+    } catch (err) {
+      showError(getApiErrorMessage(err, 'Could not update leave request.'));
+    }
+  };
 
   return (
     <div className="space-y-4">
       <PageHeader
         title="Leave requests"
-        description="Review leave and arrange replacements."
+        description="Review leave and confirm replacement slots proposed by parents."
       />
 
       <div className="flex gap-2">
@@ -175,7 +173,7 @@ export default function AdminLeavePage() {
                 },
                 {
                   key: 'sessionDate',
-                  header: 'Leave date',
+                  header: 'Session on leave',
                   sortable: true,
                   sortType: 'date',
                   getSortValue: (r) => r.sessionDate,
@@ -189,9 +187,21 @@ export default function AdminLeavePage() {
                   ),
                 },
                 {
-                  key: 'replTeacher',
-                  header: 'Replacement',
-                  render: (r) => r.replTeacher ?? '—',
+                  key: 'replOptions',
+                  header: 'Proposed replacements',
+                  className: 'max-w-[14rem] whitespace-normal',
+                  render: (r) =>
+                    r.replOptions && r.replOptions.length > 0 ? (
+                      <ul className="space-y-0.5 text-sm text-slate-700">
+                        {r.replOptions.map((slot) => (
+                          <li key={`${slot.date}-${slot.time}`}>
+                            {formatDateDDMMYYYY(slot.date)} · {slot.time}
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <span className="text-slate-400">None</span>
+                    ),
                 },
                 {
                   key: 'actions',
@@ -215,9 +225,20 @@ export default function AdminLeavePage() {
       >
         {selected && (
           <div className="space-y-4">
-            <p className="text-sm text-slate-600">
-              {selected.className} · {formatDateDDMMYYYY(selected.sessionDate)}
-            </p>
+            <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
+              <p>
+                <span className="font-medium text-slate-900">Session on leave:</span>{' '}
+                {selected.className} · {formatDateDDMMYYYY(selected.sessionDate)}
+              </p>
+              {selected.replOptions && selected.replOptions.length > 0 ? (
+                <p className="mt-1 text-slate-600">
+                  Parent proposed {selected.replOptions.length} replacement slot
+                  {selected.replOptions.length === 1 ? '' : 's'} (choose one below).
+                </p>
+              ) : (
+                <p className="mt-1 text-slate-600">No replacement slots proposed.</p>
+              )}
+            </div>
             <p className="text-sm text-slate-800">{selected.reason}</p>
             <LeaveWorkflowSteps status={selected.status} />
 
@@ -229,152 +250,59 @@ export default function AdminLeavePage() {
             />
 
             {selected.status === 'Pending' && (
-              <div className="flex flex-wrap gap-2 border-t border-slate-100 pt-4">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() =>
-                    void leaveApi
-                      .review(selected.id, { adminNote: note, approve: false, needsReplacement: false })
-                      .then(() => refresh())
-                  }
-                >
-                  Reject
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() =>
-                    void leaveApi
-                      .review(selected.id, { adminNote: note, approve: true, needsReplacement: false })
-                      .then(() => refresh())
-                  }
-                >
-                  Approve (no replacement)
-                </Button>
-                <Button
-                  type="button"
-                  onClick={() =>
-                    void leaveApi
-                      .review(selected.id, {
-                        adminNote: note || 'Approved — replacement required.',
-                        approve: true,
-                        needsReplacement: true,
-                      })
-                      .then(() => refresh())
-                  }
-                >
-                  Approve + replacement
-                </Button>
-              </div>
-            )}
-
-            {selected.status === 'ReplacementNeeded' && (
-              <div className="grid gap-3 border-t border-slate-100 pt-4 sm:grid-cols-2">
-                <div className="space-y-1.5 sm:col-span-2">
-                  <Label>Replacement teacher</Label>
-                  <Select
-                    value={replForm.replTeacher}
-                    onChange={(e) => setReplForm((f) => ({ ...f, replTeacher: e.target.value }))}
-                  >
-                    <option value="">Select teacher…</option>
-                    {erpTeachers.map((t) => (
-                      <option key={t.erpUserId} value={t.fullName} disabled={!t.portalUserId}>
-                        {t.fullName}
-                        {!t.portalUserId ? ' (no portal login)' : ''}
-                      </option>
-                    ))}
-                  </Select>
-                </div>
-                <div className="space-y-1.5">
-                  <Label>Date</Label>
-                  <Input
-                    type="date"
-                    value={replForm.date}
-                    onChange={(e) => setReplForm((f) => ({ ...f, date: e.target.value }))}
-                  />
-                </div>
-                <div className="grid grid-cols-2 gap-2">
-                  <div className="space-y-1.5">
-                    <Label>Start</Label>
-                    <Input
-                      type="time"
-                      value={replForm.start}
-                      onChange={(e) => setReplForm((f) => ({ ...f, start: e.target.value }))}
-                    />
+              <div className="space-y-4 border-t border-slate-100 pt-4">
+                {selected.replOptions && selected.replOptions.length > 0 && (
+                  <div className="space-y-2">
+                    <Label>Parent&apos;s preferred replacement slots</Label>
+                    <div className="space-y-2">
+                      {selected.replOptions.map((slot) => {
+                        const key = `${slot.date}|${slot.time}`;
+                        return (
+                          <label
+                            key={key}
+                            className="flex cursor-pointer items-center gap-3 rounded-lg border border-slate-200 px-3 py-2 hover:bg-slate-50"
+                          >
+                            <input
+                              type="radio"
+                              name="replacement-slot"
+                              value={key}
+                              checked={chosenSlot === key}
+                              onChange={() => setChosenSlot(key)}
+                            />
+                            <span className="text-sm text-slate-800">
+                              {formatDateDDMMYYYY(slot.date)} · {slot.time}
+                            </span>
+                          </label>
+                        );
+                      })}
+                    </div>
                   </div>
-                  <div className="space-y-1.5">
-                    <Label>End</Label>
-                    <Input
-                      type="time"
-                      value={replForm.end}
-                      onChange={(e) => setReplForm((f) => ({ ...f, end: e.target.value }))}
-                    />
-                  </div>
-                </div>
-                <div className="sm:col-span-2">
-                  <Button
-                    type="button"
-                    disabled={!replForm.replTeacher || !replForm.date}
-                    onClick={() =>
-                      void leaveApi
-                        .proposeReplacement(selected.id, {
-                          replTeacher: replForm.replTeacher,
-                          replDate: replForm.date,
-                          replStart: replForm.start,
-                          replEnd: replForm.end,
-                        })
-                        .then(() => refresh())
-                    }
-                  >
-                    Send to teacher
-                  </Button>
-                </div>
-              </div>
-            )}
-
-            {selected.status === 'AwaitingTeacher' && (
-              <div className="rounded-lg border border-blue-100 bg-blue-50/50 px-3 py-2 text-sm text-blue-900">
-                Waiting for {selected.replTeacher} — proposed{' '}
-                {formatPortalSlotDate(selected.replDate, selected.replStart, selected.replEnd)}
-                {selected.teacherResponse === 'Accepted' && (
-                  <span className="ml-1 font-medium">· Teacher accepted</span>
                 )}
-              </div>
-            )}
 
-            {selected.status === 'TeacherCountered' && (
-              <div className="space-y-3 border-t border-slate-100 pt-4">
-                <div className="rounded-lg border border-violet-100 bg-violet-50/50 px-3 py-2 text-sm">
-                  <p className="font-medium text-violet-900">Teacher counter-proposal</p>
-                  <p className="text-violet-800">
-                    {formatPortalSlotDate(
-                      selected.counterDate,
-                      selected.counterStart,
-                      selected.counterEnd
-                    )}
-                  </p>
-                  {selected.counterMsg && (
-                    <p className="mt-1 text-violet-700">{selected.counterMsg}</p>
+                <div className="flex flex-wrap gap-2">
+                  <Button type="button" variant="outline" onClick={() => void handleDecide(false)}>
+                    Reject
+                  </Button>
+                  <Button type="button" variant="outline" onClick={() => void handleDecide(true)}>
+                    Approve (cancel session)
+                  </Button>
+                  {selected.replOptions && selected.replOptions.length > 0 && (
+                    <Button
+                      type="button"
+                      disabled={!chosenSlot}
+                      onClick={() => void handleDecide(true, true)}
+                    >
+                      Approve &amp; schedule replacement
+                    </Button>
                   )}
                 </div>
-                <Button type="button" onClick={() => void leaveApi.confirm(selected.id).then(() => refresh())}>
-                  Confirm schedule
-                </Button>
               </div>
-            )}
-
-            {selected.status === 'AwaitingTeacher' && selected.teacherResponse === 'Accepted' && (
-              <Button type="button" onClick={() => void leaveApi.confirm(selected.id).then(() => refresh())}>
-                Confirm schedule
-              </Button>
             )}
 
             {selected.status === 'Confirmed' && (
               <div className="rounded-lg border border-emerald-200 bg-emerald-50/60 px-3 py-2 text-sm text-emerald-900">
                 Confirmed replacement:{' '}
-                {formatPortalSlotDate(selected.replDate, selected.replStart, selected.replEnd)} with{' '}
-                {selected.replTeacher}
+                {formatPortalSlotDate(selected.replDate, selected.replStart, selected.replEnd)}
               </div>
             )}
           </div>

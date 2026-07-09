@@ -37,6 +37,7 @@ export function sessionToScheduleItem(
     startTime: session.startTime,
     endTime: session.endTime,
     title: `${location}, ${formatTime(session.startTime)}`,
+    className: cls?.className ?? courseName,
     teacherName: cls?.teacherName,
     courseLabel: `${courseName} (${minutes} min)`,
     status: session.status,
@@ -61,6 +62,7 @@ export function erpEventToScheduleItem(
     startTime: erp.startTime,
     endTime: erp.endTime,
     title: `${erp.className}, ${formatTime(erp.startTime)}`,
+    className: erp.courseName ?? erp.className,
     teacherName: erp.teacherName ?? undefined,
     courseLabel: `${courseName} (${minutes} min)${branchSuffix}`,
     status:

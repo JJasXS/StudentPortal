@@ -6,6 +6,7 @@ export interface ScheduleLessonItem {
   startTime: string;
   endTime?: string;
   title: string;
+  className?: string;
   teacherName?: string;
   courseLabel?: string;
   status: 'Scheduled' | 'Completed' | 'Cancelled' | 'Rescheduled';
@@ -28,6 +29,13 @@ function parseDateParts(isoDate: string) {
   };
 }
 
+function formatTimeShort(time: string) {
+  const [h, m] = time.split(':').map(Number);
+  const d = new Date();
+  d.setHours(h, m, 0, 0);
+  return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+}
+
 interface ScheduleLessonCardProps {
   item: ScheduleLessonItem;
   className?: string;
@@ -37,6 +45,8 @@ export function ScheduleLessonCard({ item, className }: ScheduleLessonCardProps)
   const { weekday, day, month } = parseDateParts(item.sessionDate);
   const displayStatus =
     item.isMakeup && item.status !== 'Cancelled' ? 'Scheduled' : item.status;
+  const classLabel = item.className ?? item.title;
+  const timeLabel = formatTimeShort(item.startTime);
 
   return (
     <article
@@ -61,13 +71,10 @@ export function ScheduleLessonCard({ item, className }: ScheduleLessonCardProps)
           {displayStatus}
         </span>
         <h3 className="mt-2 line-clamp-2 text-sm font-bold leading-snug text-slate-900 sm:mt-2.5 sm:text-[15px]">
-          {item.title}
+          {classLabel} | {timeLabel}
         </h3>
         {item.teacherName && (
           <p className="mt-1 truncate text-xs text-slate-500 sm:text-sm">{item.teacherName}</p>
-        )}
-        {item.courseLabel && (
-          <p className="mt-0.5 line-clamp-2 text-xs text-slate-500 sm:text-sm">{item.courseLabel}</p>
         )}
       </div>
 

@@ -130,7 +130,7 @@ export function CalendarSessionDetailModal({
       open={Boolean(event)}
       onClose={onClose}
       title="Class session"
-      className="max-w-2xl"
+      className="max-w-4xl max-h-[85vh] flex flex-col"
       headerExtra={
         <EventActionsMenu event={event} onReplace={onReplace} onCancel={onCancel} onClose={onClose} />
       }
@@ -217,32 +217,19 @@ export function CalendarEventChip({
   event: CalendarEvent;
   onClick?: () => void;
 }) {
-  const isErp = event.id.startsWith('occ-');
-  const cls = event.className ?? event.session.className ?? 'Class';
-  const teacher = event.teacherName ?? event.subtitle ?? 'Teacher';
+  const classLabel =
+    event.courseName ?? event.className ?? event.session.className ?? 'Class';
+  const teacher = event.teacherName ?? '—';
   const time = formatTimeShort(event.session.startTime);
-  const course = event.courseName ?? 'Course';
 
   const body = (
     <div
       className={`rounded border px-1.5 py-1 text-left text-[10px] leading-snug ${teacherEventColor(event.teacherUserId, event.session.status)}`}
     >
-      {isErp ? (
-        <>
-          <p className="truncate font-semibold">{cls}</p>
-          <p className="truncate opacity-80">
-            {time} · {teacher}
-          </p>
-        </>
-      ) : (
-        <>
-          <p className="truncate font-semibold opacity-90">{course}</p>
-          <p className="truncate font-medium">{cls}</p>
-          <p className="truncate opacity-80">
-            {time} · {teacher}
-          </p>
-        </>
-      )}
+      <p className="truncate font-semibold">
+        {classLabel} | {time}
+      </p>
+      <p className="truncate opacity-80">{teacher}</p>
     </div>
   );
 

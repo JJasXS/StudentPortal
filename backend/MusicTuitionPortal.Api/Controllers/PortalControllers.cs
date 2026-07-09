@@ -42,7 +42,7 @@ public class HomeworkController : ControllerBase
         [FromForm] int docKey,
         [FromForm] int seq,
         [FromForm] string branchName,
-        [FromForm] string? title,
+        [FromForm] string? url,
         [FromForm] string? note,
         [FromForm] IFormFile? file,
         CancellationToken cancellationToken)
@@ -50,7 +50,7 @@ public class HomeworkController : ControllerBase
         var email = User.FindFirst(ClaimTypes.Email)?.Value;
         if (string.IsNullOrWhiteSpace(email)) return Unauthorized();
 
-        var request = new CreatePortalHomeworkRequest(docKey, seq, branchName, title, note);
+        var request = new CreatePortalHomeworkRequest(docKey, seq, branchName, url, note);
         try
         {
             return Ok(MapHw(await _service.SubmitAsync(email, request, file, cancellationToken)));
@@ -104,7 +104,7 @@ public class HomeworkController : ControllerBase
         branchName = h.BranchName,
         className = h.ClassName,
         itemCode = h.ItemCode,
-        title = h.Title,
+        url = h.Url,
         note = h.Note,
         fileName = h.FileName,
         filePath = h.FilePath,
@@ -136,14 +136,6 @@ public class LeaveController : ControllerBase
         return Ok((await _service.GetForParentAsync(email, cancellationToken)).Select(MapLeave).ToList());
     }
 
-    [HttpGet("teacher")]
-    [Authorize(Roles = "Teacher")]
-    public async Task<IActionResult> GetForTeacher(CancellationToken cancellationToken)
-    {
-        var name = User.Identity?.Name ?? string.Empty;
-        return Ok((await _service.GetForTeacherAsync(name, cancellationToken)).Select(MapLeave).ToList());
-    }
-
     [HttpPost]
     [Authorize(Roles = "Parent")]
     public async Task<IActionResult> Submit([FromBody] CreatePortalLeaveRequest request, CancellationToken cancellationToken)
@@ -154,43 +146,11 @@ public class LeaveController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { message = ex.Message }); }
     }
 
-    [HttpPost("{id}/review")]
+    [HttpPost("{id}/decide")]
     [Authorize(Roles = "Admin")]
-    public async Task<IActionResult> Review(string id, [FromBody] AdminLeaveReviewRequest request, CancellationToken cancellationToken)
+    public async Task<IActionResult> Decide(string id, [FromBody] AdminLeaveDecisionRequest request, CancellationToken cancellationToken)
     {
-        try { return Ok(MapLeave(await _service.AdminReviewAsync(id, request, cancellationToken))); }
-        catch (InvalidOperationException ex) { return BadRequest(new { message = ex.Message }); }
-    }
-
-    [HttpPost("{id}/propose-replacement")]
-    [Authorize(Roles = "Admin")]
-    public async Task<IActionResult> ProposeReplacement(string id, [FromBody] AdminLeaveReplacementRequest request, CancellationToken cancellationToken)
-    {
-        try { return Ok(MapLeave(await _service.ProposeReplacementAsync(id, request, cancellationToken))); }
-        catch (InvalidOperationException ex) { return BadRequest(new { message = ex.Message }); }
-    }
-
-    [HttpPost("{id}/accept")]
-    [Authorize(Roles = "Teacher")]
-    public async Task<IActionResult> Accept(string id, CancellationToken cancellationToken)
-    {
-        try { return Ok(MapLeave(await _service.TeacherAcceptAsync(id, cancellationToken))); }
-        catch (InvalidOperationException ex) { return BadRequest(new { message = ex.Message }); }
-    }
-
-    [HttpPost("{id}/counter")]
-    [Authorize(Roles = "Teacher")]
-    public async Task<IActionResult> Counter(string id, [FromBody] TeacherLeaveCounterRequest request, CancellationToken cancellationToken)
-    {
-        try { return Ok(MapLeave(await _service.TeacherCounterAsync(id, request, cancellationToken))); }
-        catch (InvalidOperationException ex) { return BadRequest(new { message = ex.Message }); }
-    }
-
-    [HttpPost("{id}/confirm")]
-    [Authorize(Roles = "Admin")]
-    public async Task<IActionResult> Confirm(string id, CancellationToken cancellationToken)
-    {
-        try { return Ok(MapLeave(await _service.AdminConfirmReplacementAsync(id, cancellationToken))); }
+        try { return Ok(MapLeave(await _service.AdminDecideAsync(id, request, cancellationToken))); }
         catch (InvalidOperationException ex) { return BadRequest(new { message = ex.Message }); }
     }
 
@@ -199,7 +159,9 @@ public class LeaveController : ControllerBase
         id = r.Id, occurrenceId = r.OccurrenceId, docKey = r.DocKey, seq = r.Seq,
         customerCode = r.CustomerCode, branchName = r.BranchName, className = r.ClassName,
         sessionDate = r.SessionDate, reason = r.Reason, status = r.Status, adminNote = r.AdminNote,
-        needsReplacement = r.NeedsReplacement, replDate = r.ReplDate, replStart = r.ReplStart,
+        needsReplacement = r.NeedsReplacement,
+        replOptions = r.ReplOptions.Select(o => new { date = o.Date, time = o.Time }).ToList(),
+        replDate = r.ReplDate, replStart = r.ReplStart,
         replEnd = r.ReplEnd, replTeacher = r.ReplTeacher, teacherResponse = r.TeacherResponse,
         counterDate = r.CounterDate, counterStart = r.CounterStart, counterEnd = r.CounterEnd,
         counterMsg = r.CounterMsg, requestedBy = r.RequestedBy, createdAt = r.CreatedAt, updatedAt = r.UpdatedAt,

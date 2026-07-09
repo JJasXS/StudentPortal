@@ -258,6 +258,7 @@ public class LessonNote
     public string NoteTitle { get; set; } = string.Empty;
     public string NoteContent { get; set; } = string.Empty;
     public string? PracticeInstructions { get; set; }
+    public string? HomeworkId { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 }

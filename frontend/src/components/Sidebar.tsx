@@ -12,7 +12,6 @@ import {
   History,
   BookOpenCheck,
   CalendarOff,
-  RefreshCw,
   GraduationCap,
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
@@ -44,14 +43,13 @@ const teacherNav: NavItem[] = [
   { label: 'Dashboard', path: '/teacher/dashboard', icon: LayoutDashboard },
   { label: 'Schedule', path: '/teacher/calendar', icon: CalendarDays },
   { label: 'My Classes', path: '/teacher/classes', icon: Calendar },
-  { label: 'Replacements', path: '/teacher/replacements', icon: RefreshCw },
   { label: 'Announcements', path: '/teacher/announcements', icon: Megaphone },
 ];
 
 const learnerNav: NavItem[] = [
   { label: 'Dashboard', path: '/student/dashboard', icon: LayoutDashboard },
   { label: 'Schedule', path: '/student/schedule', icon: CalendarDays },
-  { label: 'My Courses', path: '/student/courses', icon: GraduationCap, parentLabel: 'My Children' },
+  { label: 'My Courses', path: '/student/courses', icon: GraduationCap, parentLabel: 'Assignment' },
   { label: 'Homework', path: '/student/homework', icon: BookOpenCheck },
   { label: 'Leave', path: '/student/leave', icon: CalendarOff },
   { label: 'Announcements', path: '/student/announcements', icon: Megaphone },

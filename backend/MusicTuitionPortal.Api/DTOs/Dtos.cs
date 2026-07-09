@@ -94,7 +94,7 @@ public record RedeemCheckInRequest(string Code);
 public record LessonNoteDto(
     Guid Id, Guid? ClassSessionId, string? ClassName, Guid? StudentUserId, string? StudentName,
     Guid TeacherUserId, string? TeacherName, string NoteTitle, string NoteContent,
-    string? PracticeInstructions, DateTime CreatedAt);
+    string? PracticeInstructions, string? HomeworkId, DateTime CreatedAt);
 
 public record AnnouncementDto(
     Guid Id, string Title, string Content, string Category, DateTime? HolidayDate, string TargetRole,
@@ -347,7 +347,7 @@ public record PortalHomeworkDto(
     string BranchName,
     string? ClassName,
     string? ItemCode,
-    string? Title,
+    string? Url,
     string? Note,
     string? FileName,
     string? FilePath,
@@ -358,8 +358,10 @@ public record CreatePortalHomeworkRequest(
     int DocKey,
     int Seq,
     string BranchName,
-    string? Title,
+    string? Url,
     string? Note);
+
+public record ReplacementOptionDto(string Date, string Time);
 
 public record PortalLeaveRequestDto(
     string Id,
@@ -374,6 +376,7 @@ public record PortalLeaveRequestDto(
     string Status,
     string? AdminNote,
     bool NeedsReplacement,
+    IReadOnlyList<ReplacementOptionDto> ReplOptions,
     string? ReplDate,
     string? ReplStart,
     string? ReplEnd,
@@ -393,18 +396,12 @@ public record CreatePortalLeaveRequest(
     int Seq,
     string BranchName,
     string SessionDate,
-    string Reason);
+    string? StartTime,
+    string Reason,
+    IReadOnlyList<ReplacementOptionDto>? ReplacementOptions);
 
-public record AdminLeaveReviewRequest(string AdminNote, bool Approve, bool NeedsReplacement);
-
-public record AdminLeaveReplacementRequest(
-    string ReplDate,
-    string ReplStart,
-    string ReplEnd,
-    string ReplTeacher);
-
-public record TeacherLeaveCounterRequest(
-    string CounterDate,
-    string CounterStart,
-    string CounterEnd,
-    string? CounterMsg);
+public record AdminLeaveDecisionRequest(
+    bool Approve,
+    string? AdminNote,
+    string? ChosenDate,
+    string? ChosenTime);

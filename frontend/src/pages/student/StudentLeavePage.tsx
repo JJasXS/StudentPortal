@@ -6,40 +6,36 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { DataTable } from '@/components/ui/DataTable';
 import { Modal } from '@/components/ui/Modal';
-import { Label, Select, Textarea } from '@/components/ui/Input';
+import { Label, Select, Textarea, Input } from '@/components/ui/Input';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { useAuth } from '@/context/AuthContext';
 import { useToast } from '@/context/ToastContext';
 import { leaveApi, parentsApi } from '@/api/resources';
 import { formatDateDDMMYYYY } from '@/utils/dateFormat';
-import { formatPortalSlotDate, portalLeaveStatusLabel } from '@/utils/portalLeave';
+import { formatPortalSlotDate, isLeaveSessionEligible, portalLeaveStatusLabel } from '@/utils/portalLeave';
 import { getApiErrorMessage } from '@/utils/apiError';
 import type { SqlAccountChild, ErpCalendarEvent } from '@/types/sqlAccount';
-import type { PortalLeaveRequest } from '@/types/portal';
+import type { PortalLeaveRequest, ReplacementOption } from '@/types/portal';
 
 type Step = 'child' | 'session' | 'list';
 
 function ReplacementDetails({ request }: { request: PortalLeaveRequest }) {
   if (!request.needsReplacement) return null;
 
-  const finalDate =
-    request.teacherResponse === 'Countered' && request.counterDate
-      ? request.counterDate
-      : request.replDate;
-  const finalStart =
-    request.teacherResponse === 'Countered' && request.counterStart
-      ? request.counterStart
-      : request.replStart;
-  const finalEnd =
-    request.teacherResponse === 'Countered' && request.counterEnd
-      ? request.counterEnd
-      : request.replEnd;
-
   if (request.status !== 'Confirmed') {
     return (
       <div className="mt-3 rounded-lg border border-amber-100 bg-amber-50/60 px-3 py-2 text-sm text-amber-900">
-        Replacement in progress — admin and teacher are arranging a make-up class.
+        Replacement pending — admin will review your preferred slots.
+        {request.replOptions && request.replOptions.length > 0 && (
+          <ul className="mt-2 space-y-1">
+            {request.replOptions.map((slot) => (
+              <li key={`${slot.date}-${slot.time}`}>
+                {formatDateDDMMYYYY(slot.date)} · {slot.time}
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
     );
   }
@@ -51,11 +47,8 @@ function ReplacementDetails({ request }: { request: PortalLeaveRequest }) {
       </p>
       <p className="mt-1 font-medium text-emerald-950">{request.className}</p>
       <p className="text-sm text-emerald-800">
-        {formatPortalSlotDate(finalDate, finalStart, finalEnd)}
+        {formatPortalSlotDate(request.replDate, request.replStart, request.replEnd)}
       </p>
-      {request.replTeacher && (
-        <p className="mt-1 text-sm text-emerald-700">Teacher: {request.replTeacher}</p>
-      )}
     </div>
   );
 }
@@ -71,6 +64,7 @@ export default function StudentLeavePage() {
   const [requests, setRequests] = useState<PortalLeaveRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [reason, setReason] = useState('');
+  const [replacementSlots, setReplacementSlots] = useState<ReplacementOption[]>([{ date: '', time: '' }]);
   const [submitting, setSubmitting] = useState(false);
   const [selectedRequest, setSelectedRequest] = useState<PortalLeaveRequest | null>(null);
 
@@ -102,9 +96,12 @@ export default function StudentLeavePage() {
   }, [user?.role]);
 
   const upcomingSessions = useMemo(() => {
-    const now = new Date();
     return events
-      .filter((e) => e.status !== 'Cancelled' && new Date(e.sessionDate) >= now)
+      .filter(
+        (e) =>
+          e.status !== 'Cancelled' &&
+          isLeaveSessionEligible(e.sessionDate, e.startTime)
+      )
       .sort((a, b) => new Date(a.sessionDate).getTime() - new Date(b.sessionDate).getTime());
   }, [events]);
 
@@ -122,15 +119,19 @@ export default function StudentLeavePage() {
     if (!selectedChild || !selectedEvent || !reason.trim()) return;
     setSubmitting(true);
     try {
+      const replacementOptions = replacementSlots.filter((s) => s.date.trim() && s.time.trim());
       await leaveApi.submit({
         occurrenceId: selectedEvent.id.startsWith('occ-') ? selectedEvent.id.slice(4) : selectedEvent.id,
         docKey: selectedEvent.docKey,
         seq: selectedEvent.seq,
         branchName: selectedChild.branchName,
         sessionDate: selectedEvent.sessionDate,
+        startTime: selectedEvent.startTime,
         reason: reason.trim(),
+        replacementOptions: replacementOptions.length > 0 ? replacementOptions : undefined,
       });
       setReason('');
+      setReplacementSlots([{ date: '', time: '' }]);
       setSelectedEvent(null);
       setSelectedChild(null);
       setStep('list');
@@ -225,7 +226,9 @@ export default function StudentLeavePage() {
           </CardHeader>
           <CardContent>
             {upcomingSessions.length === 0 ? (
-              <p className="text-sm text-slate-500">No upcoming sessions for this child.</p>
+              <p className="text-sm text-slate-500">
+                No eligible sessions (leave must be 24 hours to 1 month before class).
+              </p>
             ) : (
               <form onSubmit={(e) => void handleSubmit(e)} className="space-y-4">
                 <div className="space-y-1.5">
@@ -258,6 +261,63 @@ export default function StudentLeavePage() {
                     placeholder="Brief reason for leave…"
                     required
                   />
+                </div>
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label>Preferred replacement slots (optional)</Label>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() =>
+                        setReplacementSlots((rows) => [...rows, { date: '', time: '' }])
+                      }
+                    >
+                      <Plus className="mr-1 h-3.5 w-3.5" />
+                      Add slot
+                    </Button>
+                  </div>
+                  <p className="text-xs text-slate-500">
+                    Add one row per date/time you could attend a make-up class. Admin will pick one option.
+                  </p>
+                  {replacementSlots.map((slot, index) => (
+                    <div key={index} className="grid gap-2 sm:grid-cols-[1fr_1fr_auto]">
+                      <Input
+                        type="date"
+                        value={slot.date}
+                        onChange={(e) =>
+                          setReplacementSlots((rows) =>
+                            rows.map((row, i) =>
+                              i === index ? { ...row, date: e.target.value } : row
+                            )
+                          )
+                        }
+                      />
+                      <Input
+                        type="time"
+                        value={slot.time}
+                        onChange={(e) =>
+                          setReplacementSlots((rows) =>
+                            rows.map((row, i) =>
+                              i === index ? { ...row, time: e.target.value } : row
+                            )
+                          )
+                        }
+                      />
+                      {replacementSlots.length > 1 && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() =>
+                            setReplacementSlots((rows) => rows.filter((_, i) => i !== index))
+                          }
+                        >
+                          Remove
+                        </Button>
+                      )}
+                    </div>
+                  ))}
                 </div>
                 <div className="flex justify-end gap-2">
                   <Button type="button" variant="outline" onClick={() => setStep('list')}>

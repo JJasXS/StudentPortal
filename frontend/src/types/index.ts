@@ -206,6 +206,7 @@ export interface LessonNote {
   noteTitle: string;
   noteContent: string;
   practiceInstructions?: string;
+  homeworkId?: string | null;
   createdAt: string;
 }
 
