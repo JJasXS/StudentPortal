@@ -122,7 +122,8 @@ export function DashboardNotifyFeed({
   const announcementsPath = announcementsListPath(role);
 
   return (
-    <Card ref={cardRef} className={className}>
+    <div ref={cardRef}>
+    <Card className={className}>
       <CardHeader className="pb-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <CardTitle className="flex items-center gap-2 text-base">
@@ -211,5 +212,6 @@ export function DashboardNotifyFeed({
         )}
       </CardContent>
     </Card>
+    </div>
   );
 }
