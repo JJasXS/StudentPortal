@@ -389,24 +389,47 @@ export default function LearnerSchedulePage() {
 
       {isParent ? (
         <>
+          <div className="mb-4 flex gap-2">
+            <Button
+              type="button"
+              size="sm"
+              variant={parentView === 'week' ? 'default' : 'outline'}
+              onClick={() => setParentView('week')}
+            >
+              Week
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant={parentView === 'month' ? 'default' : 'outline'}
+              onClick={() => setParentView('month')}
+            >
+              Month
+            </Button>
+          </div>
+
           <div className="mb-4 flex items-center justify-between gap-1 sm:mb-5 sm:gap-2">
             <Button
               type="button"
               variant="ghost"
               size="sm"
-              onClick={prevWeek}
-              aria-label="Previous week"
+              onClick={parentView === 'week' ? prevWeek : prevMonth}
+              aria-label={parentView === 'week' ? 'Previous week' : 'Previous month'}
               className="h-11 w-11 shrink-0 touch-manipulation sm:h-9 sm:w-auto"
             >
               <ChevronLeft className="h-5 w-5" />
             </Button>
             <div className="flex min-w-0 flex-1 flex-col items-center gap-1 px-1">
               <span className="max-w-full truncate rounded-full bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-700 sm:px-4 sm:text-sm">
-                {showingCurrentWeek
-                  ? 'This week'
-                  : formatWeekRange(parentWeekRange.from, parentWeekRange.to)}
+                {parentView === 'week'
+                  ? showingCurrentWeek
+                    ? 'This week'
+                    : formatWeekRange(parentWeekRange.from, parentWeekRange.to)
+                  : isCurrentMonth
+                    ? 'This month'
+                    : monthLabel(anchor.year, anchor.month)}
               </span>
-              {showingCurrentWeek && (
+              {parentView === 'week' && showingCurrentWeek && (
                 <span className="text-xs text-slate-500">
                   {formatWeekRange(parentWeekRange.from, parentWeekRange.to)}
                 </span>
@@ -416,8 +439,8 @@ export default function LearnerSchedulePage() {
               type="button"
               variant="ghost"
               size="sm"
-              onClick={nextWeek}
-              aria-label="Next week"
+              onClick={parentView === 'week' ? nextWeek : nextMonth}
+              aria-label={parentView === 'week' ? 'Next week' : 'Next month'}
               className="h-11 w-11 shrink-0 touch-manipulation sm:h-9 sm:w-auto"
             >
               <ChevronRight className="h-5 w-5" />
@@ -426,13 +449,13 @@ export default function LearnerSchedulePage() {
 
           {pageLoading ? (
             <p className="text-sm text-slate-500">Loading schedule…</p>
-          ) : parentWeekItems.length === 0 ? (
+          ) : parentDisplayItems.length === 0 ? (
             <p className="rounded-xl border border-dashed border-slate-200 px-4 py-8 text-center text-sm text-slate-500">
-              No lessons scheduled this week.
+              No lessons scheduled this {parentView}.
             </p>
           ) : (
             <div className="space-y-3">
-              {parentWeekItems.map((item) => (
+              {parentDisplayItems.map((item) => (
                 <ScheduleLessonCard key={item.id} item={item} />
               ))}
             </div>
