@@ -18,6 +18,7 @@ public static class PortalFirebirdSchema
         await EnsurePortalLeaveRequesterTypeColumnAsync(connection, cancellationToken);
         await EnsurePortalAnnouncementsTableAsync(connection, cancellationToken);
         await EnsurePortalAnnouncementNotifyColumnsAsync(connection, cancellationToken);
+        await EnsurePortalNotifyReadsTableAsync(connection, cancellationToken);
     }
 
     public static async Task EnsurePortalSoLineScheduleTableAsync(FbConnection connection, CancellationToken cancellationToken = default)
@@ -293,6 +294,29 @@ public static class PortalFirebirdSchema
             """,
             "CREATE INDEX IX_PORTALANN_ROLE ON PORTAL_ANNOUNCEMENTS (TARGETROLE)",
             "CREATE INDEX IX_PORTALANN_CREATED ON PORTAL_ANNOUNCEMENTS (CREATEDAT)",
+        })
+        {
+            await using var cmd = new FbCommand(sql, connection);
+            await cmd.ExecuteNonQueryAsync(ct);
+        }
+    }
+
+    private static async Task EnsurePortalNotifyReadsTableAsync(FbConnection connection, CancellationToken ct)
+    {
+        if (await TableExistsAsync(connection, "PORTAL_NOTIFY_READS", ct))
+            return;
+
+        foreach (var sql in new[]
+        {
+            """
+            CREATE TABLE PORTAL_NOTIFY_READS (
+                USEREMAIL VARCHAR(200) NOT NULL,
+                ANNOUNCEMENTID VARCHAR(36) NOT NULL,
+                READAT TIMESTAMP NOT NULL,
+                PRIMARY KEY (USEREMAIL, ANNOUNCEMENTID)
+            )
+            """,
+            "CREATE INDEX IX_PORTALNOTIFYREAD_USER ON PORTAL_NOTIFY_READS (USEREMAIL)",
         })
         {
             await using var cmd = new FbCommand(sql, connection);
