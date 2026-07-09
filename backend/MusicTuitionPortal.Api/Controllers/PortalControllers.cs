@@ -136,6 +136,31 @@ public class LeaveController : ControllerBase
         return Ok((await _service.GetForParentAsync(email, cancellationToken)).Select(MapLeave).ToList());
     }
 
+    [HttpGet("teacher/mine")]
+    [Authorize(Roles = "Teacher")]
+    public async Task<IActionResult> GetTeacherMine(CancellationToken cancellationToken)
+    {
+        var email = User.FindFirst(ClaimTypes.Email)?.Value;
+        if (string.IsNullOrWhiteSpace(email)) return Unauthorized();
+        return Ok((await _service.GetForTeacherAsync(email, cancellationToken)).Select(MapLeave).ToList());
+    }
+
+    [HttpPost("teacher")]
+    [Authorize(Roles = "Teacher")]
+    public async Task<IActionResult> SubmitTeacher([FromBody] CreatePortalLeaveRequest request, CancellationToken cancellationToken)
+    {
+        var email = User.FindFirst(ClaimTypes.Email)?.Value;
+        if (string.IsNullOrWhiteSpace(email)) return Unauthorized();
+        var teacherName = User.FindFirst(ClaimTypes.Name)?.Value;
+        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        Guid? teacherUserId = Guid.TryParse(userIdClaim, out var uid) ? uid : null;
+        try
+        {
+            return Ok(MapLeave(await _service.SubmitTeacherAsync(email, teacherName, teacherUserId, request, cancellationToken)));
+        }
+        catch (InvalidOperationException ex) { return BadRequest(new { message = ex.Message }); }
+    }
+
     [HttpPost]
     [Authorize(Roles = "Parent")]
     public async Task<IActionResult> Submit([FromBody] CreatePortalLeaveRequest request, CancellationToken cancellationToken)
@@ -164,6 +189,39 @@ public class LeaveController : ControllerBase
         replDate = r.ReplDate, replStart = r.ReplStart,
         replEnd = r.ReplEnd, replTeacher = r.ReplTeacher, teacherResponse = r.TeacherResponse,
         counterDate = r.CounterDate, counterStart = r.CounterStart, counterEnd = r.CounterEnd,
-        counterMsg = r.CounterMsg, requestedBy = r.RequestedBy, createdAt = r.CreatedAt, updatedAt = r.UpdatedAt,
+        counterMsg = r.CounterMsg, requestedBy = r.RequestedBy, requesterType = r.RequesterType,
+        createdAt = r.CreatedAt, updatedAt = r.UpdatedAt,
     };
+}
+
+[ApiController]
+[Route("api/dashboard")]
+[Authorize]
+public class DashboardController : ControllerBase
+{
+    private readonly PortalDashboardNotifyService _notify;
+
+    public DashboardController(PortalDashboardNotifyService notify) => _notify = notify;
+
+    [HttpGet("notify")]
+    public async Task<IActionResult> GetNotify([FromQuery] int limit = 5, CancellationToken cancellationToken = default)
+    {
+        var role = User.FindFirst(ClaimTypes.Role)?.Value ?? "Student";
+        var feed = await _notify.GetFeedForRoleAsync(role, limit, cancellationToken);
+        return Ok(feed.Select(a => new
+        {
+            id = a.Id.ToString(),
+            title = a.Title,
+            content = a.Content,
+            category = a.Category,
+            holidayDate = a.HolidayDate?.ToString("yyyy-MM-dd"),
+            targetRole = a.TargetRole,
+            createdByUserId = a.CreatedByUserId.ToString(),
+            createdByName = a.CreatedByName,
+            isSystem = a.IsSystem,
+            relatedType = a.RelatedType,
+            relatedId = a.RelatedId,
+            createdAt = a.CreatedAt,
+        }).ToList());
+    }
 }

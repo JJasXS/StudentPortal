@@ -7,6 +7,7 @@ import {
   UserPlus,
 } from 'lucide-react';
 import { PageHeader } from '@/components/PageHeader';
+import { DashboardNotifyFeed } from '@/components/dashboard/DashboardNotifyFeed';
 import { StatCard } from '@/components/StatCard';
 import { AdminDashboardCharts } from '@/components/admin/AdminDashboardCharts';
 import {
@@ -79,6 +80,8 @@ export default function AdminDashboard() {
         title="Admin Dashboard"
         description="Centre overview"
       />
+
+      <DashboardNotifyFeed role="Admin" />
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
         <StatCard title="Students" value={students.length} icon={GraduationCap} />

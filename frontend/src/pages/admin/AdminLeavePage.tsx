@@ -5,7 +5,7 @@ import { LeaveWorkflowSteps } from '@/components/leave/LeaveWorkflowSteps';
 import { Card, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { DataTable } from '@/components/ui/DataTable';
-import { Label, Textarea } from '@/components/ui/Input';
+import { Label, Textarea, Input } from '@/components/ui/Input';
 import { Modal } from '@/components/ui/Modal';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { useToast } from '@/context/ToastContext';
@@ -59,6 +59,8 @@ export default function AdminLeavePage() {
   const [selected, setSelected] = useState<PortalLeaveRequest | null>(null);
   const [note, setNote] = useState('');
   const [chosenSlot, setChosenSlot] = useState('');
+  const [teacherReplDate, setTeacherReplDate] = useState('');
+  const [teacherReplTime, setTeacherReplTime] = useState('');
 
   const refresh = useCallback(async () => {
     try {
@@ -91,13 +93,22 @@ export default function AdminLeavePage() {
     setSelected(req);
     setNote('');
     setChosenSlot(req.replOptions?.[0] ? `${req.replOptions[0].date}|${req.replOptions[0].time}` : '');
+    setTeacherReplDate('');
+    setTeacherReplTime('');
   };
 
   const closeManage = () => setSelected(null);
 
-  const handleDecide = async (approve: boolean, withSlot = false) => {
+  const handleDecide = async (approve: boolean, withSlot = false, teacherSlot = false) => {
     if (!selected) return;
-    const [chosenDate, chosenTime] = withSlot ? chosenSlot.split('|') : [undefined, undefined];
+    let chosenDate: string | undefined;
+    let chosenTime: string | undefined;
+    if (withSlot && teacherSlot) {
+      chosenDate = teacherReplDate || undefined;
+      chosenTime = teacherReplTime || undefined;
+    } else if (withSlot) {
+      [chosenDate, chosenTime] = chosenSlot.split('|');
+    }
     try {
       await leaveApi.decide(selected.id, {
         approve,
@@ -116,7 +127,7 @@ export default function AdminLeavePage() {
     <div className="space-y-4">
       <PageHeader
         title="Leave requests"
-        description="Review leave and confirm replacement slots proposed by parents."
+        description="Review parent and teacher leave requests; confirm replacements."
       />
 
       <div className="flex gap-2">
@@ -153,8 +164,17 @@ export default function AdminLeavePage() {
               data={filtered}
               columns={[
                 {
+                  key: 'requester',
+                  header: 'From',
+                  render: (r) => (
+                    <span className="text-sm text-slate-700">
+                      {r.requesterType === 'Teacher' ? 'Teacher' : 'Parent'}
+                    </span>
+                  ),
+                },
+                {
                   key: 'student',
-                  header: 'Student',
+                  header: 'Requester / Student',
                   render: (r) => (
                     <div>
                       <p className="font-medium text-slate-900">{r.requestedBy ?? r.branchName}</p>
@@ -227,16 +247,20 @@ export default function AdminLeavePage() {
           <div className="space-y-4">
             <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
               <p>
-                <span className="font-medium text-slate-900">Session on leave:</span>{' '}
+                <span className="font-medium text-slate-900">
+                  {selected.requesterType === 'Teacher' ? 'Teacher leave' : 'Parent leave'}:
+                </span>{' '}
                 {selected.className} · {formatDateDDMMYYYY(selected.sessionDate)}
               </p>
-              {selected.replOptions && selected.replOptions.length > 0 ? (
+              {selected.requesterType !== 'Teacher' && selected.replOptions && selected.replOptions.length > 0 ? (
                 <p className="mt-1 text-slate-600">
                   Parent proposed {selected.replOptions.length} replacement slot
                   {selected.replOptions.length === 1 ? '' : 's'} (choose one below).
                 </p>
-              ) : (
+              ) : selected.requesterType !== 'Teacher' ? (
                 <p className="mt-1 text-slate-600">No replacement slots proposed.</p>
+              ) : (
+                <p className="mt-1 text-slate-600">Admin may schedule a replacement when approving.</p>
               )}
             </div>
             <p className="text-sm text-slate-800">{selected.reason}</p>
@@ -251,7 +275,7 @@ export default function AdminLeavePage() {
 
             {selected.status === 'Pending' && (
               <div className="space-y-4 border-t border-slate-100 pt-4">
-                {selected.replOptions && selected.replOptions.length > 0 && (
+                {selected.requesterType !== 'Teacher' && selected.replOptions && selected.replOptions.length > 0 && (
                   <div className="space-y-2">
                     <Label>Parent&apos;s preferred replacement slots</Label>
                     <div className="space-y-2">
@@ -279,6 +303,29 @@ export default function AdminLeavePage() {
                   </div>
                 )}
 
+                {selected.requesterType === 'Teacher' && (
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div>
+                      <Label htmlFor="teacher-repl-date">Replacement date</Label>
+                      <Input
+                        id="teacher-repl-date"
+                        type="date"
+                        value={teacherReplDate}
+                        onChange={(e) => setTeacherReplDate(e.target.value)}
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="teacher-repl-time">Replacement start time</Label>
+                      <Input
+                        id="teacher-repl-time"
+                        type="time"
+                        value={teacherReplTime}
+                        onChange={(e) => setTeacherReplTime(e.target.value)}
+                      />
+                    </div>
+                  </div>
+                )}
+
                 <div className="flex flex-wrap gap-2">
                   <Button type="button" variant="outline" onClick={() => void handleDecide(false)}>
                     Reject
@@ -286,11 +333,20 @@ export default function AdminLeavePage() {
                   <Button type="button" variant="outline" onClick={() => void handleDecide(true)}>
                     Approve (cancel session)
                   </Button>
-                  {selected.replOptions && selected.replOptions.length > 0 && (
+                  {selected.requesterType !== 'Teacher' && selected.replOptions && selected.replOptions.length > 0 && (
                     <Button
                       type="button"
                       disabled={!chosenSlot}
                       onClick={() => void handleDecide(true, true)}
+                    >
+                      Approve &amp; schedule replacement
+                    </Button>
+                  )}
+                  {selected.requesterType === 'Teacher' && (
+                    <Button
+                      type="button"
+                      disabled={!teacherReplDate || !teacherReplTime}
+                      onClick={() => void handleDecide(true, true, true)}
                     >
                       Approve &amp; schedule replacement
                     </Button>

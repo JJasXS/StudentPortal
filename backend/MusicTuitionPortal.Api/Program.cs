@@ -72,6 +72,7 @@ builder.Services.AddScoped<PortalHomeworkService>();
 builder.Services.AddSingleton<HomeworkFileStorageService>();
 builder.Services.AddScoped<PortalLeaveRequestService>();
 builder.Services.AddScoped<PortalAnnouncementService>();
+builder.Services.AddScoped<PortalDashboardNotifyService>();
 builder.Services.AddScoped<AdminCalendarService>();
 builder.Services.AddScoped<AttendanceService>();
 builder.Services.AddScoped<LessonNoteService>();

@@ -43,6 +43,7 @@ const teacherNav: NavItem[] = [
   { label: 'Dashboard', path: '/teacher/dashboard', icon: LayoutDashboard },
   { label: 'Schedule', path: '/teacher/calendar', icon: CalendarDays },
   { label: 'My Classes', path: '/teacher/classes', icon: Calendar },
+  { label: 'Leave', path: '/teacher/leave', icon: CalendarOff },
   { label: 'Announcements', path: '/teacher/announcements', icon: Megaphone },
 ];
 

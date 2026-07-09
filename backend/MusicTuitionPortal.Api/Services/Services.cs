@@ -1519,6 +1519,7 @@ public class ClassSessionService
     private readonly ClassAssignmentChangeLogService _assignmentLogs;
     private readonly SqlAccountSodtlUdfSyncService _sodtlSync;
     private readonly AnnouncementService _announcements;
+    private readonly PortalDashboardNotifyService _notify;
 
     public ClassSessionService(
         AppDbContext context,
@@ -1526,7 +1527,8 @@ public class ClassSessionService
         ClassSessionChangeHistoryService history,
         ClassAssignmentChangeLogService assignmentLogs,
         SqlAccountSodtlUdfSyncService sodtlSync,
-        AnnouncementService announcements)
+        AnnouncementService announcements,
+        PortalDashboardNotifyService notify)
     {
         _context = context;
         _audit = audit;
@@ -1534,6 +1536,7 @@ public class ClassSessionService
         _assignmentLogs = assignmentLogs;
         _sodtlSync = sodtlSync;
         _announcements = announcements;
+        _notify = notify;
     }
 
     public async Task<List<ClassSessionDto>> GetAllAsync() =>
@@ -1660,10 +1663,14 @@ public class ClassSessionService
             session.EndTime,
             session.Status);
 
-        var className = (await _context.Classes.FindAsync(session.ClassId))?.ClassName;
+        var classEntity = await _context.Classes.FindAsync(session.ClassId);
+        var className = classEntity?.ClassName ?? "Class";
         await _assignmentLogs.RecordSessionCancelledAsync(before, className, reason);
         await _audit.LogAsync("session.cancelled", "ClassSession", session.Id.ToString(), session.Topic ?? "Session", reason);
         await SyncErpClassDateAsync(before.ClassId);
+
+        await _notify.NotifyPortalSessionCancelledAsync(
+            className, null, before.SessionDate, before.StartTime, before.EndTime, reason);
 
         return true;
     }
@@ -1730,6 +1737,17 @@ public class ClassSessionService
             session.Id.ToString(),
             session.Class?.ClassName ?? "Session",
             $"Replacement session {replacement.Id}");
+
+        await _notify.NotifyPortalSessionReplacedAsync(
+            session.Class?.ClassName ?? "Class",
+            null,
+            before.SessionDate,
+            before.StartTime,
+            before.EndTime,
+            replacement.SessionDate,
+            replacement.StartTime,
+            replacement.EndTime,
+            request.Reason);
 
         await SyncErpClassDateAsync(session.ClassId);
         return (await GetByIdAsync(replacement.Id))!;

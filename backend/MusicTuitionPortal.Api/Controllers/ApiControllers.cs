@@ -1165,6 +1165,9 @@ public class AnnouncementsController : ControllerBase
         targetRole = a.TargetRole,
         createdByUserId = a.CreatedByUserId.ToString(),
         createdByName = a.CreatedByName,
+        isSystem = a.IsSystem,
+        relatedType = a.RelatedType,
+        relatedId = a.RelatedId,
         createdAt = a.CreatedAt
     };
 

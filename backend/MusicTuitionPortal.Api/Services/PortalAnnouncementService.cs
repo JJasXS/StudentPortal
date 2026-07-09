@@ -28,7 +28,7 @@ public class PortalAnnouncementService
 
         const string sql = """
             SELECT ID, TITLE, CONTENT, CATEGORY, HOLIDAYDATE, TARGETROLE,
-                   CREATEDBYUSERID, CREATEDBYNAME, CREATEDAT
+                   CREATEDBYUSERID, CREATEDBYNAME, ISSYSTEM, RELATEDTYPE, RELATEDID, CREATEDAT
             FROM PORTAL_ANNOUNCEMENTS
             ORDER BY CREATEDAT DESC
             """;
@@ -59,10 +59,12 @@ public class PortalAnnouncementService
         const string sql = """
             INSERT INTO PORTAL_ANNOUNCEMENTS (
                 ID, TITLE, CONTENT, CATEGORY, HOLIDAYDATE, TARGETROLE,
-                CREATEDBYUSERID, CREATEDBYNAME, CREATEDAT, UPDATEDAT
+                CREATEDBYUSERID, CREATEDBYNAME, ISSYSTEM, RELATEDTYPE, RELATEDID,
+                CREATEDAT, UPDATEDAT
             ) VALUES (
                 @id, @title, @content, @category, @holidayDate, @targetRole,
-                @createdByUserId, @createdByName, @createdAt, @updatedAt
+                @createdByUserId, @createdByName, 0, NULL, NULL,
+                @createdAt, @updatedAt
             )
             """;
 
@@ -143,6 +145,8 @@ public class PortalAnnouncementService
         var holiday = reader["HOLIDAYDATE"];
         DateTime? holidayDate = holiday is DBNull or null ? null : Convert.ToDateTime(holiday);
         var createdById = Guid.TryParse(reader["CREATEDBYUSERID"]?.ToString(), out var uid) ? uid : Guid.Empty;
+        var isSystem = HasColumn(reader, "ISSYSTEM") && reader["ISSYSTEM"] is not DBNull and not null
+            && Convert.ToInt32(reader["ISSYSTEM"]) != 0;
 
         return new AnnouncementDto(
             Guid.Parse(reader["ID"]?.ToString() ?? Guid.Empty.ToString()),
@@ -153,6 +157,13 @@ public class PortalAnnouncementService
             reader["TARGETROLE"]?.ToString() ?? "All",
             createdById,
             reader["CREATEDBYNAME"]?.ToString(),
-            Convert.ToDateTime(reader["CREATEDAT"]));
+            Convert.ToDateTime(reader["CREATEDAT"]),
+            isSystem,
+            HasColumn(reader, "RELATEDTYPE") ? reader["RELATEDTYPE"]?.ToString() : null,
+            HasColumn(reader, "RELATEDID") ? reader["RELATEDID"]?.ToString() : null);
     }
+
+    private static bool HasColumn(FbDataReader reader, string column) =>
+        Enumerable.Range(0, reader.FieldCount).Any(i =>
+            string.Equals(reader.GetName(i), column, StringComparison.OrdinalIgnoreCase));
 }

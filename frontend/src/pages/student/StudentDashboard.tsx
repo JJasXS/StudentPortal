@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Calendar, Megaphone } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { PageHeader } from '@/components/PageHeader';
+import { DashboardNotifyFeed } from '@/components/dashboard/DashboardNotifyFeed';
 import { StatCard } from '@/components/StatCard';
 import { SkeletonCard, SkeletonStatCards } from '@/components/ui/Skeleton';
 import { NextLessonCard } from '@/components/student/NextLessonCard';
@@ -59,6 +60,8 @@ export default function StudentDashboard() {
   return (
     <div className="space-y-6">
       <PageHeader title="Student Dashboard" description={`Welcome, ${user?.fullName}`} />
+
+      <DashboardNotifyFeed role="Student" />
 
       {loading ? (
         <SkeletonCard className="mb-6" />

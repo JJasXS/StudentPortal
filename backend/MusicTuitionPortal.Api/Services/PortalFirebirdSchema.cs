@@ -15,7 +15,9 @@ public static class PortalFirebirdSchema
         await EnsurePortalHomeworkUrlColumnAsync(connection, cancellationToken);
         await EnsurePortalLeaveRequestsTableAsync(connection, cancellationToken);
         await EnsurePortalLeaveReplOptionsColumnAsync(connection, cancellationToken);
+        await EnsurePortalLeaveRequesterTypeColumnAsync(connection, cancellationToken);
         await EnsurePortalAnnouncementsTableAsync(connection, cancellationToken);
+        await EnsurePortalAnnouncementNotifyColumnsAsync(connection, cancellationToken);
     }
 
     public static async Task EnsurePortalSoLineScheduleTableAsync(FbConnection connection, CancellationToken cancellationToken = default)
@@ -184,6 +186,7 @@ public static class PortalFirebirdSchema
                 COUNTER_END VARCHAR(10),
                 COUNTER_MSG VARCHAR(500),
                 REPL_OPTIONS VARCHAR(2000),
+                REQUESTERTYPE VARCHAR(20) DEFAULT 'Parent',
                 REQUESTEDBY VARCHAR(200),
                 CREATEDAT TIMESTAMP NOT NULL,
                 UPDATEDAT TIMESTAMP NOT NULL
@@ -216,6 +219,54 @@ public static class PortalFirebirdSchema
         }
     }
 
+    private static async Task EnsurePortalLeaveRequesterTypeColumnAsync(FbConnection connection, CancellationToken ct)
+    {
+        if (!await TableExistsAsync(connection, "PORTAL_LEAVE_REQUESTS", ct))
+            return;
+
+        if (await ColumnExistsAsync(connection, "PORTAL_LEAVE_REQUESTS", "REQUESTERTYPE", ct))
+            return;
+
+        try
+        {
+            await using var cmd = new FbCommand(
+                "ALTER TABLE PORTAL_LEAVE_REQUESTS ADD REQUESTERTYPE VARCHAR(20) DEFAULT 'Parent'",
+                connection);
+            await cmd.ExecuteNonQueryAsync(ct);
+        }
+        catch
+        {
+            // Column already exists
+        }
+    }
+
+    private static async Task EnsurePortalAnnouncementNotifyColumnsAsync(FbConnection connection, CancellationToken ct)
+    {
+        if (!await TableExistsAsync(connection, "PORTAL_ANNOUNCEMENTS", ct))
+            return;
+
+        foreach (var (column, ddl) in new[]
+        {
+            ("ISSYSTEM", "ALTER TABLE PORTAL_ANNOUNCEMENTS ADD ISSYSTEM SMALLINT DEFAULT 0"),
+            ("RELATEDTYPE", "ALTER TABLE PORTAL_ANNOUNCEMENTS ADD RELATEDTYPE VARCHAR(50)"),
+            ("RELATEDID", "ALTER TABLE PORTAL_ANNOUNCEMENTS ADD RELATEDID VARCHAR(36)"),
+        })
+        {
+            if (await ColumnExistsAsync(connection, "PORTAL_ANNOUNCEMENTS", column, ct))
+                continue;
+
+            try
+            {
+                await using var cmd = new FbCommand(ddl, connection);
+                await cmd.ExecuteNonQueryAsync(ct);
+            }
+            catch
+            {
+                // Column already exists
+            }
+        }
+    }
+
     private static async Task EnsurePortalAnnouncementsTableAsync(FbConnection connection, CancellationToken ct)
     {
         if (await TableExistsAsync(connection, "PORTAL_ANNOUNCEMENTS", ct))
@@ -233,6 +284,9 @@ public static class PortalFirebirdSchema
                 TARGETROLE VARCHAR(30) NOT NULL,
                 CREATEDBYUSERID VARCHAR(36),
                 CREATEDBYNAME VARCHAR(200),
+                ISSYSTEM SMALLINT DEFAULT 0,
+                RELATEDTYPE VARCHAR(50),
+                RELATEDID VARCHAR(36),
                 CREATEDAT TIMESTAMP NOT NULL,
                 UPDATEDAT TIMESTAMP NOT NULL
             )
@@ -254,6 +308,23 @@ public static class PortalFirebirdSchema
             """;
         await using var cmd = new FbCommand(sql, connection);
         cmd.Parameters.AddWithValue("@name", tableName.ToUpperInvariant());
+        var result = await cmd.ExecuteScalarAsync(ct);
+        return result != null;
+    }
+
+    public static async Task<bool> ColumnExistsAsync(
+        FbConnection connection,
+        string tableName,
+        string columnName,
+        CancellationToken ct)
+    {
+        const string sql = """
+            SELECT 1 FROM RDB$RELATION_FIELDS
+            WHERE RDB$RELATION_NAME = @table AND RDB$FIELD_NAME = @column
+            """;
+        await using var cmd = new FbCommand(sql, connection);
+        cmd.Parameters.AddWithValue("@table", tableName.ToUpperInvariant());
+        cmd.Parameters.AddWithValue("@column", columnName.ToUpperInvariant());
         var result = await cmd.ExecuteScalarAsync(ct);
         return result != null;
     }

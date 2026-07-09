@@ -1,6 +1,6 @@
 import type { Announcement, UserRole } from '@/types';
 
-export type AnnouncementCategory = 'Holiday' | 'General';
+export type AnnouncementCategory = 'Holiday' | 'General' | 'Leave' | 'Replacement' | 'SessionChange';
 
 export function getAnnouncementCategory(announcement: Announcement): AnnouncementCategory {
   if (announcement.category) return announcement.category;
@@ -48,11 +48,12 @@ export function splitAnnouncements(announcements: Announcement[]) {
   return { holidays, forTeachersAndStudents };
 }
 
-/** Admin announcements page: all holidays + all general notices. */
+/** Admin announcements page: all holidays + general notices (excludes system auto-feed). */
 export function splitAnnouncementsForAdmin(announcements: Announcement[]): SplitAnnouncementsResult {
+  const manual = announcements.filter((a) => !a.isSystem);
   return {
-    holidays: announcements.filter((a) => getAnnouncementCategory(a) === 'Holiday'),
-    general: announcements.filter((a) => getAnnouncementCategory(a) === 'General'),
+    holidays: manual.filter((a) => getAnnouncementCategory(a) === 'Holiday'),
+    general: manual.filter((a) => getAnnouncementCategory(a) === 'General'),
   };
 }
 

@@ -11,21 +11,24 @@ public class PortalLeaveRequestService
     private readonly SqlAccountLocalDbService _localDb;
     private readonly ParentService _parents;
     private readonly PortalClassSessionService _sessions;
+    private readonly PortalDashboardNotifyService _notify;
 
     public PortalLeaveRequestService(
         SqlAccountLocalDbService localDb,
         ParentService parents,
-        PortalClassSessionService sessions)
+        PortalClassSessionService sessions,
+        PortalDashboardNotifyService notify)
     {
         _localDb = localDb;
         _parents = parents;
         _sessions = sessions;
+        _notify = notify;
     }
 
     public async Task<List<PortalLeaveRequestDto>> GetAllAsync(CancellationToken cancellationToken = default)
     {
         await EnsureTableAsync(cancellationToken);
-        return await QueryAsync(null, null, cancellationToken);
+        return await QueryAsync(null, null, null, cancellationToken);
     }
 
     public async Task<List<PortalLeaveRequestDto>> GetForParentAsync(
@@ -33,7 +36,15 @@ public class PortalLeaveRequestService
         CancellationToken cancellationToken = default)
     {
         await EnsureTableAsync(cancellationToken);
-        return await QueryAsync(email.Trim(), null, cancellationToken);
+        return await QueryAsync(email.Trim(), null, "Parent", cancellationToken);
+    }
+
+    public async Task<List<PortalLeaveRequestDto>> GetForTeacherAsync(
+        string email,
+        CancellationToken cancellationToken = default)
+    {
+        await EnsureTableAsync(cancellationToken);
+        return await QueryAsync(email.Trim(), null, "Teacher", cancellationToken);
     }
 
     public async Task<PortalLeaveRequestDto> SubmitAsync(
@@ -64,41 +75,60 @@ public class PortalLeaveRequestService
 
         var className = await GetClassNameAsync(request.DocKey, request.Seq, cancellationToken);
 
-        var id = Guid.NewGuid().ToString();
-        var now = DateTime.UtcNow;
-        await using var connection = _localDb.OpenConnection();
-        await connection.OpenAsync(cancellationToken);
+        var created = await InsertLeaveAsync(
+            request.OccurrenceId,
+            request.DocKey,
+            request.Seq,
+            customerCode,
+            branch,
+            className,
+            sessionDate,
+            request.Reason.Trim(),
+            needsReplacement,
+            replOptionsJson,
+            email.Trim(),
+            "Parent",
+            cancellationToken);
 
-        const string sql = """
-            INSERT INTO PORTAL_LEAVE_REQUESTS (
-                ID, OCCURRENCEID, DOCKEY, SEQ, CUSTOMERCODE, BRANCHNAME, CLASSNAME,
-                SESSIONDATE, REASON, STATUS, NEEDSREPLACEMENT, REPL_OPTIONS,
-                REQUESTEDBY, CREATEDAT, UPDATEDAT
-            ) VALUES (
-                @id, @occurrenceId, @docKey, @seq, @customerCode, @branchName, @className,
-                @sessionDate, @reason, 'Pending', @needsReplacement, @replOptions,
-                @requestedBy, @createdAt, @updatedAt
-            )
-            """;
+        await _notify.NotifyLeaveSubmittedAsync(created, cancellationToken);
+        return created;
+    }
 
-        await using var command = new FbCommand(sql, connection);
-        command.Parameters.AddWithValue("@id", id);
-        command.Parameters.AddWithValue("@occurrenceId", (object?)request.OccurrenceId ?? DBNull.Value);
-        command.Parameters.AddWithValue("@docKey", request.DocKey);
-        command.Parameters.AddWithValue("@seq", request.Seq);
-        command.Parameters.AddWithValue("@customerCode", customerCode);
-        command.Parameters.AddWithValue("@branchName", branch);
-        command.Parameters.AddWithValue("@className", (object?)className ?? DBNull.Value);
-        command.Parameters.AddWithValue("@sessionDate", sessionDate);
-        command.Parameters.AddWithValue("@reason", request.Reason.Trim());
-        command.Parameters.AddWithValue("@needsReplacement", needsReplacement ? 1 : 0);
-        command.Parameters.AddWithValue("@replOptions", (object?)replOptionsJson ?? DBNull.Value);
-        command.Parameters.AddWithValue("@requestedBy", email.Trim());
-        command.Parameters.AddWithValue("@createdAt", now);
-        command.Parameters.AddWithValue("@updatedAt", now);
-        await command.ExecuteNonQueryAsync(cancellationToken);
+    public async Task<PortalLeaveRequestDto> SubmitTeacherAsync(
+        string email,
+        string? teacherFullName,
+        Guid? teacherUserId,
+        CreatePortalLeaveRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        await EnsureTableAsync(cancellationToken);
 
-        return (await GetByIdAsync(id, cancellationToken))!;
+        var occurrence = await ResolveTeacherSessionAsync(email, teacherFullName, teacherUserId, request, cancellationToken);
+
+        if (!DateTime.TryParse(request.SessionDate, out var sessionDate))
+            throw new InvalidOperationException("Invalid session date.");
+
+        ValidateSessionWindow(sessionDate, request.StartTime);
+
+        var className = occurrence.ClassName ?? await GetClassNameAsync(request.DocKey, request.Seq, cancellationToken);
+
+        var created = await InsertLeaveAsync(
+            request.OccurrenceId ?? occurrence.Id,
+            request.DocKey > 0 ? request.DocKey : occurrence.DocKey,
+            request.Seq > 0 ? request.Seq : occurrence.Seq,
+            occurrence.CustomerCode,
+            occurrence.BranchName,
+            className,
+            sessionDate,
+            request.Reason.Trim(),
+            false,
+            null,
+            email.Trim(),
+            "Teacher",
+            cancellationToken);
+
+        await _notify.NotifyLeaveSubmittedAsync(created, cancellationToken);
+        return created;
     }
 
     public async Task<PortalLeaveRequestDto?> AdminDecideAsync(
@@ -109,10 +139,15 @@ public class PortalLeaveRequestService
         var existing = await GetByIdAsync(id, cancellationToken)
             ?? throw new InvalidOperationException("Leave request not found.");
 
+        PortalLeaveRequestDto? result;
+
         if (!request.Approve)
         {
             await UpdateStatusAsync(id, "Rejected", request.AdminNote, existing.NeedsReplacement, cancellationToken);
-            return await GetByIdAsync(id, cancellationToken);
+            result = await GetByIdAsync(id, cancellationToken);
+            if (result != null)
+                await _notify.NotifyLeaveDecidedAsync(result, cancellationToken);
+            return result;
         }
 
         var hasChosenSlot = !string.IsNullOrWhiteSpace(request.ChosenDate)
@@ -122,7 +157,9 @@ public class PortalLeaveRequestService
         {
             var chosenDate = request.ChosenDate!.Trim();
             var chosenTime = request.ChosenTime!.Trim();
-            if (!existing.ReplOptions.Any(o =>
+            var isTeacher = string.Equals(existing.RequesterType, "Teacher", StringComparison.OrdinalIgnoreCase);
+
+            if (!isTeacher && !existing.ReplOptions.Any(o =>
                     string.Equals(o.Date, chosenDate, StringComparison.OrdinalIgnoreCase)
                     && string.Equals(o.Time, chosenTime, StringComparison.OrdinalIgnoreCase)))
             {
@@ -155,12 +192,118 @@ public class PortalLeaveRequestService
             await command.ExecuteNonQueryAsync(cancellationToken);
 
             await RescheduleLeaveOccurrenceAsync(existing, chosenDate, chosenTime, replEnd, cancellationToken);
-            return await GetByIdAsync(id, cancellationToken);
+            result = await GetByIdAsync(id, cancellationToken);
+            if (result != null)
+                await _notify.NotifyLeaveDecidedAsync(result, cancellationToken);
+            return result;
         }
 
         await UpdateStatusAsync(id, "Approved", request.AdminNote, false, cancellationToken);
         await CancelLeaveOccurrenceAsync(existing, request.AdminNote, cancellationToken);
-        return await GetByIdAsync(id, cancellationToken);
+        result = await GetByIdAsync(id, cancellationToken);
+        if (result != null)
+            await _notify.NotifyLeaveDecidedAsync(result, cancellationToken);
+        return result;
+    }
+
+    private async Task<PortalLeaveRequestDto> InsertLeaveAsync(
+        string? occurrenceId,
+        int docKey,
+        int seq,
+        string customerCode,
+        string branchName,
+        string? className,
+        DateTime sessionDate,
+        string reason,
+        bool needsReplacement,
+        string? replOptionsJson,
+        string requestedBy,
+        string requesterType,
+        CancellationToken cancellationToken)
+    {
+        var id = Guid.NewGuid().ToString();
+        var now = DateTime.UtcNow;
+        await using var connection = _localDb.OpenConnection();
+        await connection.OpenAsync(cancellationToken);
+
+        const string sql = """
+            INSERT INTO PORTAL_LEAVE_REQUESTS (
+                ID, OCCURRENCEID, DOCKEY, SEQ, CUSTOMERCODE, BRANCHNAME, CLASSNAME,
+                SESSIONDATE, REASON, STATUS, NEEDSREPLACEMENT, REPL_OPTIONS,
+                REQUESTERTYPE, REQUESTEDBY, CREATEDAT, UPDATEDAT
+            ) VALUES (
+                @id, @occurrenceId, @docKey, @seq, @customerCode, @branchName, @className,
+                @sessionDate, @reason, 'Pending', @needsReplacement, @replOptions,
+                @requesterType, @requestedBy, @createdAt, @updatedAt
+            )
+            """;
+
+        await using var command = new FbCommand(sql, connection);
+        command.Parameters.AddWithValue("@id", id);
+        command.Parameters.AddWithValue("@occurrenceId", (object?)occurrenceId ?? DBNull.Value);
+        command.Parameters.AddWithValue("@docKey", docKey);
+        command.Parameters.AddWithValue("@seq", seq);
+        command.Parameters.AddWithValue("@customerCode", customerCode);
+        command.Parameters.AddWithValue("@branchName", branchName);
+        command.Parameters.AddWithValue("@className", (object?)className ?? DBNull.Value);
+        command.Parameters.AddWithValue("@sessionDate", sessionDate);
+        command.Parameters.AddWithValue("@reason", reason);
+        command.Parameters.AddWithValue("@needsReplacement", needsReplacement ? 1 : 0);
+        command.Parameters.AddWithValue("@replOptions", (object?)replOptionsJson ?? DBNull.Value);
+        command.Parameters.AddWithValue("@requesterType", requesterType);
+        command.Parameters.AddWithValue("@requestedBy", requestedBy);
+        command.Parameters.AddWithValue("@createdAt", now);
+        command.Parameters.AddWithValue("@updatedAt", now);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+
+        return (await GetByIdAsync(id, cancellationToken))!;
+    }
+
+    private async Task<PortalClassSessionDto> ResolveTeacherSessionAsync(
+        string email,
+        string? teacherFullName,
+        Guid? teacherUserId,
+        CreatePortalLeaveRequest request,
+        CancellationToken cancellationToken)
+    {
+        PortalClassSessionDto? occurrence = null;
+        if (!string.IsNullOrWhiteSpace(request.OccurrenceId))
+            occurrence = await _sessions.GetOccurrenceByIdAsync(request.OccurrenceId, cancellationToken);
+
+        if (occurrence == null && request.DocKey > 0)
+        {
+            var occs = await _sessions.GetOccurrencesAsync(cancellationToken: cancellationToken);
+            occurrence = occs.FirstOrDefault(o =>
+                o.DocKey == request.DocKey && o.Seq == request.Seq
+                && (string.IsNullOrWhiteSpace(request.SessionDate)
+                    || o.SessionDate.StartsWith(request.SessionDate[..Math.Min(10, request.SessionDate.Length)], StringComparison.Ordinal)));
+        }
+
+        if (occurrence == null)
+            throw new InvalidOperationException("Session not found.");
+
+        var events = await _sessions.GetCalendarEventsAsync(cancellationToken);
+        var calEvent = events.FirstOrDefault(e =>
+            string.Equals(e.Id, $"occ-{occurrence.Id}", StringComparison.OrdinalIgnoreCase)
+            || (e.DocKey == occurrence.DocKey && e.Seq == occurrence.Seq
+                && string.Equals(e.SessionDate, occurrence.SessionDate, StringComparison.OrdinalIgnoreCase)));
+
+        var teacherMatch = false;
+        if (teacherUserId.HasValue && calEvent?.TeacherUserId == teacherUserId)
+            teacherMatch = true;
+
+        if (!teacherMatch && !string.IsNullOrWhiteSpace(teacherFullName)
+            && string.Equals(occurrence.ConductedBy?.Trim(), teacherFullName.Trim(), StringComparison.OrdinalIgnoreCase))
+            teacherMatch = true;
+
+        if (!teacherMatch && !string.IsNullOrWhiteSpace(teacherFullName)
+            && string.Equals(calEvent?.TeacherName?.Trim(), teacherFullName.Trim(), StringComparison.OrdinalIgnoreCase))
+            teacherMatch = true;
+
+        if (!teacherMatch)
+            throw new InvalidOperationException("This session is not assigned to you.");
+
+        return occurrence;
     }
 
     private async Task CancelLeaveOccurrenceAsync(
@@ -253,13 +396,14 @@ public class PortalLeaveRequestService
 
     private async Task<PortalLeaveRequestDto?> GetByIdAsync(string id, CancellationToken cancellationToken)
     {
-        var list = await QueryAsync(null, id, cancellationToken);
+        var list = await QueryAsync(null, id, null, cancellationToken);
         return list.FirstOrDefault();
     }
 
     private async Task<List<PortalLeaveRequestDto>> QueryAsync(
         string? requestedBy,
         string? id,
+        string? requesterType,
         CancellationToken cancellationToken)
     {
         if (!_localDb.CanReadLocalDb)
@@ -276,6 +420,10 @@ public class PortalLeaveRequestService
             sql += " AND REQUESTEDBY = @requestedBy";
         if (!string.IsNullOrWhiteSpace(id))
             sql += " AND ID = @id";
+        if (string.Equals(requesterType, "Parent", StringComparison.OrdinalIgnoreCase))
+            sql += " AND (REQUESTERTYPE IS NULL OR REQUESTERTYPE = 'Parent')";
+        else if (!string.IsNullOrWhiteSpace(requesterType))
+            sql += " AND REQUESTERTYPE = @requesterType";
         sql += " ORDER BY CREATEDAT DESC";
 
         await using var command = new FbCommand(sql, connection);
@@ -283,6 +431,9 @@ public class PortalLeaveRequestService
             command.Parameters.AddWithValue("@requestedBy", requestedBy);
         if (!string.IsNullOrWhiteSpace(id))
             command.Parameters.AddWithValue("@id", id);
+        if (!string.IsNullOrWhiteSpace(requesterType)
+            && !string.Equals(requesterType, "Parent", StringComparison.OrdinalIgnoreCase))
+            command.Parameters.AddWithValue("@requesterType", requesterType);
 
         var results = new List<PortalLeaveRequestDto>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -395,6 +546,7 @@ public class PortalLeaveRequestService
             reader["COUNTER_END"]?.ToString(),
             reader["COUNTER_MSG"]?.ToString(),
             reader["REQUESTEDBY"]?.ToString(),
+            ReadOptionalString(reader, "REQUESTERTYPE") ?? "Parent",
             Convert.ToDateTime(reader["CREATEDAT"]),
             Convert.ToDateTime(reader["UPDATEDAT"]));
 

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { CalendarDays } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { PageHeader } from '@/components/PageHeader';
+import { DashboardNotifyFeed } from '@/components/dashboard/DashboardNotifyFeed';
 import { TodayClassesList } from '@/components/TodayClassesList';
 import { classesApi, classSessionsApi } from '@/api/resources';
 import { mockClassSessions } from '@/utils/mockData';
@@ -52,6 +53,8 @@ export default function TeacherDashboard() {
             : formatTodayHeading()
         }
       />
+
+      <DashboardNotifyFeed role="Teacher" />
 
       {!loading && todayClasses.length === 0 && (
         <p className="flex items-center gap-2 rounded-lg border border-dashed border-slate-200 px-4 py-6 text-sm text-slate-500">

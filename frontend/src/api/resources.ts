@@ -191,6 +191,7 @@ export const homeworkApi = {
 export const leaveApi = {
   getAll: () => apiClient.get<PortalLeaveRequest[]>('/leave').then((r) => r.data),
   getMine: () => apiClient.get<PortalLeaveRequest[]>('/leave/mine').then((r) => r.data),
+  getTeacherMine: () => apiClient.get<PortalLeaveRequest[]>('/leave/teacher/mine').then((r) => r.data),
   submit: (data: {
     occurrenceId?: string;
     docKey: number;
@@ -201,10 +202,24 @@ export const leaveApi = {
     reason: string;
     replacementOptions?: { date: string; time: string }[];
   }) => apiClient.post<PortalLeaveRequest>('/leave', data).then((r) => r.data),
+  submitTeacher: (data: {
+    occurrenceId?: string;
+    docKey: number;
+    seq: number;
+    branchName: string;
+    sessionDate: string;
+    startTime?: string;
+    reason: string;
+  }) => apiClient.post<PortalLeaveRequest>('/leave/teacher', data).then((r) => r.data),
   decide: (
     id: string,
     data: { approve: boolean; adminNote?: string; chosenDate?: string; chosenTime?: string }
   ) => apiClient.post<PortalLeaveRequest>(`/leave/${id}/decide`, data).then((r) => r.data),
+};
+
+export const dashboardNotifyApi = {
+  getFeed: (limit = 5) =>
+    apiClient.get<Announcement[]>(`/dashboard/notify?limit=${limit}`).then((r) => r.data),
 };
 
 export const calendarApi = {

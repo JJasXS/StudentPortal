@@ -5,10 +5,14 @@ namespace MusicTuitionPortal.Api.Services;
 public class AdminCalendarService
 {
     private readonly PortalClassSessionService _portalSessions;
+    private readonly PortalDashboardNotifyService _notify;
 
-    public AdminCalendarService(PortalClassSessionService portalSessions)
+    public AdminCalendarService(
+        PortalClassSessionService portalSessions,
+        PortalDashboardNotifyService notify)
     {
         _portalSessions = portalSessions;
+        _notify = notify;
     }
 
     public Task<List<ErpCalendarEventDto>> GetEventsAsync(CancellationToken cancellationToken = default) =>
@@ -34,19 +38,22 @@ public class AdminCalendarService
         string reason,
         CancellationToken cancellationToken = default)
     {
-        // Legacy erp- path: find occurrence by dockey/seq and first scheduled
         var occurrences = await _portalSessions.GetOccurrencesAsync(cancelled: false, cancellationToken: cancellationToken);
         var match = occurrences.FirstOrDefault(o => o.DocKey == docKey && o.Seq == seq);
         if (match == null)
             throw new InvalidOperationException("Calendar event not found.");
 
         await _portalSessions.CancelOccurrenceAsync(match.Id, reason, cancellationToken);
+        await _notify.NotifySessionCancelledAsync(match, reason, cancellationToken);
         return null;
     }
 
     public async Task CancelOccurrenceByIdAsync(string occurrenceId, string reason, CancellationToken cancellationToken = default)
     {
+        var before = await _portalSessions.GetOccurrenceByIdAsync(occurrenceId, cancellationToken);
         await _portalSessions.CancelOccurrenceAsync(occurrenceId, reason, cancellationToken);
+        if (before != null)
+            await _notify.NotifySessionCancelledAsync(before, reason, cancellationToken);
     }
 
     public async Task<ErpCalendarEventDto?> ReplaceEventAsync(
@@ -68,6 +75,9 @@ public class AdminCalendarService
         var updated = await _portalSessions.RescheduleOccurrenceAsync(
             match.Id, sessionDate, startTime, endTime, fullReason, cancellationToken);
 
+        if (updated != null)
+            await _notify.NotifySessionRescheduledAsync(match, sessionDate, startTime, endTime, fullReason, cancellationToken);
+
         if (updated == null)
             return null;
 
@@ -84,9 +94,13 @@ public class AdminCalendarService
         string? notes,
         CancellationToken cancellationToken = default)
     {
+        var before = await _portalSessions.GetOccurrenceByIdAsync(occurrenceId, cancellationToken);
         var fullReason = string.IsNullOrWhiteSpace(notes) ? reason.Trim() : $"{reason.Trim()} — {notes.Trim()}";
         var updated = await _portalSessions.RescheduleOccurrenceAsync(
             occurrenceId, sessionDate, startTime, endTime, fullReason, cancellationToken);
+
+        if (before != null && updated != null)
+            await _notify.NotifySessionRescheduledAsync(before, sessionDate, startTime, endTime, fullReason, cancellationToken);
 
         if (updated == null)
             return null;

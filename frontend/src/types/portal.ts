@@ -47,6 +47,7 @@ export interface PortalLeaveRequest {
   counterEnd?: string | null;
   counterMsg?: string | null;
   requestedBy?: string | null;
+  requesterType?: 'Parent' | 'Teacher';
   createdAt: string;
   updatedAt: string;
 }

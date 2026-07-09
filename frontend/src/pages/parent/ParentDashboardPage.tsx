@@ -3,6 +3,7 @@ import { CalendarDays, Clock, MapPin } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
 import { PageHeader } from '@/components/PageHeader';
+import { DashboardNotifyFeed } from '@/components/dashboard/DashboardNotifyFeed';
 import { Card, CardContent } from '@/components/ui/Card';
 import { useSqlAccountChildren } from '@/hooks/useSqlAccountChildren';
 import { parentsApi } from '@/api/resources';
@@ -62,6 +63,8 @@ export default function ParentDashboardPage() {
         title="Dashboard"
         description={user?.fullName ? `Welcome, ${user.fullName}` : 'Your children'}
       />
+
+      <DashboardNotifyFeed role="Parent" />
 
       {loading ? (
         <p className="text-sm text-slate-500">Loading…</p>

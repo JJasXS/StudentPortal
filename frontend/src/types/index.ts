@@ -214,11 +214,14 @@ export interface Announcement {
   id: string;
   title: string;
   content: string;
-  category?: 'Holiday' | 'General';
+  category?: 'Holiday' | 'General' | 'Leave' | 'Replacement' | 'SessionChange';
   holidayDate?: string;
   targetRole: 'All' | UserRole;
   createdByUserId: string;
   createdByName?: string;
+  isSystem?: boolean;
+  relatedType?: string | null;
+  relatedId?: string | null;
   createdAt: string;
 }
 

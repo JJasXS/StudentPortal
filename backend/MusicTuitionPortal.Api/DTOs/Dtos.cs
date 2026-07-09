@@ -98,7 +98,8 @@ public record LessonNoteDto(
 
 public record AnnouncementDto(
     Guid Id, string Title, string Content, string Category, DateTime? HolidayDate, string TargetRole,
-    Guid CreatedByUserId, string? CreatedByName, DateTime CreatedAt);
+    Guid CreatedByUserId, string? CreatedByName, DateTime CreatedAt,
+    bool IsSystem = false, string? RelatedType = null, string? RelatedId = null);
 
 public record InvoiceDto(
     Guid Id, Guid StudentUserId, string? StudentName, Guid? ParentUserId, string? ParentName,
@@ -387,6 +388,7 @@ public record PortalLeaveRequestDto(
     string? CounterEnd,
     string? CounterMsg,
     string? RequestedBy,
+    string RequesterType,
     DateTime CreatedAt,
     DateTime UpdatedAt);
 
