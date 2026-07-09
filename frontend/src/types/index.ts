@@ -222,6 +222,7 @@ export interface Announcement {
   isSystem?: boolean;
   relatedType?: string | null;
   relatedId?: string | null;
+  isRead?: boolean;
   createdAt: string;
 }
 

@@ -207,21 +207,57 @@ public class DashboardController : ControllerBase
     public async Task<IActionResult> GetNotify([FromQuery] int limit = 5, CancellationToken cancellationToken = default)
     {
         var role = User.FindFirst(ClaimTypes.Role)?.Value ?? "Student";
-        var feed = await _notify.GetFeedForRoleAsync(role, limit, cancellationToken);
-        return Ok(feed.Select(a => new
-        {
-            id = a.Id.ToString(),
-            title = a.Title,
-            content = a.Content,
-            category = a.Category,
-            holidayDate = a.HolidayDate?.ToString("yyyy-MM-dd"),
-            targetRole = a.TargetRole,
-            createdByUserId = a.CreatedByUserId.ToString(),
-            createdByName = a.CreatedByName,
-            isSystem = a.IsSystem,
-            relatedType = a.RelatedType,
-            relatedId = a.RelatedId,
-            createdAt = a.CreatedAt,
-        }).ToList());
+        var email = User.FindFirst(ClaimTypes.Email)?.Value ?? string.Empty;
+        var feed = await _notify.GetFeedForUserAsync(email, role, limit, cancellationToken);
+        return Ok(feed.Select(MapNotify).ToList());
     }
+
+    [HttpGet("notify/unread-count")]
+    public async Task<IActionResult> GetUnreadCount(CancellationToken cancellationToken = default)
+    {
+        var role = User.FindFirst(ClaimTypes.Role)?.Value ?? "Student";
+        var email = User.FindFirst(ClaimTypes.Email)?.Value ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(email))
+            return Unauthorized();
+        var count = await _notify.GetUnreadCountAsync(email, role, cancellationToken);
+        return Ok(new { count });
+    }
+
+    [HttpPost("notify/{id}/read")]
+    public async Task<IActionResult> MarkRead(string id, CancellationToken cancellationToken = default)
+    {
+        var email = User.FindFirst(ClaimTypes.Email)?.Value;
+        if (string.IsNullOrWhiteSpace(email))
+            return Unauthorized();
+        await _notify.MarkReadAsync(email, id, cancellationToken);
+        return NoContent();
+    }
+
+    [HttpPost("notify/read-all")]
+    public async Task<IActionResult> MarkAllRead(CancellationToken cancellationToken = default)
+    {
+        var role = User.FindFirst(ClaimTypes.Role)?.Value ?? "Student";
+        var email = User.FindFirst(ClaimTypes.Email)?.Value;
+        if (string.IsNullOrWhiteSpace(email))
+            return Unauthorized();
+        await _notify.MarkAllReadAsync(email, role, cancellationToken);
+        return NoContent();
+    }
+
+    private static object MapNotify(AnnouncementDto a) => new
+    {
+        id = a.Id.ToString(),
+        title = a.Title,
+        content = a.Content,
+        category = a.Category,
+        holidayDate = a.HolidayDate?.ToString("yyyy-MM-dd"),
+        targetRole = a.TargetRole,
+        createdByUserId = a.CreatedByUserId.ToString(),
+        createdByName = a.CreatedByName,
+        isSystem = a.IsSystem,
+        relatedType = a.RelatedType,
+        relatedId = a.RelatedId,
+        isRead = a.IsRead,
+        createdAt = a.CreatedAt,
+    };
 }

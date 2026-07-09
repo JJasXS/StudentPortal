@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useCallback } from 'react';
 import { CalendarDays, Clock, MapPin } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
@@ -6,8 +6,10 @@ import { PageHeader } from '@/components/PageHeader';
 import { DashboardNotifyFeed } from '@/components/dashboard/DashboardNotifyFeed';
 import { Card, CardContent } from '@/components/ui/Card';
 import { useSqlAccountChildren } from '@/hooks/useSqlAccountChildren';
+import { useParentLeaveNotifyToasts } from '@/hooks/useParentLeaveNotifyToasts';
 import { parentsApi } from '@/api/resources';
 import { formatDateDDMMYYYY } from '@/utils/dateFormat';
+import type { Announcement } from '@/types';
 import type { ErpCalendarEvent } from '@/types/sqlAccount';
 
 function formatTimeRange(start?: string, end?: string) {
@@ -27,6 +29,13 @@ export default function ParentDashboardPage() {
   const { user } = useAuth();
   const { children, loading } = useSqlAccountChildren(true);
   const [eventsByBranch, setEventsByBranch] = useState<Record<string, ErpCalendarEvent[]>>({});
+  const [notifyItems, setNotifyItems] = useState<Announcement[]>([]);
+
+  const handleFeedLoaded = useCallback((items: Announcement[]) => {
+    setNotifyItems(items);
+  }, []);
+
+  useParentLeaveNotifyToasts(notifyItems, user?.role === 'Parent');
 
   useEffect(() => {
     if (children.length === 0) return;
@@ -64,7 +73,11 @@ export default function ParentDashboardPage() {
         description={user?.fullName ? `Welcome, ${user.fullName}` : 'Your children'}
       />
 
-      <DashboardNotifyFeed role="Parent" />
+      <DashboardNotifyFeed
+        role="Parent"
+        onFeedLoaded={handleFeedLoaded}
+        autoMarkReadOnView
+      />
 
       {loading ? (
         <p className="text-sm text-slate-500">Loading…</p>

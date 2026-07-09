@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Bell, CalendarClock, CalendarOff, Megaphone, RefreshCw } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { dashboardNotifyApi } from '@/api/resources';
@@ -7,6 +7,9 @@ import { formatDateDDMMYYYY } from '@/utils/dateFormat';
 import { getAnnouncementCategory } from '@/utils/announcements';
 import { announcementsListPath } from '@/utils/announcementLinks';
 import { learnerPortalPath } from '@/utils/learnerPortal';
+import { isLeaveDecisionNotice } from '@/utils/notifyLeave';
+import { notifyReadsChanged } from '@/utils/notifyEvents';
+import { cn } from '@/utils/cn';
 import type { Announcement, UserRole } from '@/types';
 
 function categoryIcon(category: string) {
@@ -45,29 +48,93 @@ interface DashboardNotifyFeedProps {
   role: UserRole | 'Admin';
   limit?: number;
   className?: string;
+  onFeedLoaded?: (items: Announcement[]) => void;
+  autoMarkReadOnView?: boolean;
 }
 
-export function DashboardNotifyFeed({ role, limit = 5, className }: DashboardNotifyFeedProps) {
+export function DashboardNotifyFeed({
+  role,
+  limit = 5,
+  className,
+  onFeedLoaded,
+  autoMarkReadOnView = false,
+}: DashboardNotifyFeedProps) {
   const [items, setItems] = useState<Announcement[]>([]);
   const [loading, setLoading] = useState(true);
+  const cardRef = useRef<HTMLDivElement>(null);
+  const markedOnViewRef = useRef(false);
 
-  useEffect(() => {
+  const loadFeed = useCallback(() => {
     setLoading(true);
-    dashboardNotifyApi
+    return dashboardNotifyApi
       .getFeed(limit)
       .catch(() => [] as Announcement[])
-      .then(setItems)
+      .then((data) => {
+        setItems(data);
+        onFeedLoaded?.(data);
+        return data;
+      })
       .finally(() => setLoading(false));
-  }, [limit]);
+  }, [limit, onFeedLoaded]);
+
+  useEffect(() => {
+    void loadFeed();
+  }, [loadFeed]);
+
+  const unreadCount = items.filter((item) => !item.isRead).length;
+
+  useEffect(() => {
+    if (!autoMarkReadOnView || role !== 'Parent' || markedOnViewRef.current || unreadCount === 0)
+      return;
+
+    const el = cardRef.current;
+    if (!el) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (!entries.some((e) => e.isIntersecting) || markedOnViewRef.current) return;
+        markedOnViewRef.current = true;
+        void dashboardNotifyApi.markAllRead().then(() => {
+          notifyReadsChanged();
+          void loadFeed();
+        });
+      },
+      { threshold: 0.35 }
+    );
+
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [autoMarkReadOnView, role, unreadCount, loadFeed]);
+
+  const handleItemClick = async (item: Announcement) => {
+    if (item.isRead) return;
+    try {
+      await dashboardNotifyApi.markRead(item.id);
+      notifyReadsChanged();
+      setItems((prev) =>
+        prev.map((row) => (row.id === item.id ? { ...row, isRead: true } : row))
+      );
+    } catch {
+      // ignore
+    }
+  };
 
   const announcementsPath = announcementsListPath(role);
 
   return (
-    <Card className={className}>
+    <Card ref={cardRef} className={className}>
       <CardHeader className="pb-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <CardTitle className="flex items-center gap-2 text-base">
-            <Bell className="h-4 w-4 text-primary-600" />
+            <span className="relative">
+              <Bell className="h-4 w-4 text-primary-600" />
+              {unreadCount > 0 && (
+                <span
+                  className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full bg-red-500 ring-2 ring-white"
+                  aria-label={`${unreadCount} unread`}
+                />
+              )}
+            </span>
             Notify
             {items.length > 0 && (
               <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-normal text-slate-600">
@@ -99,19 +166,31 @@ export function DashboardNotifyFeed({ role, limit = 5, className }: DashboardNot
             const detailPath = isLeaveRelated
               ? leavePath(role)
               : `${announcementsPath}/${item.id}`;
+            const isUnread = !item.isRead;
+            const showUnreadDot = isUnread && (isLeaveDecisionNotice(item) || isUnread);
 
             return (
               <div
                 key={item.id}
-                className={`rounded-lg border px-4 py-3 ${categoryStyles(category)}`}
+                className={cn(
+                  'rounded-lg border px-4 py-3',
+                  categoryStyles(category),
+                  isUnread && 'ring-1 ring-red-200'
+                )}
               >
                 <div className="flex gap-3">
-                  <Icon className="mt-0.5 h-4 w-4 shrink-0 text-slate-500" />
+                  <div className="relative mt-0.5 shrink-0">
+                    <Icon className="h-4 w-4 text-slate-500" />
+                    {showUnreadDot && (
+                      <span className="absolute -right-1 -top-1 h-2 w-2 rounded-full bg-red-500" />
+                    )}
+                  </div>
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-start justify-between gap-2">
                       <Link
                         to={detailPath}
                         state={isLeaveRelated ? undefined : { announcement: item }}
+                        onClick={() => void handleItemClick(item)}
                         className="font-medium text-slate-900 hover:text-primary-700 hover:underline"
                       >
                         {item.title}

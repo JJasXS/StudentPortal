@@ -220,6 +220,10 @@ export const leaveApi = {
 export const dashboardNotifyApi = {
   getFeed: (limit = 5) =>
     apiClient.get<Announcement[]>(`/dashboard/notify?limit=${limit}`).then((r) => r.data),
+  getUnreadCount: () =>
+    apiClient.get<{ count: number }>('/dashboard/notify/unread-count').then((r) => r.data.count),
+  markRead: (id: string) => apiClient.post(`/dashboard/notify/${id}/read`),
+  markAllRead: () => apiClient.post('/dashboard/notify/read-all'),
 };
 
 export const calendarApi = {

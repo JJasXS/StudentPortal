@@ -65,6 +65,13 @@ public class PortalDashboardNotifyService
     public async Task<List<AnnouncementDto>> GetFeedForRoleAsync(
         string role,
         int limit = 5,
+        CancellationToken cancellationToken = default) =>
+        await GetFeedForUserAsync(string.Empty, role, limit, cancellationToken);
+
+    public async Task<List<AnnouncementDto>> GetFeedForUserAsync(
+        string userEmail,
+        string role,
+        int limit = 5,
         CancellationToken cancellationToken = default)
     {
         await EnsureTableAsync(cancellationToken);
@@ -77,29 +84,85 @@ public class PortalDashboardNotifyService
         if (!await PortalFirebirdSchema.TableExistsAsync(connection, "PORTAL_ANNOUNCEMENTS", cancellationToken))
             return [];
 
+        var email = userEmail.Trim();
+        var hasEmail = !string.IsNullOrWhiteSpace(email);
+
         const string sql = """
             SELECT FIRST @limit
-                ID, TITLE, CONTENT, CATEGORY, HOLIDAYDATE, TARGETROLE,
-                CREATEDBYUSERID, CREATEDBYNAME, ISSYSTEM, RELATEDTYPE, RELATEDID, CREATEDAT
-            FROM PORTAL_ANNOUNCEMENTS
-            WHERE TARGETROLE = 'All'
-               OR TARGETROLE = @role
-               OR (@role = 'Parent' AND TARGETROLE = 'Student')
-            ORDER BY CREATEDAT DESC
+                a.ID, a.TITLE, a.CONTENT, a.CATEGORY, a.HOLIDAYDATE, a.TARGETROLE,
+                a.CREATEDBYUSERID, a.CREATEDBYNAME, a.ISSYSTEM, a.RELATEDTYPE, a.RELATEDID, a.CREATEDAT,
+                CASE WHEN r.ANNOUNCEMENTID IS NULL THEN 0 ELSE 1 END AS ISREAD
+            FROM PORTAL_ANNOUNCEMENTS a
+            LEFT JOIN PORTAL_NOTIFY_READS r
+                ON r.ANNOUNCEMENTID = a.ID AND r.USEREMAIL = @email
+            WHERE a.TARGETROLE = 'All'
+               OR a.TARGETROLE = @role
+               OR (@role = 'Parent' AND a.TARGETROLE = 'Student')
+            ORDER BY a.CREATEDAT DESC
             """;
 
         await using var command = new FbCommand(sql, connection);
         command.Parameters.AddWithValue("@limit", Math.Clamp(limit, 1, 50));
         command.Parameters.AddWithValue("@role", role.Trim());
+        command.Parameters.AddWithValue("@email", hasEmail ? email : string.Empty);
 
         var results = new List<AnnouncementDto>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         while (await reader.ReadAsync(cancellationToken))
         {
-            results.Add(Map(reader));
+            results.Add(Map(reader, hasEmail));
         }
 
         return results;
+    }
+
+    public async Task<int> GetUnreadCountAsync(
+        string userEmail,
+        string role,
+        CancellationToken cancellationToken = default)
+    {
+        var feed = await GetFeedForUserAsync(userEmail, role, 50, cancellationToken);
+        return feed.Count(a => !a.IsRead);
+    }
+
+    public async Task MarkReadAsync(
+        string userEmail,
+        string announcementId,
+        CancellationToken cancellationToken = default)
+    {
+        if (!_localDb.CanWriteLocalDb || string.IsNullOrWhiteSpace(userEmail))
+            return;
+
+        await EnsureTableAsync(cancellationToken);
+        await using var connection = _localDb.OpenConnection();
+        await connection.OpenAsync(cancellationToken);
+
+        const string sql = """
+            UPDATE OR INSERT INTO PORTAL_NOTIFY_READS (USEREMAIL, ANNOUNCEMENTID, READAT)
+            VALUES (@email, @announcementId, @readAt)
+            MATCHING (USEREMAIL, ANNOUNCEMENTID)
+            """;
+
+        await using var command = new FbCommand(sql, connection);
+        command.Parameters.AddWithValue("@email", userEmail.Trim());
+        command.Parameters.AddWithValue("@announcementId", announcementId.Trim());
+        command.Parameters.AddWithValue("@readAt", DateTime.UtcNow);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    public async Task MarkAllReadAsync(
+        string userEmail,
+        string role,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(userEmail))
+            return;
+
+        var feed = await GetFeedForUserAsync(userEmail, role, 50, cancellationToken);
+        foreach (var item in feed.Where(a => !a.IsRead))
+        {
+            await MarkReadAsync(userEmail, item.Id.ToString(), cancellationToken);
+        }
     }
 
     public Task NotifyLeaveSubmittedAsync(PortalLeaveRequestDto request, CancellationToken cancellationToken = default)
@@ -230,12 +293,16 @@ public class PortalDashboardNotifyService
         return formatted;
     }
 
-    private static AnnouncementDto Map(FbDataReader reader)
+    private static AnnouncementDto Map(FbDataReader reader, bool trackRead = true)
     {
         var holiday = reader["HOLIDAYDATE"];
         DateTime? holidayDate = holiday is DBNull or null ? null : Convert.ToDateTime(holiday);
         var createdById = Guid.TryParse(reader["CREATEDBYUSERID"]?.ToString(), out var uid) ? uid : Guid.Empty;
         var isSystem = reader["ISSYSTEM"] is not DBNull and not null && Convert.ToInt32(reader["ISSYSTEM"]) != 0;
+        var isRead = trackRead
+            && HasColumn(reader, "ISREAD")
+            && reader["ISREAD"] is not DBNull and not null
+            && Convert.ToInt32(reader["ISREAD"]) != 0;
 
         return new AnnouncementDto(
             Guid.Parse(reader["ID"]?.ToString() ?? Guid.Empty.ToString()),
@@ -249,6 +316,11 @@ public class PortalDashboardNotifyService
             Convert.ToDateTime(reader["CREATEDAT"]),
             isSystem,
             reader["RELATEDTYPE"]?.ToString(),
-            reader["RELATEDID"]?.ToString());
+            reader["RELATEDID"]?.ToString(),
+            isRead);
     }
+
+    private static bool HasColumn(FbDataReader reader, string column) =>
+        Enumerable.Range(0, reader.FieldCount).Any(i =>
+            string.Equals(reader.GetName(i), column, StringComparison.OrdinalIgnoreCase));
 }

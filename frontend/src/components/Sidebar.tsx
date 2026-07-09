@@ -1,4 +1,5 @@
-import { NavLink } from 'react-router-dom';
+import { NavLink, useLocation } from 'react-router-dom';
+import { useEffect, useState } from 'react';
 import {
   LayoutDashboard,
   UserCircle,
@@ -19,6 +20,8 @@ import { useCentreBranding } from '@/context/CentreBrandingContext';
 import { CentreMarkInline } from '@/components/branding/CentreMark';
 import { cn } from '@/utils/cn';
 import { isStudentPortalRole, learnerPortalPath } from '@/utils/learnerPortal';
+import { dashboardNotifyApi } from '@/api/resources';
+import { NOTIFY_READS_CHANGED } from '@/utils/notifyEvents';
 import type { UserRole } from '@/types';
 
 interface NavItem {
@@ -71,6 +74,24 @@ interface SidebarProps {
 export default function Sidebar({ role, open, onClose }: SidebarProps) {
   const { logout } = useAuth();
   const { centreName } = useCentreBranding();
+  const location = useLocation();
+  const [unreadNotifyCount, setUnreadNotifyCount] = useState(0);
+
+  useEffect(() => {
+    if (role !== 'Parent') return;
+
+    const refresh = () => {
+      dashboardNotifyApi
+        .getUnreadCount()
+        .then(setUnreadNotifyCount)
+        .catch(() => setUnreadNotifyCount(0));
+    };
+
+    refresh();
+    window.addEventListener(NOTIFY_READS_CHANGED, refresh);
+    return () => window.removeEventListener(NOTIFY_READS_CHANGED, refresh);
+  }, [role, location.pathname]);
+
   const items = isStudentPortalRole(role)
     ? learnerNav
         .filter((item) => !(role === 'Parent' && item.path === '/student/homework'))
@@ -103,23 +124,36 @@ export default function Sidebar({ role, open, onClose }: SidebarProps) {
         </div>
         <nav className="flex flex-1 flex-col overflow-y-auto p-3">
           <ul className="space-y-1">
-            {items.map((item) => (
+            {items.map((item) => {
+              const isDashboard =
+                role === 'Parent' &&
+                (item.path === '/parent/dashboard' || item.path.endsWith('/dashboard'));
+              const showDot = isDashboard && unreadNotifyCount > 0;
+
+              return (
               <li key={item.path}>
                 <NavLink
                   to={item.path}
                   onClick={onClose}
                   className={({ isActive }) =>
                     cn(
-                      'flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors',
+                      'relative flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors',
                       isActive ? 'bg-primary-50 text-primary-700' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
                     )
                   }
                 >
                   <item.icon className="h-5 w-5 shrink-0" />
                   {item.label}
+                  {showDot && (
+                    <span
+                      className="ml-auto h-2 w-2 shrink-0 rounded-full bg-red-500"
+                      aria-label={`${unreadNotifyCount} unread notifications`}
+                    />
+                  )}
                 </NavLink>
               </li>
-            ))}
+            );
+            })}
           </ul>
           <ul className="mt-auto space-y-1 border-t border-slate-200 pt-3">
             <li>
