@@ -69,6 +69,7 @@ builder.Services.AddScoped<ClassSessionChangeHistoryService>();
 builder.Services.AddScoped<ClassAssignmentChangeLogService>();
 builder.Services.AddScoped<PortalClassSessionService>();
 builder.Services.AddScoped<PortalHomeworkService>();
+builder.Services.AddScoped<PortalAssignmentService>();
 builder.Services.AddSingleton<HomeworkFileStorageService>();
 builder.Services.AddScoped<PortalLeaveRequestService>();
 builder.Services.AddScoped<PortalAnnouncementService>();

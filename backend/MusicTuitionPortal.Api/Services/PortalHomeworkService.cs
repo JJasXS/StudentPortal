@@ -10,6 +10,11 @@ public class PortalHomeworkService
     private readonly ParentService _parents;
     private readonly HomeworkFileStorageService _files;
 
+    private const string HomeworkSelectColumns = """
+        ID, DOCKEY, SEQ, CUSTOMERCODE, BRANCHNAME, CLASSNAME, ITEMCODE,
+        URL, NOTE, FILENAME, FILEPATH, ASSIGNMENTID, STATUS, SUBMITTEDBY, CREATEDAT
+        """;
+
     public PortalHomeworkService(
         SqlAccountLocalDbService localDb,
         ParentService parents,
@@ -36,7 +41,7 @@ public class PortalHomeworkService
 
         var sql = """
             SELECT H.ID, H.DOCKEY, H.SEQ, H.CUSTOMERCODE, H.BRANCHNAME, H.CLASSNAME, H.ITEMCODE,
-                   H.URL, H.NOTE, H.FILENAME, H.FILEPATH, H.SUBMITTEDBY, H.CREATEDAT
+                   H.URL, H.NOTE, H.FILENAME, H.FILEPATH, H.ASSIGNMENTID, H.STATUS, H.SUBMITTEDBY, H.CREATEDAT
             FROM PORTAL_HOMEWORK H
             INNER JOIN SL_SODTL B ON H.DOCKEY = B.DOCKEY AND H.SEQ = B.SEQ
             WHERE 1=1
@@ -88,9 +93,8 @@ public class PortalHomeworkService
         var results = new List<PortalHomeworkDto>();
         foreach (var branch in branches)
         {
-            const string sql = """
-                SELECT ID, DOCKEY, SEQ, CUSTOMERCODE, BRANCHNAME, CLASSNAME, ITEMCODE,
-                       URL, NOTE, FILENAME, FILEPATH, SUBMITTEDBY, CREATEDAT
+            var sql = $"""
+                SELECT {HomeworkSelectColumns}
                 FROM PORTAL_HOMEWORK
                 WHERE BRANCHNAME = @branch
                 ORDER BY CREATEDAT DESC
@@ -127,6 +131,14 @@ public class PortalHomeworkService
         var className = await GetClassNameAsync(connection, request.DocKey, request.Seq, cancellationToken);
         var itemCode = await GetItemCodeAsync(connection, request.DocKey, request.Seq, cancellationToken);
 
+        if (!string.IsNullOrWhiteSpace(request.AssignmentId))
+        {
+            var existing = await GetSubmissionForAssignmentAsync(
+                connection, request.AssignmentId.Trim(), branch, cancellationToken);
+            if (existing != null)
+                throw new InvalidOperationException("Homework already submitted for this assignment.");
+        }
+
         var id = Guid.NewGuid().ToString();
         var now = DateTime.UtcNow;
         string? fileName = null;
@@ -142,10 +154,10 @@ public class PortalHomeworkService
         const string sql = """
             INSERT INTO PORTAL_HOMEWORK (
                 ID, DOCKEY, SEQ, CUSTOMERCODE, BRANCHNAME, CLASSNAME, ITEMCODE,
-                URL, NOTE, FILENAME, FILEPATH, SUBMITTEDBY, CREATEDAT
+                URL, NOTE, FILENAME, FILEPATH, ASSIGNMENTID, STATUS, SUBMITTEDBY, CREATEDAT
             ) VALUES (
                 @id, @docKey, @seq, @customerCode, @branchName, @className, @itemCode,
-                @url, @note, @fileName, @filePath, @submittedBy, @createdAt
+                @url, @note, @fileName, @filePath, @assignmentId, @status, @submittedBy, @createdAt
             )
             """;
 
@@ -161,13 +173,45 @@ public class PortalHomeworkService
         command.Parameters.AddWithValue("@note", (object?)request.Note ?? DBNull.Value);
         command.Parameters.AddWithValue("@fileName", (object?)fileName ?? DBNull.Value);
         command.Parameters.AddWithValue("@filePath", (object?)filePath ?? DBNull.Value);
+        command.Parameters.AddWithValue("@assignmentId", (object?)request.AssignmentId ?? DBNull.Value);
+        command.Parameters.AddWithValue("@status", "Pending");
         command.Parameters.AddWithValue("@submittedBy", email.Trim());
         command.Parameters.AddWithValue("@createdAt", now);
         await command.ExecuteNonQueryAsync(cancellationToken);
 
         return new PortalHomeworkDto(
             id, request.DocKey, request.Seq, customerCode, branch, className, itemCode,
-            request.Url, request.Note, fileName, filePath, email.Trim(), now);
+            request.Url, request.Note, fileName, filePath, email.Trim(), now,
+            request.AssignmentId, "Pending");
+    }
+
+    public async Task<PortalHomeworkDto?> SetStatusAsync(
+        string id,
+        string status,
+        CancellationToken cancellationToken = default)
+    {
+        if (!_localDb.CanWriteLocalDb)
+            return null;
+
+        var normalized = status.Trim();
+        if (normalized is not ("Pending" or "Completed" or "Rejected"))
+            throw new InvalidOperationException("Invalid homework status.");
+
+        await using var connection = _localDb.OpenConnection();
+        await connection.OpenAsync(cancellationToken);
+        await PortalFirebirdSchema.EnsureAllTablesAsync(connection, cancellationToken);
+
+        const string sql = """
+            UPDATE PORTAL_HOMEWORK SET STATUS = @status WHERE ID = @id
+            """;
+
+        await using var command = new FbCommand(sql, connection);
+        command.Parameters.AddWithValue("@status", normalized);
+        command.Parameters.AddWithValue("@id", id.Trim());
+        if (await command.ExecuteNonQueryAsync(cancellationToken) == 0)
+            return null;
+
+        return await GetByIdAsync(id, cancellationToken);
     }
 
     public async Task<PortalHomeworkDto?> GetByIdAsync(string id, CancellationToken cancellationToken = default)
@@ -182,9 +226,8 @@ public class PortalHomeworkService
         if (!await PortalFirebirdSchema.TableExistsAsync(connection, "PORTAL_HOMEWORK", cancellationToken))
             return null;
 
-        const string sql = """
-            SELECT ID, DOCKEY, SEQ, CUSTOMERCODE, BRANCHNAME, CLASSNAME, ITEMCODE,
-                   URL, NOTE, FILENAME, FILEPATH, SUBMITTEDBY, CREATEDAT
+        var sql = $"""
+            SELECT {HomeworkSelectColumns}
             FROM PORTAL_HOMEWORK
             WHERE ID = @id
             """;
@@ -226,6 +269,26 @@ public class PortalHomeworkService
         var teacher = result?.ToString()?.Trim();
         return !string.IsNullOrWhiteSpace(teacher)
             && string.Equals(teacher, conductedBy.Trim(), StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static async Task<PortalHomeworkDto?> GetSubmissionForAssignmentAsync(
+        FbConnection connection,
+        string assignmentId,
+        string branchName,
+        CancellationToken cancellationToken)
+    {
+        const string sql = """
+            SELECT ID FROM PORTAL_HOMEWORK
+            WHERE ASSIGNMENTID = @assignmentId AND BRANCHNAME = @branch
+            """;
+
+        await using var command = new FbCommand(sql, connection);
+        command.Parameters.AddWithValue("@assignmentId", assignmentId);
+        command.Parameters.AddWithValue("@branch", branchName);
+        var result = await command.ExecuteScalarAsync(cancellationToken);
+        return result == null ? null : new PortalHomeworkDto(
+            result.ToString()!, 0, 0, string.Empty, branchName, null, null,
+            null, null, null, null, string.Empty, DateTime.UtcNow);
     }
 
     private async Task<string?> GetClassNameAsync(FbConnection connection, int docKey, int seq, CancellationToken ct)
@@ -279,7 +342,9 @@ public class PortalHomeworkService
             reader["FILENAME"]?.ToString(),
             ReadOptionalString(reader, "FILEPATH"),
             reader["SUBMITTEDBY"]?.ToString() ?? string.Empty,
-            Convert.ToDateTime(reader["CREATEDAT"]));
+            Convert.ToDateTime(reader["CREATEDAT"]),
+            ReadOptionalString(reader, "ASSIGNMENTID"),
+            ReadOptionalString(reader, "STATUS") ?? "Pending");
 
     private static string? ReadHomeworkUrl(FbDataReader reader)
     {

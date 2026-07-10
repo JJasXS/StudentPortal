@@ -85,6 +85,17 @@ export interface SqlAccountChildEnrollments {
   enrollments: SqlAccountChildEnrollment[];
 }
 
+export interface SqlAccountOutstandingInvoice {
+  docKey: number;
+  docNo: string;
+  docDate?: string | null;
+  dueDate?: string | null;
+  docAmt: number;
+  paymentAmt: number;
+  outstanding: number;
+  description?: string | null;
+}
+
 export interface ItemCodeClassLink {
   id: string;
   itemCode: string;

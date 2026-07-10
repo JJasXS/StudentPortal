@@ -10,6 +10,7 @@ import { formatDateDDMMYYYY } from '@/utils/dateFormat';
 import {
   filterAnnouncementsBySearch,
   getAnnouncementCategory,
+  isAnnouncementExpired,
   mergeAnnouncements,
 } from '@/utils/announcements';
 import type { Announcement } from '@/types';
@@ -45,8 +46,9 @@ export function MergedAnnouncementsPanel({
   const isViewerPage = variant === 'page-viewer';
   const detailEnabled = Boolean(announcementDetailBasePath);
 
-  const titleCell = (a: Announcement) =>
-    detailEnabled ? (
+  const titleCell = (a: Announcement) => {
+    const expired = isAnnouncementExpired(a);
+    const title = detailEnabled ? (
       <Link
         to={`${announcementDetailBasePath}/${a.id}`}
         state={{ announcement: a }}
@@ -57,6 +59,17 @@ export function MergedAnnouncementsPanel({
     ) : (
       <span className="font-medium text-slate-900">{a.title}</span>
     );
+    return (
+      <div className="flex flex-wrap items-center gap-2">
+        {title}
+        {expired && isAdminPage && (
+          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">
+            Expired
+          </span>
+        )}
+      </div>
+    );
+  };
 
   const merged = useMemo(() => {
     const combined = mergeAnnouncements(holidays, general);

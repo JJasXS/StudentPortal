@@ -120,7 +120,7 @@ export default function TeacherLeavePage() {
             <EmptyState
               icon={CalendarOff}
               title="No eligible sessions"
-              description="Sessions must be at least 24 hours away and within one month."
+              description="Sessions must be in the current month and at least 24 hours away."
             />
           ) : (
             <form onSubmit={(e) => void handleSubmit(e)} className="space-y-4">

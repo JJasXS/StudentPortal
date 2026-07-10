@@ -20,8 +20,9 @@ import { useCentreBranding } from '@/context/CentreBrandingContext';
 import { CentreMarkInline } from '@/components/branding/CentreMark';
 import { cn } from '@/utils/cn';
 import { isStudentPortalRole, learnerPortalPath } from '@/utils/learnerPortal';
-import { dashboardNotifyApi } from '@/api/resources';
+import { dashboardNotifyApi, homeworkApi } from '@/api/resources';
 import { NOTIFY_READS_CHANGED } from '@/utils/notifyEvents';
+import { parentChildrenPath } from '@/utils/learnerPortal';
 import type { UserRole } from '@/types';
 
 interface NavItem {
@@ -76,6 +77,7 @@ export default function Sidebar({ role, open, onClose }: SidebarProps) {
   const { centreName } = useCentreBranding();
   const location = useLocation();
   const [unreadNotifyCount, setUnreadNotifyCount] = useState(0);
+  const [pendingHomeworkCount, setPendingHomeworkCount] = useState(0);
 
   useEffect(() => {
     if (role !== 'Parent') return;
@@ -85,6 +87,10 @@ export default function Sidebar({ role, open, onClose }: SidebarProps) {
         .getUnreadCount()
         .then(setUnreadNotifyCount)
         .catch(() => setUnreadNotifyCount(0));
+      homeworkApi
+        .getPendingCount()
+        .then((data) => setPendingHomeworkCount(data.total))
+        .catch(() => setPendingHomeworkCount(0));
     };
 
     refresh();
@@ -128,7 +134,11 @@ export default function Sidebar({ role, open, onClose }: SidebarProps) {
               const isDashboard =
                 role === 'Parent' &&
                 (item.path === '/parent/dashboard' || item.path.endsWith('/dashboard'));
-              const showDot = isDashboard && unreadNotifyCount > 0;
+              const isAssignment =
+                role === 'Parent' && item.path === parentChildrenPath();
+              const showDot =
+                (isDashboard && unreadNotifyCount > 0) ||
+                (isAssignment && pendingHomeworkCount > 0);
 
               return (
               <li key={item.path}>
@@ -147,7 +157,11 @@ export default function Sidebar({ role, open, onClose }: SidebarProps) {
                   {showDot && (
                     <span
                       className="ml-auto h-2 w-2 shrink-0 rounded-full bg-red-500"
-                      aria-label={`${unreadNotifyCount} unread notifications`}
+                      aria-label={
+                        isAssignment
+                          ? `${pendingHomeworkCount} pending homework`
+                          : `${unreadNotifyCount} unread notifications`
+                      }
                     />
                   )}
                 </NavLink>

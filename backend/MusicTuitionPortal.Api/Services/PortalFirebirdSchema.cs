@@ -18,7 +18,11 @@ public static class PortalFirebirdSchema
         await EnsurePortalLeaveRequesterTypeColumnAsync(connection, cancellationToken);
         await EnsurePortalAnnouncementsTableAsync(connection, cancellationToken);
         await EnsurePortalAnnouncementNotifyColumnsAsync(connection, cancellationToken);
+        await EnsurePortalAnnouncementExpiryColumnAsync(connection, cancellationToken);
         await EnsurePortalNotifyReadsTableAsync(connection, cancellationToken);
+        await EnsurePortalNotifyHiddenTableAsync(connection, cancellationToken);
+        await EnsurePortalHomeworkAssignmentColumnsAsync(connection, cancellationToken);
+        await EnsurePortalAssignmentsTableAsync(connection, cancellationToken);
     }
 
     public static async Task EnsurePortalSoLineScheduleTableAsync(FbConnection connection, CancellationToken cancellationToken = default)
@@ -107,6 +111,8 @@ public static class PortalFirebirdSchema
                 NOTE VARCHAR(2000),
                 FILENAME VARCHAR(255),
                 FILEPATH VARCHAR(500),
+                ASSIGNMENTID VARCHAR(36),
+                STATUS VARCHAR(20) DEFAULT 'Pending',
                 SUBMITTEDBY VARCHAR(200) NOT NULL,
                 CREATEDAT TIMESTAMP NOT NULL
             )
@@ -282,6 +288,7 @@ public static class PortalFirebirdSchema
                 CONTENT VARCHAR(4000) NOT NULL,
                 CATEGORY VARCHAR(50) NOT NULL,
                 HOLIDAYDATE DATE,
+                EXPIRYDATE DATE,
                 TARGETROLE VARCHAR(30) NOT NULL,
                 CREATEDBYUSERID VARCHAR(36),
                 CREATEDBYNAME VARCHAR(200),
@@ -321,6 +328,105 @@ public static class PortalFirebirdSchema
         {
             await using var cmd = new FbCommand(sql, connection);
             await cmd.ExecuteNonQueryAsync(ct);
+        }
+    }
+
+    private static async Task EnsurePortalNotifyHiddenTableAsync(FbConnection connection, CancellationToken ct)
+    {
+        if (await TableExistsAsync(connection, "PORTAL_NOTIFY_HIDDEN", ct))
+            return;
+
+        foreach (var sql in new[]
+        {
+            """
+            CREATE TABLE PORTAL_NOTIFY_HIDDEN (
+                USEREMAIL VARCHAR(200) NOT NULL,
+                ANNOUNCEMENTID VARCHAR(36) NOT NULL,
+                HIDDENAT TIMESTAMP NOT NULL,
+                PRIMARY KEY (USEREMAIL, ANNOUNCEMENTID)
+            )
+            """,
+            "CREATE INDEX IX_PORTALNOTIFYHIDDEN_USER ON PORTAL_NOTIFY_HIDDEN (USEREMAIL)",
+        })
+        {
+            await using var cmd = new FbCommand(sql, connection);
+            await cmd.ExecuteNonQueryAsync(ct);
+        }
+    }
+
+    private static async Task EnsurePortalHomeworkAssignmentColumnsAsync(FbConnection connection, CancellationToken ct)
+    {
+        if (!await TableExistsAsync(connection, "PORTAL_HOMEWORK", ct))
+            return;
+
+        foreach (var (column, ddl) in new[]
+        {
+            ("ASSIGNMENTID", "ALTER TABLE PORTAL_HOMEWORK ADD ASSIGNMENTID VARCHAR(36)"),
+            ("STATUS", "ALTER TABLE PORTAL_HOMEWORK ADD STATUS VARCHAR(20) DEFAULT 'Pending'"),
+        })
+        {
+            if (await ColumnExistsAsync(connection, "PORTAL_HOMEWORK", column, ct))
+                continue;
+
+            try
+            {
+                await using var cmd = new FbCommand(ddl, connection);
+                await cmd.ExecuteNonQueryAsync(ct);
+            }
+            catch
+            {
+                // Column already exists
+            }
+        }
+    }
+
+    private static async Task EnsurePortalAssignmentsTableAsync(FbConnection connection, CancellationToken ct)
+    {
+        if (await TableExistsAsync(connection, "PORTAL_ASSIGNMENTS", ct))
+            return;
+
+        foreach (var sql in new[]
+        {
+            """
+            CREATE TABLE PORTAL_ASSIGNMENTS (
+                ID VARCHAR(36) NOT NULL PRIMARY KEY,
+                CLASSNAME VARCHAR(200) NOT NULL,
+                ITEMCODE VARCHAR(50),
+                TITLE VARCHAR(200) NOT NULL,
+                INSTRUCTIONS VARCHAR(4000),
+                DUEDATE DATE NOT NULL,
+                CREATEDBYUSERID VARCHAR(36) NOT NULL,
+                CREATEDBYNAME VARCHAR(200),
+                CREATEDAT TIMESTAMP NOT NULL
+            )
+            """,
+            "CREATE INDEX IX_PORTALASSIGN_CLASS ON PORTAL_ASSIGNMENTS (CLASSNAME)",
+            "CREATE INDEX IX_PORTALASSIGN_DUE ON PORTAL_ASSIGNMENTS (DUEDATE)",
+        })
+        {
+            await using var cmd = new FbCommand(sql, connection);
+            await cmd.ExecuteNonQueryAsync(ct);
+        }
+    }
+
+    private static async Task EnsurePortalAnnouncementExpiryColumnAsync(FbConnection connection, CancellationToken ct)
+    {
+        if (!await TableExistsAsync(connection, "PORTAL_ANNOUNCEMENTS", ct))
+            return;
+
+        if (await ColumnExistsAsync(connection, "PORTAL_ANNOUNCEMENTS", "EXPIRYDATE", ct))
+            return;
+
+        try
+        {
+            await using var cmd = new FbCommand(
+                "ALTER TABLE PORTAL_ANNOUNCEMENTS ADD EXPIRYDATE DATE",
+                connection);
+            await cmd.ExecuteNonQueryAsync(ct);
+        }
+        catch
+        {
+            // Column already exists
         }
     }
 

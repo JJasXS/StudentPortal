@@ -62,6 +62,12 @@ export const parentsApi = {
         params: branchName ? { branchName } : undefined,
       })
       .then((r) => r.data),
+  getOutstandingInvoices: () =>
+    apiClient
+      .get<{ invoices: import('@/types/sqlAccount').SqlAccountOutstandingInvoice[] }>(
+        '/parents/me/outstanding-invoices'
+      )
+      .then((r) => r.data.invoices),
   create: (data: Partial<ParentProfile> & { password?: string; email?: string; fullName?: string }) =>
     apiClient.post<ParentProfile>('/parents', data).then((r) => r.data),
   update: (id: string, data: Partial<ParentProfile>) =>
@@ -147,7 +153,7 @@ export const classAssignmentLogsApi = {
       .then((r) => r.data),
 };
 
-import type { PortalHomework, PortalLeaveRequest } from '@/types/portal';
+import type { PortalHomework, PortalLeaveRequest, PortalAssignment, HomeworkPendingCount } from '@/types/portal';
 
 export const homeworkApi = {
   getAll: (teacher?: string) =>
@@ -158,6 +164,10 @@ export const homeworkApi = {
     apiClient
       .get<PortalHomework[]>('/homework/mine', { params: branchName ? { branchName } : undefined })
       .then((r) => r.data),
+  getPendingCount: () =>
+    apiClient.get<HomeworkPendingCount>('/homework/pending-count').then((r) => r.data),
+  setStatus: (id: string, status: string) =>
+    apiClient.patch<PortalHomework>(`/homework/${id}/status`, { status }).then((r) => r.data),
   submit: (data: {
     docKey: number;
     seq: number;
@@ -165,6 +175,7 @@ export const homeworkApi = {
     url?: string;
     note?: string;
     file?: File;
+    assignmentId?: string;
   }) => {
     const form = new FormData();
     form.append('docKey', String(data.docKey));
@@ -172,6 +183,7 @@ export const homeworkApi = {
     form.append('branchName', data.branchName);
     if (data.url) form.append('url', data.url);
     if (data.note) form.append('note', data.note);
+    if (data.assignmentId) form.append('assignmentId', data.assignmentId);
     if (data.file) form.append('file', data.file);
     return apiClient.post<PortalHomework>('/homework', form).then((r) => r.data);
   },
@@ -186,6 +198,27 @@ export const homeworkApi = {
     link.remove();
     window.URL.revokeObjectURL(url);
   },
+};
+
+export const assignmentsApi = {
+  getForClass: (className: string) =>
+    apiClient
+      .get<PortalAssignment[]>('/assignments', { params: { className } })
+      .then((r) => r.data),
+  getMine: (branchName?: string) =>
+    apiClient
+      .get<PortalAssignment[]>('/assignments/mine', {
+        params: branchName ? { branchName } : undefined,
+      })
+      .then((r) => r.data),
+  create: (data: {
+    className: string;
+    itemCode?: string;
+    title: string;
+    instructions?: string;
+    dueDate: string;
+  }) => apiClient.post<PortalAssignment>('/assignments', data).then((r) => r.data),
+  remove: (id: string) => apiClient.delete(`/assignments/${id}`),
 };
 
 export const leaveApi = {
@@ -224,6 +257,7 @@ export const dashboardNotifyApi = {
     apiClient.get<{ count: number }>('/dashboard/notify/unread-count').then((r) => r.data.count),
   markRead: (id: string) => apiClient.post(`/dashboard/notify/${id}/read`),
   markAllRead: () => apiClient.post('/dashboard/notify/read-all'),
+  hide: (id: string) => apiClient.post(`/dashboard/notify/${id}/hide`),
 };
 
 export const calendarApi = {

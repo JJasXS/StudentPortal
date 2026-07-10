@@ -66,8 +66,12 @@ export function erpEventToScheduleItem(
     teacherName: erp.teacherName ?? undefined,
     courseLabel: `${courseName} (${minutes} min)${branchSuffix}`,
     status:
-      (erp.status as ScheduleLessonItem['status']) === 'Cancelled'
+      erp.status === 'Cancelled'
         ? 'Cancelled'
-        : (erp.status as ScheduleLessonItem['status']) ?? 'Scheduled',
+        : erp.status === 'Rescheduled'
+          ? 'Rescheduled'
+          : (erp.status as ScheduleLessonItem['status']) === 'Completed'
+            ? 'Completed'
+            : 'Scheduled',
   };
 }

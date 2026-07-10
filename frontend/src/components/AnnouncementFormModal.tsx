@@ -5,6 +5,7 @@ import { Input, Label, Select, Textarea } from '@/components/ui/Input';
 import {
   ANNOUNCEMENT_CATEGORIES,
   ANNOUNCEMENT_TARGET_ROLES,
+  ANNOUNCEMENT_TARGET_ROLE_LABELS,
   announcementToForm,
   emptyAnnouncementForm,
   type AnnouncementFormValues,
@@ -107,7 +108,7 @@ export function AnnouncementFormModal({
             >
               {ANNOUNCEMENT_TARGET_ROLES.map((role) => (
                 <option key={role} value={role}>
-                  {role === 'All' ? 'Everyone' : role}
+                  {ANNOUNCEMENT_TARGET_ROLE_LABELS[role]}
                 </option>
               ))}
             </Select>
@@ -126,6 +127,19 @@ export function AnnouncementFormModal({
             />
           </div>
         )}
+
+        <div>
+          <Label htmlFor="annExpiryDate">Expiry date (optional)</Label>
+          <Input
+            id="annExpiryDate"
+            type="date"
+            value={form.expiryDate}
+            onChange={(e) => set('expiryDate', e.target.value)}
+          />
+          <p className="mt-1 text-xs text-slate-500">
+            After this date the announcement is hidden from dashboards and viewer lists.
+          </p>
+        </div>
 
         <div>
           <Label htmlFor="annContent">Message</Label>

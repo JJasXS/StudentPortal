@@ -400,6 +400,31 @@ public class ParentsController : ControllerBase
         });
     }
 
+    [HttpGet("me/outstanding-invoices")]
+    [Authorize(Roles = "Parent")]
+    public async Task<IActionResult> GetMyOutstandingInvoices(CancellationToken cancellationToken)
+    {
+        var email = User.FindFirst(System.Security.Claims.ClaimTypes.Email)?.Value;
+        if (string.IsNullOrWhiteSpace(email))
+            return Unauthorized(new { message = "Email not found in token." });
+
+        var invoices = await _service.GetOutstandingInvoicesForEmailAsync(email, cancellationToken);
+        return Ok(new
+        {
+            invoices = invoices.Select(i => new
+            {
+                docKey = i.DocKey,
+                docNo = i.DocNo,
+                docDate = i.DocDate,
+                dueDate = i.DueDate,
+                docAmt = i.DocAmt,
+                paymentAmt = i.PaymentAmt,
+                outstanding = i.Outstanding,
+                description = i.Description,
+            }),
+        });
+    }
+
     [HttpGet("me/calendar-events")]
     [Authorize(Roles = "Parent")]
     public async Task<IActionResult> GetMyCalendarEvents(
@@ -1162,6 +1187,7 @@ public class AnnouncementsController : ControllerBase
         content = a.Content,
         category = a.Category,
         holidayDate = a.HolidayDate?.ToString("yyyy-MM-dd"),
+        expiryDate = a.ExpiryDate?.ToString("yyyy-MM-dd"),
         targetRole = a.TargetRole,
         createdByUserId = a.CreatedByUserId.ToString(),
         createdByName = a.CreatedByName,

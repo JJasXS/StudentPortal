@@ -9,6 +9,13 @@ export function getAnnouncementCategory(announcement: Announcement): Announcemen
   return 'General';
 }
 
+/** Whether an announcement has passed its expiry date (end of expiry day is still valid). */
+export function isAnnouncementExpired(announcement: Announcement, now = new Date()): boolean {
+  if (!announcement.expiryDate) return false;
+  const expiry = new Date(`${announcement.expiryDate.slice(0, 10)}T23:59:59`);
+  return now.getTime() > expiry.getTime();
+}
+
 /** Whether an announcement is visible to a given role (not used for admin management lists). */
 export function isAnnouncementForRole(announcement: Announcement, role: UserRole) {
   if (announcement.targetRole === 'All') return true;
@@ -17,7 +24,9 @@ export function isAnnouncementForRole(announcement: Announcement, role: UserRole
 }
 
 export function filterAnnouncementsForRole(announcements: Announcement[], role: UserRole) {
-  return announcements.filter((a) => isAnnouncementForRole(a, role));
+  return announcements.filter(
+    (a) => isAnnouncementForRole(a, role) && !isAnnouncementExpired(a)
+  );
 }
 
 export interface SplitAnnouncementsResult {

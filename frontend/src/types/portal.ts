@@ -21,6 +21,30 @@ export interface PortalHomework {
   hasFile?: boolean;
   submittedBy: string;
   createdAt: string;
+  assignmentId?: string | null;
+  status?: 'Pending' | 'Completed' | 'Rejected' | string;
+}
+
+export type HomeworkReviewStatus = 'Pending' | 'Completed' | 'Rejected';
+
+export interface PortalAssignment {
+  id: string;
+  className: string;
+  itemCode?: string | null;
+  title: string;
+  instructions?: string | null;
+  dueDate: string;
+  createdByUserId: string;
+  createdByName?: string | null;
+  createdAt: string;
+  hasSubmission?: boolean;
+  submissionId?: string | null;
+  submissionStatus?: string | null;
+}
+
+export interface HomeworkPendingCount {
+  total: number;
+  byBranch: { branchName: string; pendingCount: number }[];
 }
 
 export interface PortalLeaveRequest {

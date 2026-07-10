@@ -126,10 +126,13 @@ public class PortalClassSessionService
     }
 
     public async Task<List<ErpCalendarEventDto>> GetCalendarEventsAsync(
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        bool includeCancelled = false)
     {
         await SyncOccurrencesAsync(cancellationToken);
-        var occurrences = await GetOccurrencesAsync(cancelled: false, cancellationToken: cancellationToken);
+        var occurrences = await GetOccurrencesAsync(
+            cancelled: includeCancelled ? null : false,
+            cancellationToken: cancellationToken);
         var (linkByItem, classes, teacherUserIdByName) = await LoadClassContextAsync(cancellationToken);
         var itemCodes = occurrences
             .Select(o => o.ItemCode)
@@ -167,7 +170,7 @@ public class PortalClassSessionService
             branches = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { normalized };
         }
 
-        var all = await GetCalendarEventsAsync(cancellationToken);
+        var all = await GetCalendarEventsAsync(cancellationToken, includeCancelled: true);
         return all
             .Where(e => !string.IsNullOrWhiteSpace(e.BranchName) && branches.Contains(e.BranchName.Trim()))
             .ToList();

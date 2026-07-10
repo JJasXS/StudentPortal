@@ -4,13 +4,15 @@ import { Link } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
 import { PageHeader } from '@/components/PageHeader';
 import { DashboardNotifyFeed } from '@/components/dashboard/DashboardNotifyFeed';
+import { ParentOutstandingFeesCard } from '@/components/parent/ParentOutstandingFeesCard';
+import { ParentEnrolledClassesSection } from '@/components/parent/ParentEnrolledClassesSection';
 import { Card, CardContent } from '@/components/ui/Card';
 import { useSqlAccountChildren } from '@/hooks/useSqlAccountChildren';
 import { useParentLeaveNotifyToasts } from '@/hooks/useParentLeaveNotifyToasts';
 import { parentsApi } from '@/api/resources';
 import { formatDateDDMMYYYY } from '@/utils/dateFormat';
 import type { Announcement } from '@/types';
-import type { ErpCalendarEvent } from '@/types/sqlAccount';
+import type { ErpCalendarEvent, SqlAccountOutstandingInvoice } from '@/types/sqlAccount';
 
 function formatTimeRange(start?: string, end?: string) {
   if (!start) return '';
@@ -30,12 +32,20 @@ export default function ParentDashboardPage() {
   const { children, loading } = useSqlAccountChildren(true);
   const [eventsByBranch, setEventsByBranch] = useState<Record<string, ErpCalendarEvent[]>>({});
   const [notifyItems, setNotifyItems] = useState<Announcement[]>([]);
+  const [outstandingInvoices, setOutstandingInvoices] = useState<SqlAccountOutstandingInvoice[]>([]);
 
   const handleFeedLoaded = useCallback((items: Announcement[]) => {
     setNotifyItems(items);
   }, []);
 
   useParentLeaveNotifyToasts(notifyItems, user?.role === 'Parent');
+
+  useEffect(() => {
+    parentsApi
+      .getOutstandingInvoices()
+      .then(setOutstandingInvoices)
+      .catch(() => setOutstandingInvoices([]));
+  }, []);
 
   useEffect(() => {
     if (children.length === 0) return;
@@ -79,6 +89,12 @@ export default function ParentDashboardPage() {
         autoMarkReadOnView
       />
 
+      <ParentOutstandingFeesCard invoices={outstandingInvoices} />
+
+      {!loading && children.length > 0 && (
+        <ParentEnrolledClassesSection students={children} />
+      )}
+
       {loading ? (
         <p className="text-sm text-slate-500">Loading…</p>
       ) : sections.length === 0 ? (
@@ -93,7 +109,7 @@ export default function ParentDashboardPage() {
                 <div className="mb-3 flex items-center justify-between gap-2">
                   <h2 className="text-lg font-semibold text-slate-900">{label}</h2>
                   <Link
-                    to={`/parent/children?child=${encodeURIComponent(child.branchName.toLowerCase())}`}
+                    to={`/parent/children?child=${encodeURIComponent(child.branchName.toLowerCase())}&tab=assignment`}
                     className="text-xs font-medium text-primary-600 hover:underline"
                   >
                     View details

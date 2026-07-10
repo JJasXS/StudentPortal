@@ -89,15 +89,19 @@ public class PortalDashboardNotifyService
 
         const string sql = """
             SELECT FIRST @limit
-                a.ID, a.TITLE, a.CONTENT, a.CATEGORY, a.HOLIDAYDATE, a.TARGETROLE,
+                a.ID, a.TITLE, a.CONTENT, a.CATEGORY, a.HOLIDAYDATE, a.EXPIRYDATE, a.TARGETROLE,
                 a.CREATEDBYUSERID, a.CREATEDBYNAME, a.ISSYSTEM, a.RELATEDTYPE, a.RELATEDID, a.CREATEDAT,
                 CASE WHEN r.ANNOUNCEMENTID IS NULL THEN 0 ELSE 1 END AS ISREAD
             FROM PORTAL_ANNOUNCEMENTS a
             LEFT JOIN PORTAL_NOTIFY_READS r
                 ON r.ANNOUNCEMENTID = a.ID AND r.USEREMAIL = @email
-            WHERE a.TARGETROLE = 'All'
+            LEFT JOIN PORTAL_NOTIFY_HIDDEN h
+                ON h.ANNOUNCEMENTID = a.ID AND h.USEREMAIL = @email
+            WHERE h.ANNOUNCEMENTID IS NULL
+              AND (a.EXPIRYDATE IS NULL OR a.EXPIRYDATE >= CURRENT_DATE)
+              AND (a.TARGETROLE = 'All'
                OR a.TARGETROLE = @role
-               OR (@role = 'Parent' AND a.TARGETROLE = 'Student')
+               OR (@role = 'Parent' AND a.TARGETROLE = 'Student'))
             ORDER BY a.CREATEDAT DESC
             """;
 
@@ -163,6 +167,31 @@ public class PortalDashboardNotifyService
         {
             await MarkReadAsync(userEmail, item.Id.ToString(), cancellationToken);
         }
+    }
+
+    public async Task HideAsync(
+        string userEmail,
+        string announcementId,
+        CancellationToken cancellationToken = default)
+    {
+        if (!_localDb.CanWriteLocalDb || string.IsNullOrWhiteSpace(userEmail))
+            return;
+
+        await EnsureTableAsync(cancellationToken);
+        await using var connection = _localDb.OpenConnection();
+        await connection.OpenAsync(cancellationToken);
+
+        const string sql = """
+            UPDATE OR INSERT INTO PORTAL_NOTIFY_HIDDEN (USEREMAIL, ANNOUNCEMENTID, HIDDENAT)
+            VALUES (@email, @announcementId, @hiddenAt)
+            MATCHING (USEREMAIL, ANNOUNCEMENTID)
+            """;
+
+        await using var command = new FbCommand(sql, connection);
+        command.Parameters.AddWithValue("@email", userEmail.Trim());
+        command.Parameters.AddWithValue("@announcementId", announcementId.Trim());
+        command.Parameters.AddWithValue("@hiddenAt", DateTime.UtcNow);
+        await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
     public Task NotifyLeaveSubmittedAsync(PortalLeaveRequestDto request, CancellationToken cancellationToken = default)
@@ -297,6 +326,12 @@ public class PortalDashboardNotifyService
     {
         var holiday = reader["HOLIDAYDATE"];
         DateTime? holidayDate = holiday is DBNull or null ? null : Convert.ToDateTime(holiday);
+        DateTime? expiryDate = null;
+        if (HasColumn(reader, "EXPIRYDATE"))
+        {
+            var expiry = reader["EXPIRYDATE"];
+            expiryDate = expiry is DBNull or null ? null : Convert.ToDateTime(expiry);
+        }
         var createdById = Guid.TryParse(reader["CREATEDBYUSERID"]?.ToString(), out var uid) ? uid : Guid.Empty;
         var isSystem = reader["ISSYSTEM"] is not DBNull and not null && Convert.ToInt32(reader["ISSYSTEM"]) != 0;
         var isRead = trackRead
@@ -317,7 +352,8 @@ public class PortalDashboardNotifyService
             isSystem,
             reader["RELATEDTYPE"]?.ToString(),
             reader["RELATEDID"]?.ToString(),
-            isRead);
+            isRead,
+            expiryDate);
     }
 
     private static bool HasColumn(FbDataReader reader, string column) =>

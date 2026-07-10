@@ -127,7 +127,7 @@ function ChildFilterMenu({
     return () => document.removeEventListener('mousedown', handleClick);
   }, [open]);
 
-  const label = childFilter || 'All children';
+  const label = childFilter || 'Students';
 
   return (
     <div className="relative mb-4 flex justify-end" ref={menuRef}>
@@ -148,7 +148,7 @@ function ChildFilterMenu({
               setOpen(false);
             }}
           >
-            All children
+            Students
           </button>
           {childOptions.map((branch) => (
             <button
@@ -368,7 +368,7 @@ export default function LearnerSchedulePage() {
         <h1 className="text-xl font-bold text-[#5C4033] sm:text-2xl">Schedule</h1>
         {isParent && (
           <p className="mt-1 text-sm text-slate-500">
-            {childFilter ? `Showing ${childFilter}'s lessons` : 'All children'}
+            {childFilter ? `Showing ${childFilter}'s lessons` : 'Students'}
           </p>
         )}
       </div>

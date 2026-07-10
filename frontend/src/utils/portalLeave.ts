@@ -54,9 +54,15 @@ export function isLeaveSessionEligible(sessionDate: string, startTime?: string |
   if (!sessionStart) return false;
   const now = new Date();
   const min = new Date(now.getTime() + 24 * 60 * 60 * 1000);
-  const max = new Date(now);
-  max.setMonth(max.getMonth() + 1);
-  return sessionStart >= min && sessionStart <= max;
+
+  if (
+    sessionStart.getFullYear() !== now.getFullYear() ||
+    sessionStart.getMonth() !== now.getMonth()
+  ) {
+    return false;
+  }
+
+  return sessionStart >= min;
 }
 
 function parseSessionDateTime(sessionDate: string, startTime?: string | null): Date | null {

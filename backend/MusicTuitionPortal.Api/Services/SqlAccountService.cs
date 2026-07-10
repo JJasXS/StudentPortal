@@ -29,6 +29,7 @@ public record SqlAccountStaffUserMatch(string UserId, string UserName, string Em
 public class SqlAccountService
 {
     private const string CustomerResource = "customer/*";
+    private const string CustomerInvoiceResource = "customerinvoice/*";
     private const string UserResource = "user/*";
 
     private readonly SqlAccountSettings _settings;
@@ -205,6 +206,40 @@ public class SqlAccountService
         }
 
         return await _localDb.GetParentChildrenAsync(cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<SqlAccountOutstandingInvoiceDto>> GetCustomerInvoicesForCodeAsync(
+        string customerCode,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(customerCode) || !IsConfigured)
+            return [];
+
+        var normalizedCode = customerCode.Trim();
+
+        try
+        {
+            var documents = await GetDocumentsAsync(CustomerInvoiceResource, cancellationToken);
+            return documents
+                .Where(row =>
+                {
+                    var code = GetString(row, "code");
+                    return !string.IsNullOrWhiteSpace(code)
+                        && string.Equals(code.Trim(), normalizedCode, StringComparison.OrdinalIgnoreCase);
+                })
+                .Select(MapCustomerInvoice)
+                .Where(invoice => invoice != null)
+                .Select(invoice => invoice!)
+                .Where(invoice => invoice.Outstanding > 0)
+                .OrderByDescending(invoice => invoice.DocDate, StringComparer.OrdinalIgnoreCase)
+                .ThenByDescending(invoice => invoice.DocNo, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "SQL Account customer invoice lookup failed for {Code}", normalizedCode);
+            return [];
+        }
     }
 
     public async Task<List<JsonElement>> GetDocumentsAsync(
@@ -399,6 +434,60 @@ public class SqlAccountService
             return [root.Clone()];
 
         return [];
+    }
+
+    private static SqlAccountOutstandingInvoiceDto? MapCustomerInvoice(JsonElement invoice)
+    {
+        if (ParseBool(invoice, "cancelled"))
+            return null;
+
+        var outstanding = ParseDecimal(GetString(invoice, "outstanding"));
+        if (outstanding <= 0)
+            return null;
+
+        var docKeyText = GetString(invoice, "dockey");
+        if (!int.TryParse(docKeyText, out var docKey))
+            return null;
+
+        return new SqlAccountOutstandingInvoiceDto(
+            docKey,
+            GetString(invoice, "docno") ?? string.Empty,
+            GetString(invoice, "docdate"),
+            GetString(invoice, "duedate"),
+            ParseDecimal(GetString(invoice, "docamt")),
+            ParseDecimal(GetString(invoice, "paymentamt")),
+            outstanding,
+            GetString(invoice, "description"));
+    }
+
+    private static decimal ParseDecimal(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return 0m;
+
+        return decimal.TryParse(value, System.Globalization.NumberStyles.Number, System.Globalization.CultureInfo.InvariantCulture, out var parsed)
+            ? parsed
+            : 0m;
+    }
+
+    private static bool ParseBool(JsonElement element, string propertyName)
+    {
+        foreach (var property in element.EnumerateObject())
+        {
+            if (!string.Equals(property.Name, propertyName, StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            return property.Value.ValueKind switch
+            {
+                JsonValueKind.True => true,
+                JsonValueKind.False => false,
+                JsonValueKind.Number => property.Value.TryGetInt32(out var n) && n != 0,
+                JsonValueKind.String => IsTruthy(property.Value.GetString()),
+                _ => false
+            };
+        }
+
+        return false;
     }
 
     private static SqlAccountParentDto MapCustomer(JsonElement customer)

@@ -39,6 +39,7 @@ interface DataTableProps<T> {
   embedded?: boolean;
   /** Center-align headers and cells */
   centered?: boolean;
+  onRowClick?: (item: T) => void;
 }
 
 function compareSortValues(
@@ -104,6 +105,7 @@ export function DataTable<T extends object>({
   emptyMessage = 'No records found.',
   embedded = false,
   centered = false,
+  onRowClick,
 }: DataTableProps<T>) {
   const defaultAlign: ColumnAlign = centered ? 'center' : 'left';
 
@@ -245,7 +247,11 @@ export function DataTable<T extends object>({
         </thead>
         <tbody className="divide-y divide-slate-200 bg-white">
           {sortedData.map((item) => (
-            <tr key={String(item[keyField])} className="group hover:bg-slate-50">
+            <tr
+              key={String(item[keyField])}
+              className={cn('group hover:bg-slate-50', onRowClick && 'cursor-pointer')}
+              onClick={onRowClick ? () => onRowClick(item) : undefined}
+            >
               {columns.map((col) => (
                 <td
                   key={col.key}

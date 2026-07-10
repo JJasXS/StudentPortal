@@ -14,10 +14,17 @@ export interface ScheduleLessonItem {
 }
 
 const STATUS_STYLES: Record<ScheduleLessonItem['status'], string> = {
-  Scheduled: 'bg-orange-500 text-white',
-  Completed: 'bg-emerald-500 text-white',
-  Cancelled: 'bg-slate-400 text-white',
-  Rescheduled: 'bg-sky-500 text-white',
+  Scheduled: 'bg-emerald-500 text-white',
+  Completed: 'bg-emerald-600 text-white',
+  Cancelled: 'bg-red-500 text-white',
+  Rescheduled: 'bg-blue-500 text-white',
+};
+
+const STATUS_LABELS: Record<ScheduleLessonItem['status'], string> = {
+  Scheduled: 'Scheduled',
+  Completed: 'Completed',
+  Cancelled: 'Cancelled',
+  Rescheduled: 'Replacement',
 };
 
 function parseDateParts(isoDate: string) {
@@ -68,7 +75,7 @@ export function ScheduleLessonCard({ item, className }: ScheduleLessonCardProps)
             STATUS_STYLES[displayStatus]
           )}
         >
-          {displayStatus}
+          {STATUS_LABELS[displayStatus]}
         </span>
         <h3 className="mt-2 line-clamp-2 text-sm font-bold leading-snug text-slate-900 sm:mt-2.5 sm:text-[15px]">
           {classLabel} | {timeLabel}

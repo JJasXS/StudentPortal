@@ -27,7 +27,7 @@ public class PortalAnnouncementService
             return [];
 
         const string sql = """
-            SELECT ID, TITLE, CONTENT, CATEGORY, HOLIDAYDATE, TARGETROLE,
+            SELECT ID, TITLE, CONTENT, CATEGORY, HOLIDAYDATE, EXPIRYDATE, TARGETROLE,
                    CREATEDBYUSERID, CREATEDBYNAME, ISSYSTEM, RELATEDTYPE, RELATEDID, CREATEDAT
             FROM PORTAL_ANNOUNCEMENTS
             ORDER BY CREATEDAT DESC
@@ -58,11 +58,11 @@ public class PortalAnnouncementService
 
         const string sql = """
             INSERT INTO PORTAL_ANNOUNCEMENTS (
-                ID, TITLE, CONTENT, CATEGORY, HOLIDAYDATE, TARGETROLE,
+                ID, TITLE, CONTENT, CATEGORY, HOLIDAYDATE, EXPIRYDATE, TARGETROLE,
                 CREATEDBYUSERID, CREATEDBYNAME, ISSYSTEM, RELATEDTYPE, RELATEDID,
                 CREATEDAT, UPDATEDAT
             ) VALUES (
-                @id, @title, @content, @category, @holidayDate, @targetRole,
+                @id, @title, @content, @category, @holidayDate, @expiryDate, @targetRole,
                 @createdByUserId, @createdByName, 0, NULL, NULL,
                 @createdAt, @updatedAt
             )
@@ -74,6 +74,7 @@ public class PortalAnnouncementService
         command.Parameters.AddWithValue("@content", dto.Content.Trim());
         command.Parameters.AddWithValue("@category", dto.Category.Trim());
         command.Parameters.AddWithValue("@holidayDate", (object?)dto.HolidayDate?.Date ?? DBNull.Value);
+        command.Parameters.AddWithValue("@expiryDate", (object?)dto.ExpiryDate?.Date ?? DBNull.Value);
         command.Parameters.AddWithValue("@targetRole", dto.TargetRole.Trim());
         command.Parameters.AddWithValue("@createdByUserId", dto.CreatedByUserId.ToString());
         command.Parameters.AddWithValue("@createdByName", (object?)dto.CreatedByName ?? DBNull.Value);
@@ -96,7 +97,7 @@ public class PortalAnnouncementService
         const string sql = """
             UPDATE PORTAL_ANNOUNCEMENTS
             SET TITLE = @title, CONTENT = @content, CATEGORY = @category,
-                HOLIDAYDATE = @holidayDate, TARGETROLE = @targetRole, UPDATEDAT = @updatedAt
+                HOLIDAYDATE = @holidayDate, EXPIRYDATE = @expiryDate, TARGETROLE = @targetRole, UPDATEDAT = @updatedAt
             WHERE ID = @id
             """;
 
@@ -106,6 +107,7 @@ public class PortalAnnouncementService
         command.Parameters.AddWithValue("@content", dto.Content.Trim());
         command.Parameters.AddWithValue("@category", dto.Category.Trim());
         command.Parameters.AddWithValue("@holidayDate", (object?)dto.HolidayDate?.Date ?? DBNull.Value);
+        command.Parameters.AddWithValue("@expiryDate", (object?)dto.ExpiryDate?.Date ?? DBNull.Value);
         command.Parameters.AddWithValue("@targetRole", dto.TargetRole.Trim());
         command.Parameters.AddWithValue("@updatedAt", DateTime.UtcNow);
         var updated = await command.ExecuteNonQueryAsync(cancellationToken);
@@ -144,6 +146,12 @@ public class PortalAnnouncementService
     {
         var holiday = reader["HOLIDAYDATE"];
         DateTime? holidayDate = holiday is DBNull or null ? null : Convert.ToDateTime(holiday);
+        DateTime? expiryDate = null;
+        if (HasColumn(reader, "EXPIRYDATE"))
+        {
+            var expiry = reader["EXPIRYDATE"];
+            expiryDate = expiry is DBNull or null ? null : Convert.ToDateTime(expiry);
+        }
         var createdById = Guid.TryParse(reader["CREATEDBYUSERID"]?.ToString(), out var uid) ? uid : Guid.Empty;
         var isSystem = HasColumn(reader, "ISSYSTEM") && reader["ISSYSTEM"] is not DBNull and not null
             && Convert.ToInt32(reader["ISSYSTEM"]) != 0;
@@ -160,7 +168,9 @@ public class PortalAnnouncementService
             Convert.ToDateTime(reader["CREATEDAT"]),
             isSystem,
             HasColumn(reader, "RELATEDTYPE") ? reader["RELATEDTYPE"]?.ToString() : null,
-            HasColumn(reader, "RELATEDID") ? reader["RELATEDID"]?.ToString() : null);
+            HasColumn(reader, "RELATEDID") ? reader["RELATEDID"]?.ToString() : null,
+            false,
+            expiryDate);
     }
 
     private static bool HasColumn(FbDataReader reader, string column) =>

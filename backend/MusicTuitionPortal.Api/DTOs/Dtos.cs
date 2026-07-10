@@ -99,7 +99,8 @@ public record LessonNoteDto(
 public record AnnouncementDto(
     Guid Id, string Title, string Content, string Category, DateTime? HolidayDate, string TargetRole,
     Guid CreatedByUserId, string? CreatedByName, DateTime CreatedAt,
-    bool IsSystem = false, string? RelatedType = null, string? RelatedId = null, bool IsRead = false);
+    bool IsSystem = false, string? RelatedType = null, string? RelatedId = null, bool IsRead = false,
+    DateTime? ExpiryDate = null);
 
 public record InvoiceDto(
     Guid Id, Guid StudentUserId, string? StudentName, Guid? ParentUserId, string? ParentName,
@@ -247,6 +248,16 @@ public record SqlAccountChildEnrollmentsDto(
     string BranchName,
     IReadOnlyList<SqlAccountChildEnrollmentDto> Enrollments);
 
+public record SqlAccountOutstandingInvoiceDto(
+    int DocKey,
+    string DocNo,
+    string? DocDate,
+    string? DueDate,
+    decimal DocAmt,
+    decimal PaymentAmt,
+    decimal Outstanding,
+    string? Description);
+
 public record ItemCodeClassLinkDto(
     Guid Id,
     string ItemCode,
@@ -353,14 +364,42 @@ public record PortalHomeworkDto(
     string? FileName,
     string? FilePath,
     string SubmittedBy,
-    DateTime CreatedAt);
+    DateTime CreatedAt,
+    string? AssignmentId = null,
+    string Status = "Pending");
 
 public record CreatePortalHomeworkRequest(
     int DocKey,
     int Seq,
     string BranchName,
     string? Url,
-    string? Note);
+    string? Note,
+    string? AssignmentId = null);
+
+public record UpdateHomeworkStatusRequest(string Status);
+
+public record PortalAssignmentDto(
+    string Id,
+    string ClassName,
+    string? ItemCode,
+    string Title,
+    string? Instructions,
+    DateTime DueDate,
+    Guid CreatedByUserId,
+    string? CreatedByName,
+    DateTime CreatedAt,
+    bool HasSubmission = false,
+    string? SubmissionId = null,
+    string? SubmissionStatus = null);
+
+public record CreatePortalAssignmentRequest(
+    string ClassName,
+    string? ItemCode,
+    string Title,
+    string? Instructions,
+    DateTime DueDate);
+
+public record PortalHomeworkPendingCountDto(string BranchName, int PendingCount);
 
 public record ReplacementOptionDto(string Date, string Time);
 

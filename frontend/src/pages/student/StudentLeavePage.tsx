@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { DataTable } from '@/components/ui/DataTable';
 import { Modal } from '@/components/ui/Modal';
-import { Label, Select, Textarea, Input } from '@/components/ui/Input';
+import { Label, Textarea, Input } from '@/components/ui/Input';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { useAuth } from '@/context/AuthContext';
@@ -18,7 +18,21 @@ import { getApiErrorMessage } from '@/utils/apiError';
 import type { SqlAccountChild, ErpCalendarEvent } from '@/types/sqlAccount';
 import type { PortalLeaveRequest, ReplacementOption } from '@/types/portal';
 
-type Step = 'child' | 'session' | 'list';
+type Step = 'student' | 'session' | 'list';
+
+function displayStudentName(child: SqlAccountChild) {
+  return child.branchName?.trim() || child.attention?.trim() || 'Student';
+}
+
+function sessionLabel(event: ErpCalendarEvent) {
+  const date = formatDateDDMMYYYY(event.sessionDate);
+  const time = event.startTime ? ` · ${event.startTime}` : '';
+  return `${event.className ?? 'Class'} — ${date}${time}`;
+}
+
+function currentMonthLabel() {
+  return new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+}
 
 function ReplacementDetails({ request }: { request: PortalLeaveRequest }) {
   if (!request.needsReplacement) return null;
@@ -163,11 +177,11 @@ export default function StudentLeavePage() {
   return (
     <div className="mx-auto max-w-2xl space-y-6">
       <PageHeader
-        title="Leave requests"
+        title="Leave"
         description="Request leave for an upcoming class session. Admin will review and arrange a replacement if needed."
         actions={
           step === 'list' ? (
-            <Button type="button" size="sm" onClick={() => setStep('child')}>
+            <Button type="button" size="sm" onClick={() => setStep('student')}>
               <Plus className="mr-1.5 h-4 w-4" />
               New request
             </Button>
@@ -180,7 +194,7 @@ export default function StudentLeavePage() {
           type="button"
           onClick={() => {
             if (step === 'session') {
-              setStep('child');
+              setStep('student');
               setSelectedEvent(null);
             } else {
               setStep('list');
@@ -190,14 +204,14 @@ export default function StudentLeavePage() {
           className="inline-flex items-center gap-1 text-sm font-medium text-primary-600 hover:underline"
         >
           <ChevronLeft className="h-4 w-4" />
-          {step === 'session' ? selectedChild?.branchName : 'Back to requests'}
+          {step === 'session' ? 'Select student' : 'Back to requests'}
         </button>
       )}
 
-      {step === 'child' && (
+      {step === 'student' && (
         <Card>
           <CardHeader className="pb-3">
-            <CardTitle className="text-base">Select child</CardTitle>
+            <CardTitle className="text-base">Select student</CardTitle>
           </CardHeader>
           <CardContent className="divide-y divide-slate-100 p-0">
             {children.map((child) => (
@@ -211,7 +225,7 @@ export default function StudentLeavePage() {
                 }}
                 className="flex w-full items-center justify-between px-5 py-4 text-left transition hover:bg-slate-50"
               >
-                <span className="font-medium text-slate-900">{child.branchName}</span>
+                <span className="font-medium text-slate-900">{displayStudentName(child)}</span>
                 <ChevronRight className="h-4 w-4 text-slate-400" />
               </button>
             ))}
@@ -222,19 +236,25 @@ export default function StudentLeavePage() {
       {step === 'session' && selectedChild && (
         <Card>
           <CardHeader className="pb-3">
-            <CardTitle className="text-base">Select session</CardTitle>
+            <CardTitle className="text-base">Submit leave</CardTitle>
+            <p className="text-sm text-slate-500">
+              Showing sessions in {currentMonthLabel()} only (at least 24 hours before class).
+            </p>
           </CardHeader>
           <CardContent>
             {upcomingSessions.length === 0 ? (
-              <p className="text-sm text-slate-500">
-                No eligible sessions (leave must be 24 hours to 1 month before class).
-              </p>
+              <EmptyState
+                icon={CalendarOff}
+                title="No eligible sessions"
+                description={`No sessions in ${currentMonthLabel()} are available for leave. Sessions must be at least 24 hours away.`}
+              />
             ) : (
               <form onSubmit={(e) => void handleSubmit(e)} className="space-y-4">
-                <div className="space-y-1.5">
-                  <Label htmlFor="leaveSession">Upcoming session</Label>
-                  <Select
+                <div>
+                  <Label htmlFor="leaveSession">Session</Label>
+                  <select
                     id="leaveSession"
+                    className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
                     value={selectedEvent?.id ?? ''}
                     onChange={(ev) => {
                       const picked = upcomingSessions.find((s) => s.id === ev.target.value);
@@ -242,28 +262,28 @@ export default function StudentLeavePage() {
                     }}
                     required
                   >
-                    <option value="">Select session…</option>
+                    <option value="">Select a session…</option>
                     {upcomingSessions.map((s) => (
                       <option key={s.id} value={s.id}>
-                        {s.className} — {formatDateDDMMYYYY(s.sessionDate)}
-                        {s.startTime ? ` ${s.startTime}` : ''}
+                        {sessionLabel(s)}
                       </option>
                     ))}
-                  </Select>
+                  </select>
                 </div>
-                <div className="space-y-1.5">
+                <div>
                   <Label htmlFor="leaveReason">Reason</Label>
                   <Textarea
                     id="leaveReason"
+                    className="mt-1"
                     value={reason}
                     onChange={(e) => setReason(e.target.value)}
                     rows={3}
-                    placeholder="Brief reason for leave…"
+                    placeholder="Reason for leave"
                     required
                   />
                 </div>
                 <div className="space-y-2">
-                  <div className="flex items-center justify-between">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
                     <Label>Preferred replacement slots (optional)</Label>
                     <Button
                       type="button"
@@ -278,7 +298,7 @@ export default function StudentLeavePage() {
                     </Button>
                   </div>
                   <p className="text-xs text-slate-500">
-                    Add one row per date/time you could attend a make-up class. Admin will pick one option.
+                    Add one row per date and time you could attend a make-up class. Admin will pick one option.
                   </p>
                   {replacementSlots.map((slot, index) => (
                     <div key={index} className="grid gap-2 sm:grid-cols-[1fr_1fr_auto]">
@@ -324,7 +344,7 @@ export default function StudentLeavePage() {
                     Cancel
                   </Button>
                   <Button type="submit" disabled={submitting || !selectedEvent}>
-                    Submit request
+                    {submitting ? 'Submitting…' : 'Submit leave request'}
                   </Button>
                 </div>
               </form>
@@ -341,7 +361,7 @@ export default function StudentLeavePage() {
             <EmptyState
               icon={CalendarOff}
               title="No leave requests"
-              description="Submit a request when your child cannot attend a class."
+              description="Submit a request when your student cannot attend a class."
             />
           ) : (
             <Card>
@@ -357,7 +377,7 @@ export default function StudentLeavePage() {
                     },
                     {
                       key: 'branchName',
-                      header: 'Child',
+                      header: 'Student',
                       render: (r) => r.branchName,
                     },
                     {
@@ -376,6 +396,8 @@ export default function StudentLeavePage() {
                       key: 'actions',
                       header: '',
                       colWidth: '3rem',
+                      sticky: 'end',
+                      align: 'right',
                       render: (r) => (
                         <Button
                           type="button"

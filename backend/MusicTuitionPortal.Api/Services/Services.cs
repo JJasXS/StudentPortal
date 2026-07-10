@@ -862,6 +862,20 @@ public class ParentService
         CancellationToken cancellationToken = default) =>
         await ResolveCustomerCodeForEmailAsync(email, cancellationToken);
 
+    public async Task<IReadOnlyList<SqlAccountOutstandingInvoiceDto>> GetOutstandingInvoicesForEmailAsync(
+        string email,
+        CancellationToken cancellationToken = default)
+    {
+        if (!_sqlAccount.IsConfigured)
+            return Array.Empty<SqlAccountOutstandingInvoiceDto>();
+
+        var customerCode = await ResolveCustomerCodeForEmailAsync(email, cancellationToken);
+        if (string.IsNullOrWhiteSpace(customerCode))
+            return Array.Empty<SqlAccountOutstandingInvoiceDto>();
+
+        return await _sqlAccount.GetCustomerInvoicesForCodeAsync(customerCode, cancellationToken);
+    }
+
     public async Task<List<ErpCalendarEventDto>> GetCalendarEventsForEmailAsync(
         string email,
         string? branchName = null,

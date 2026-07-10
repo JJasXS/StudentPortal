@@ -216,6 +216,7 @@ export interface Announcement {
   content: string;
   category?: 'Holiday' | 'General' | 'Leave' | 'Replacement' | 'SessionChange';
   holidayDate?: string;
+  expiryDate?: string;
   targetRole: 'All' | UserRole;
   createdByUserId: string;
   createdByName?: string;

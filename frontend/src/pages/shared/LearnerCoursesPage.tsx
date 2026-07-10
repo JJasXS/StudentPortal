@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
 import { ChevronLeft, Users } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
@@ -6,19 +6,14 @@ import { PageHeader } from '@/components/PageHeader';
 import { CourseClassLessonNotesExplorer } from '@/components/student/CourseClassLessonNotesExplorer';
 import { ParentChildHomeworkPanel } from '@/components/parent/ParentChildHomeworkPanel';
 import { DataTable } from '@/components/ui/DataTable';
-import { SlidingTabs } from '@/components/ui/SlidingTabs';
 import { Card, CardContent } from '@/components/ui/Card';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { SkeletonCard } from '@/components/ui/Skeleton';
+import { homeworkApi } from '@/api/resources';
 import { useSqlAccountChildren } from '@/hooks/useSqlAccountChildren';
-import { useSqlAccountChildEnrollments } from '@/hooks/useSqlAccountChildEnrollments';
 import { useStudentPortalData } from '@/hooks/useStudentPortalData';
 import type { SqlAccountChild } from '@/types/sqlAccount';
-import { formatDateDDMMYYYY } from '@/utils/dateFormat';
 import { learnerCoursesPath } from '@/utils/learnerPortal';
-
-type ChildTab = 'classes' | 'homework';
-
 export default function LearnerCoursesPage() {
   const { user, isLoading: authLoading } = useAuth();
   const isParent = user?.role === 'Parent';
@@ -27,24 +22,27 @@ export default function LearnerCoursesPage() {
   const { courseId } = useParams();
   const selectedBranchKey = searchParams.get('child');
   const activeChildKey = resolveActiveChildKey(selectedBranchKey, courseId);
-  const childTab = (searchParams.get('tab') === 'homework' ? 'homework' : 'classes') as ChildTab;
 
   const { children, loading, hasFetched, error, reload } = useSqlAccountChildren(isParent);
+  const [pendingByBranch, setPendingByBranch] = useState<Record<string, number>>({});
+
+  useEffect(() => {
+    if (!isParent || !hasFetched) return;
+    homeworkApi
+      .getPendingCount()
+      .then((data) => {
+        const map: Record<string, number> = {};
+        for (const row of data.byBranch) {
+          map[row.branchName.trim().toLowerCase()] = row.pendingCount;
+        }
+        setPendingByBranch(map);
+      })
+      .catch(() => setPendingByBranch({}));
+  }, [isParent, hasFetched]);
 
   const selectedChild = useMemo(
     () => children.find((c) => branchKey(c) === activeChildKey) ?? null,
     [children, activeChildKey]
-  );
-
-  const enrollmentsBranchName =
-    selectedChild?.branchName?.trim() || activeChildKey || null;
-  const {
-    enrollments,
-    loading: enrollmentsLoading,
-    error: enrollmentsError,
-  } = useSqlAccountChildEnrollments(
-    enrollmentsBranchName,
-    isParent && Boolean(activeChildKey)
   );
 
   const childrenLoading = isParent && (authLoading || loading || !hasFetched);
@@ -58,13 +56,6 @@ export default function LearnerCoursesPage() {
 
   const showChildDetail = Boolean(activeChildKey);
 
-  const setChildTab = (tab: ChildTab) => {
-    const params = new URLSearchParams(searchParams);
-    if (tab === 'homework') params.set('tab', 'homework');
-    else params.delete('tab');
-    setSearchParams(params);
-  };
-
   if (isParent) {
     const childLabel = selectedChild
       ? displayBranchName(selectedChild)
@@ -75,9 +66,7 @@ export default function LearnerCoursesPage() {
         <PageHeader
           title="Assignment"
           description={
-            showChildDetail
-              ? `Classes and homework for ${childLabel}`
-              : 'Children linked to your SQL Account'
+            showChildDetail ? `Assignment for ${childLabel}` : undefined
           }
         />
 
@@ -89,65 +78,16 @@ export default function LearnerCoursesPage() {
               className="inline-flex items-center gap-1 text-sm font-medium text-primary-600 hover:underline"
             >
               <ChevronLeft className="h-4 w-4" />
-              All children
+              Student
             </button>
 
             <Card>
-              <SlidingTabs
-                tabs={['classes', 'homework'] as const}
-                value={childTab}
-                onChange={(v) => setChildTab(v as ChildTab)}
-                labels={{ classes: 'Classes', homework: 'Homework' }}
-              />
-              <CardContent className="p-0">
-                {childTab === 'classes' && (
-                  enrollmentsLoading ? (
-                    <p className="px-4 py-8 text-sm text-slate-500">Loading classes…</p>
-                  ) : enrollmentsError ? (
-                    <p className="px-4 py-8 text-sm text-red-600">{enrollmentsError}</p>
-                  ) : (
-                    <DataTable
-                      embedded
-                      data={enrollments}
-                      emptyMessage={`No classes enrolled for ${childLabel}.`}
-                      columns={[
-                        {
-                          key: 'className',
-                          header: 'Class',
-                          render: (e) => e.className ?? '—',
-                        },
-                        {
-                          key: 'conductedBy',
-                          header: 'Teacher',
-                          render: (e) => e.conductedBy ?? '—',
-                        },
-                        {
-                          key: 'schedule',
-                          header: 'Day / time',
-                          render: (e) =>
-                            e.classDay && e.classTime
-                              ? `${e.classDay} ${e.classTime}`
-                              : e.classDay ?? '—',
-                        },
-                        {
-                          key: 'from',
-                          header: 'From',
-                          render: (e) =>
-                            e.classDate ? formatDateDDMMYYYY(e.classDate.slice(0, 10)) : '—',
-                        },
-                      ]}
-                    />
-                  )
+              <CardContent className="p-4">
+                {selectedChild && (
+                  <ParentChildHomeworkPanel branchName={selectedChild.branchName} />
                 )}
-                {childTab === 'homework' && selectedChild && (
-                  <div className="p-4">
-                    <ParentChildHomeworkPanel branchName={selectedChild.branchName} />
-                  </div>
-                )}
-                {childTab === 'homework' && !selectedChild && activeChildKey && (
-                  <div className="p-4">
-                    <ParentChildHomeworkPanel branchName={activeChildKey} />
-                  </div>
+                {!selectedChild && activeChildKey && (
+                  <ParentChildHomeworkPanel branchName={activeChildKey} />
                 )}
               </CardContent>
             </Card>
@@ -178,26 +118,33 @@ export default function LearnerCoursesPage() {
                     columns={[
                       {
                         key: 'branchName',
-                        header: 'Branch',
-                        render: (c: SqlAccountChild) => (
-                          <button
-                            type="button"
-                            className="font-medium text-primary-600 hover:underline"
-                            onClick={() => setSearchParams({ child: branchKey(c) })}
-                          >
-                            {displayBranchName(c)}
-                          </button>
-                        ),
-                      },
-                      {
-                        key: 'attention',
-                        header: 'Attention',
-                        render: (c: SqlAccountChild) => c.attention || '—',
-                      },
-                      {
-                        key: 'email',
-                        header: 'Email',
-                        render: (c: SqlAccountChild) => c.email || '—',
+                        header: 'Student',
+                        render: (c: SqlAccountChild) => {
+                          const key = branchKey(c);
+                          const pending = pendingByBranch[key] ?? 0;
+                          return (
+                            <div className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                className="relative font-medium text-primary-600 hover:underline"
+                                onClick={() => setSearchParams({ child: key })}
+                              >
+                                {displayBranchName(c)}
+                                {pending > 0 && (
+                                  <span
+                                    className="absolute -right-2.5 -top-1 h-2 w-2 rounded-full bg-red-500"
+                                    aria-hidden
+                                  />
+                                )}
+                              </button>
+                              {pending > 0 && (
+                                <span className="text-xs text-red-600">
+                                  ({pending} homework pending)
+                                </span>
+                              )}
+                            </div>
+                          );
+                        },
                       },
                     ]}
                   />

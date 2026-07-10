@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Bell, CalendarClock, CalendarOff, Megaphone, RefreshCw } from 'lucide-react';
+import { Bell, CalendarClock, CalendarOff, Megaphone, RefreshCw, X } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { dashboardNotifyApi } from '@/api/resources';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
@@ -106,6 +106,16 @@ export function DashboardNotifyFeed({
     return () => observer.disconnect();
   }, [autoMarkReadOnView, role, unreadCount, loadFeed]);
 
+  const handleDismiss = async (item: Announcement) => {
+    try {
+      await dashboardNotifyApi.hide(item.id);
+      notifyReadsChanged();
+      setItems((prev) => prev.filter((row) => row.id !== item.id));
+    } catch {
+      // ignore
+    }
+  };
+
   const handleItemClick = async (item: Announcement) => {
     if (item.isRead) return;
     try {
@@ -196,9 +206,19 @@ export function DashboardNotifyFeed({
                       >
                         {item.title}
                       </Link>
-                      <span className="shrink-0 text-xs tabular-nums text-slate-500">
-                        {formatDateDDMMYYYY(item.createdAt)}
-                      </span>
+                      <div className="flex shrink-0 items-center gap-1">
+                        <span className="text-xs tabular-nums text-slate-500">
+                          {formatDateDDMMYYYY(item.createdAt)}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => void handleDismiss(item)}
+                          className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+                          aria-label="Dismiss notification"
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
                     </div>
                     <p className="mt-1 line-clamp-2 text-sm text-slate-600">{item.content}</p>
                     {item.createdByName && (

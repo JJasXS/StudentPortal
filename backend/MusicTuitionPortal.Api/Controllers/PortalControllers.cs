@@ -44,13 +44,14 @@ public class HomeworkController : ControllerBase
         [FromForm] string branchName,
         [FromForm] string? url,
         [FromForm] string? note,
+        [FromForm] string? assignmentId,
         [FromForm] IFormFile? file,
         CancellationToken cancellationToken)
     {
         var email = User.FindFirst(ClaimTypes.Email)?.Value;
         if (string.IsNullOrWhiteSpace(email)) return Unauthorized();
 
-        var request = new CreatePortalHomeworkRequest(docKey, seq, branchName, url, note);
+        var request = new CreatePortalHomeworkRequest(docKey, seq, branchName, url, note, assignmentId);
         try
         {
             return Ok(MapHw(await _service.SubmitAsync(email, request, file, cancellationToken)));
@@ -59,6 +60,42 @@ public class HomeworkController : ControllerBase
         {
             return BadRequest(new { message = ex.Message });
         }
+    }
+
+    [HttpPatch("{id}/status")]
+    [Authorize(Roles = "Admin,Teacher")]
+    public async Task<IActionResult> SetStatus(
+        string id,
+        [FromBody] UpdateHomeworkStatusRequest request,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var updated = await _service.SetStatusAsync(id, request.Status, cancellationToken);
+            if (updated == null)
+                return NotFound();
+            return Ok(MapHw(updated));
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+    }
+
+    [HttpGet("pending-count")]
+    [Authorize(Roles = "Parent")]
+    public async Task<IActionResult> GetPendingCount(
+        PortalAssignmentService assignments,
+        CancellationToken cancellationToken)
+    {
+        var email = User.FindFirst(ClaimTypes.Email)?.Value;
+        if (string.IsNullOrWhiteSpace(email)) return Unauthorized();
+        var counts = await assignments.GetPendingCountsForParentAsync(email, cancellationToken);
+        return Ok(new
+        {
+            total = counts.Sum(c => c.PendingCount),
+            byBranch = counts.Select(c => new { branchName = c.BranchName, pendingCount = c.PendingCount }),
+        });
     }
 
     [HttpGet("{id}/file")]
@@ -111,6 +148,82 @@ public class HomeworkController : ControllerBase
         hasFile = !string.IsNullOrWhiteSpace(h.FilePath),
         submittedBy = h.SubmittedBy,
         createdAt = h.CreatedAt,
+        assignmentId = h.AssignmentId,
+        status = h.Status,
+    };
+}
+
+[ApiController]
+[Route("api/assignments")]
+[Authorize]
+public class AssignmentsController : ControllerBase
+{
+    private readonly PortalAssignmentService _service;
+
+    public AssignmentsController(PortalAssignmentService service) => _service = service;
+
+    [HttpGet]
+    [Authorize(Roles = "Admin,Teacher")]
+    public async Task<IActionResult> GetForClass(
+        [FromQuery] string className,
+        CancellationToken cancellationToken) =>
+        Ok((await _service.GetForClassAsync(className, cancellationToken)).Select(MapAssignment).ToList());
+
+    [HttpGet("mine")]
+    [Authorize(Roles = "Parent")]
+    public async Task<IActionResult> GetMine(
+        [FromQuery] string? branchName,
+        CancellationToken cancellationToken)
+    {
+        var email = User.FindFirst(ClaimTypes.Email)?.Value;
+        if (string.IsNullOrWhiteSpace(email)) return Unauthorized();
+        return Ok((await _service.GetForParentAsync(email, branchName, cancellationToken)).Select(MapAssignment).ToList());
+    }
+
+    [HttpPost]
+    [Authorize(Roles = "Admin,Teacher")]
+    public async Task<IActionResult> Create(
+        [FromBody] CreatePortalAssignmentRequest request,
+        CancellationToken cancellationToken)
+    {
+        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (!Guid.TryParse(userIdClaim, out var userId))
+            return Unauthorized();
+
+        var name = User.Identity?.Name ?? User.FindFirst(ClaimTypes.Email)?.Value ?? "Teacher";
+        try
+        {
+            return Ok(MapAssignment(await _service.CreateAsync(userId, name, request, cancellationToken)));
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+    }
+
+    [HttpDelete("{id}")]
+    [Authorize(Roles = "Admin,Teacher")]
+    public async Task<IActionResult> Delete(string id, CancellationToken cancellationToken)
+    {
+        if (!await _service.DeleteAsync(id, cancellationToken))
+            return NotFound();
+        return NoContent();
+    }
+
+    private static object MapAssignment(PortalAssignmentDto a) => new
+    {
+        id = a.Id,
+        className = a.ClassName,
+        itemCode = a.ItemCode,
+        title = a.Title,
+        instructions = a.Instructions,
+        dueDate = a.DueDate.ToString("yyyy-MM-dd"),
+        createdByUserId = a.CreatedByUserId.ToString(),
+        createdByName = a.CreatedByName,
+        createdAt = a.CreatedAt,
+        hasSubmission = a.HasSubmission,
+        submissionId = a.SubmissionId,
+        submissionStatus = a.SubmissionStatus,
     };
 }
 
@@ -244,6 +357,16 @@ public class DashboardController : ControllerBase
         return NoContent();
     }
 
+    [HttpPost("notify/{id}/hide")]
+    public async Task<IActionResult> Hide(string id, CancellationToken cancellationToken = default)
+    {
+        var email = User.FindFirst(ClaimTypes.Email)?.Value;
+        if (string.IsNullOrWhiteSpace(email))
+            return Unauthorized();
+        await _notify.HideAsync(email, id, cancellationToken);
+        return NoContent();
+    }
+
     private static object MapNotify(AnnouncementDto a) => new
     {
         id = a.Id.ToString(),
@@ -251,6 +374,7 @@ public class DashboardController : ControllerBase
         content = a.Content,
         category = a.Category,
         holidayDate = a.HolidayDate?.ToString("yyyy-MM-dd"),
+        expiryDate = a.ExpiryDate?.ToString("yyyy-MM-dd"),
         targetRole = a.TargetRole,
         createdByUserId = a.CreatedByUserId.ToString(),
         createdByName = a.CreatedByName,
