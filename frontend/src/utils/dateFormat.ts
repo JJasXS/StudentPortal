@@ -19,3 +19,11 @@ export function formatDateDDMMYYYY(value?: string | Date | null): string {
   if (Number.isNaN(d.getTime())) return value;
   return `${pad2(d.getDate())}-${pad2(d.getMonth() + 1)}-${d.getFullYear()}`;
 }
+
+/** Format as HH:mm (24h local). */
+export function formatTimeHHmm(value?: string | Date | null): string {
+  if (value == null || value === '') return '—';
+  const d = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(d.getTime())) return '—';
+  return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+}

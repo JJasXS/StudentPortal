@@ -415,7 +415,7 @@ export default function LearnerSchedulePage() {
               size="sm"
               onClick={parentView === 'week' ? prevWeek : prevMonth}
               aria-label={parentView === 'week' ? 'Previous week' : 'Previous month'}
-              className="h-11 w-11 shrink-0 touch-manipulation sm:h-9 sm:w-auto"
+              className="h-10 w-11 shrink-0 touch-manipulation sm:h-9 sm:w-auto"
             >
               <ChevronLeft className="h-5 w-5" />
             </Button>
@@ -441,7 +441,7 @@ export default function LearnerSchedulePage() {
               size="sm"
               onClick={parentView === 'week' ? nextWeek : nextMonth}
               aria-label={parentView === 'week' ? 'Next week' : 'Next month'}
-              className="h-11 w-11 shrink-0 touch-manipulation sm:h-9 sm:w-auto"
+              className="h-10 w-11 shrink-0 touch-manipulation sm:h-9 sm:w-auto"
             >
               <ChevronRight className="h-5 w-5" />
             </Button>
@@ -463,136 +463,94 @@ export default function LearnerSchedulePage() {
         </>
       ) : (
         <>
-      <div className="mb-4 flex items-center justify-between gap-1 sm:mb-5 sm:gap-2">
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          onClick={prevMonth}
-          aria-label="Previous month"
-          className="h-11 w-11 shrink-0 touch-manipulation sm:h-9 sm:w-auto"
-        >
-          <ChevronLeft className="h-5 w-5" />
-        </Button>
-        <div className="flex min-w-0 flex-1 flex-col items-center gap-1 px-1">
-          <span className="max-w-full truncate rounded-full bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-700 sm:px-4 sm:text-sm">
-            {isCurrentMonth ? 'This Month' : monthLabel(anchor.year, anchor.month)}
-          </span>
-        </div>
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          onClick={nextMonth}
-          aria-label="Next month"
-          className="h-11 w-11 shrink-0 touch-manipulation sm:h-9 sm:w-auto"
-        >
-          <ChevronRight className="h-5 w-5" />
-        </Button>
-      </div>
-
-      <div className="-mx-4 mb-4 overflow-x-auto px-4 pb-2 [scrollbar-width:none] sm:-mx-1 sm:px-1 [&::-webkit-scrollbar]:hidden">
-        <div className="flex min-w-min snap-x snap-mandatory gap-2">
-          {weeks.map((week) => {
-            const selected = activeWeek === week.weekNum;
-            return (
-              <button
-                key={week.weekNum}
-                type="button"
-                onClick={() => setActiveWeek(week.weekNum)}
-                className={cn(
-                  'min-h-[4.5rem] min-w-[5.5rem] shrink-0 snap-start rounded-xl border px-3 py-2 text-left transition touch-manipulation sm:min-h-0 sm:min-w-0',
-                  selected
-                    ? 'border-primary-300 bg-primary-50 shadow-sm'
-                    : 'border-slate-200 bg-white active:bg-slate-50'
-                )}
-              >
-                <p
-                  className={cn(
-                    'text-xs font-semibold',
-                    selected ? 'text-primary-700' : 'text-slate-700'
-                  )}
-                >
-                  Week {week.weekNum}
-                </p>
-                <p className="mt-0.5 text-[11px] leading-tight text-slate-500">
-                  {formatWeekRange(week.from, week.to)}
-                </p>
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      {pageLoading ? (
-        <p className="text-sm text-slate-500">Loading schedule…</p>
-      ) : monthItems.length === 0 ? (
-        <p className="rounded-xl border border-dashed border-slate-200 px-4 py-8 text-center text-sm text-slate-500">
-          No lessons scheduled this month.
-        </p>
-      ) : (
-        <>
-          {/* Mobile: single active week */}
-          <div className="sm:hidden">
-            {activeWeekData && (
-              <section className="scroll-mt-4">
-                <div className="mb-3 flex flex-col gap-0.5 sm:flex-row sm:items-baseline sm:justify-between">
-                  <h2 className="text-sm font-semibold text-slate-800">
-                    Week {activeWeekData.weekNum}
-                  </h2>
-                  <p className="text-xs text-slate-500">
-                    {formatWeekRange(activeWeekData.from, activeWeekData.to)}
-                  </p>
-                </div>
-                {activeWeekItems.length === 0 ? (
-                  <p className="rounded-xl border border-dashed border-slate-200 px-4 py-8 text-center text-sm text-slate-500">
-                    No lessons this week.
-                  </p>
-                ) : (
-                  <div className="space-y-3">
-                    {activeWeekItems.map((item) => (
-                      <ScheduleLessonCard key={item.id} item={item} />
-                    ))}
-                  </div>
-                )}
-              </section>
-            )}
+          <div className="mb-4 flex items-center gap-2 sm:mb-5">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={prevMonth}
+              aria-label="Previous month"
+              className="h-10 w-10 shrink-0 border-primary-200 p-0 text-primary-700 touch-manipulation hover:bg-primary-50"
+            >
+              <ChevronLeft className="h-5 w-5" />
+            </Button>
+            <div className="flex min-w-0 flex-1 justify-center px-1">
+              <span className="max-w-full truncate rounded-full bg-slate-100 px-4 py-1.5 text-sm font-medium text-slate-700">
+                {isCurrentMonth ? 'This Month' : monthLabel(anchor.year, anchor.month)}
+              </span>
+            </div>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={nextMonth}
+              aria-label="Next month"
+              className="h-10 w-10 shrink-0 p-0 touch-manipulation"
+            >
+              <ChevronRight className="h-5 w-5" />
+            </Button>
           </div>
 
-          {/* Tablet/desktop: all weeks */}
-          <div className="hidden space-y-6 sm:block">
+          <div className="mb-4 flex gap-2">
             {weeks.map((week) => {
-              const weekItems = itemsInWeek(monthItems, week);
               const selected = activeWeek === week.weekNum;
               return (
-                <section
+                <button
                   key={week.weekNum}
-                  id={`schedule-week-${week.weekNum}`}
-                  className={cn(selected && 'scroll-mt-4')}
-                >
-                  <div className="mb-3 flex items-baseline justify-between gap-2">
-                    <h2 className="text-sm font-semibold text-slate-800">Week {week.weekNum}</h2>
-                    <p className="shrink-0 text-xs text-slate-500">
-                      {formatWeekRange(week.from, week.to)}
-                    </p>
-                  </div>
-                  {weekItems.length === 0 ? (
-                    <p className="rounded-xl border border-dashed border-slate-200 px-4 py-6 text-center text-sm text-slate-500">
-                      No lessons this week.
-                    </p>
-                  ) : (
-                    <div className="space-y-3">
-                      {weekItems.map((item) => (
-                        <ScheduleLessonCard key={item.id} item={item} />
-                      ))}
-                    </div>
+                  type="button"
+                  onClick={() => setActiveWeek(week.weekNum)}
+                  className={cn(
+                    'min-w-0 flex-1 rounded-xl border px-2 py-2 text-left transition touch-manipulation',
+                    selected
+                      ? 'border-primary-300 bg-primary-50 shadow-sm'
+                      : 'border-slate-200 bg-white active:bg-slate-50'
                   )}
-                </section>
+                >
+                  <p
+                    className={cn(
+                      'text-xs font-semibold',
+                      selected ? 'text-primary-700' : 'text-slate-700'
+                    )}
+                  >
+                    Week {week.weekNum}
+                  </p>
+                  <p className="mt-0.5 text-[10px] leading-tight text-slate-500 sm:text-[11px]">
+                    {formatWeekRange(week.from, week.to)}
+                  </p>
+                </button>
               );
             })}
           </div>
-        </>
-      )}
+
+          {pageLoading ? (
+            <p className="text-sm text-slate-500">Loading schedule…</p>
+          ) : activeWeekData ? (
+            <section>
+              <div className="mb-3 flex items-baseline justify-between gap-2">
+                <h2 className="text-sm font-semibold text-slate-800">
+                  Week {activeWeekData.weekNum}
+                </h2>
+                <p className="text-xs text-slate-500">
+                  {formatWeekRange(activeWeekData.from, activeWeekData.to)}
+                </p>
+              </div>
+              {activeWeekItems.length === 0 ? (
+                <p className="rounded-xl border border-dashed border-slate-200 bg-slate-50/60 px-4 py-8 text-center text-sm text-slate-500">
+                  No lessons this week.
+                </p>
+              ) : (
+                <div className="space-y-3">
+                  {activeWeekItems.map((item) => (
+                    <ScheduleLessonCard key={item.id} item={item} />
+                  ))}
+                </div>
+              )}
+            </section>
+          ) : (
+            <p className="rounded-xl border border-dashed border-slate-200 bg-slate-50/60 px-4 py-8 text-center text-sm text-slate-500">
+              No lessons scheduled this month.
+            </p>
+          )}
         </>
       )}
     </div>

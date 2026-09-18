@@ -290,6 +290,61 @@ export default function AdminCalendarPage() {
       <PageHeader
         title="Calendar"
         description="Monthly class schedule"
+        actions={
+          <div className="flex flex-wrap items-end gap-3">
+            <div className="space-y-1">
+              <label htmlFor="teacherFilter" className="text-sm font-medium text-slate-600">
+                Teacher
+              </label>
+              <Select
+                id="teacherFilter"
+                value={teacherFilter}
+                onChange={(e) => setTeacherFilter(e.target.value)}
+                className="w-52 sm:w-56"
+              >
+                <option value="">All teachers</option>
+                {teacherOptions.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.name}
+                  </option>
+                ))}
+              </Select>
+            </div>
+
+            <div className="space-y-1">
+              <label htmlFor="studentFilter" className="text-sm font-medium text-slate-600">
+                Student
+              </label>
+              <Select
+                id="studentFilter"
+                value={studentFilter}
+                onChange={(e) => setStudentFilter(e.target.value)}
+                className="w-52 sm:w-56"
+              >
+                <option value="">All students</option>
+                {studentOptions.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name}
+                  </option>
+                ))}
+              </Select>
+            </div>
+
+            {(teacherFilter || studentFilter) && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setTeacherFilter('');
+                  setStudentFilter('');
+                }}
+              >
+                Clear filters
+              </Button>
+            )}
+          </div>
+        }
       />
 
       {message && (
@@ -297,61 +352,6 @@ export default function AdminCalendarPage() {
           {message}
         </p>
       )}
-
-      <div className="flex flex-wrap items-end gap-4">
-        <div className="space-y-1">
-          <label htmlFor="teacherFilter" className="text-sm font-medium text-slate-600">
-            Teacher
-          </label>
-          <Select
-            id="teacherFilter"
-            value={teacherFilter}
-            onChange={(e) => setTeacherFilter(e.target.value)}
-            className="w-64"
-          >
-            <option value="">All teachers</option>
-            {teacherOptions.map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.name}
-              </option>
-            ))}
-          </Select>
-        </div>
-
-        <div className="space-y-1">
-          <label htmlFor="studentFilter" className="text-sm font-medium text-slate-600">
-            Student
-          </label>
-          <Select
-            id="studentFilter"
-            value={studentFilter}
-            onChange={(e) => setStudentFilter(e.target.value)}
-            className="w-64"
-          >
-            <option value="">All students</option>
-            {studentOptions.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.name}
-              </option>
-            ))}
-          </Select>
-        </div>
-
-        {(teacherFilter || studentFilter) && (
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() => {
-              setTeacherFilter('');
-              setStudentFilter('');
-            }}
-          >
-            Clear filters
-          </Button>
-        )}
-
-      </div>
 
       <MonthCalendar
         anchorDate={anchorDate}

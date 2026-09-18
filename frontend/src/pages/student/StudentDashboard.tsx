@@ -3,6 +3,7 @@ import { Calendar, Megaphone } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { PageHeader } from '@/components/PageHeader';
 import { DashboardNotifyFeed } from '@/components/dashboard/DashboardNotifyFeed';
+import { DashboardCentreFooter } from '@/components/dashboard/DashboardCentreFooter';
 import { StatCard } from '@/components/StatCard';
 import { SkeletonCard, SkeletonStatCards } from '@/components/ui/Skeleton';
 import { NextLessonCard } from '@/components/student/NextLessonCard';
@@ -89,6 +90,8 @@ export default function StudentDashboard() {
           <StatCard title="Announcements" value={stats.announcements} icon={Megaphone} />
         </div>
       )}
+
+      <DashboardCentreFooter />
     </div>
   );
 }

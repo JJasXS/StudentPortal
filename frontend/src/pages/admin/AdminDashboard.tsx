@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { PageHeader } from '@/components/PageHeader';
 import { DashboardNotifyFeed } from '@/components/dashboard/DashboardNotifyFeed';
+import { DashboardCentreFooter } from '@/components/dashboard/DashboardCentreFooter';
 import { StatCard } from '@/components/StatCard';
 import { AdminDashboardCharts } from '@/components/admin/AdminDashboardCharts';
 import {
@@ -114,6 +115,8 @@ export default function AdminDashboard() {
           enrollmentsSeries={enrollmentsSeries}
         />
       )}
+
+      <DashboardCentreFooter />
     </div>
   );
 }

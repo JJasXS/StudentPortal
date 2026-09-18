@@ -2,7 +2,6 @@ import { NavLink, useLocation } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import {
   LayoutDashboard,
-  UserCircle,
   Users,
   Calendar,
   CalendarDays,
@@ -16,13 +15,12 @@ import {
   GraduationCap,
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
-import { useCentreBranding } from '@/context/CentreBrandingContext';
 import { CentreMarkInline } from '@/components/branding/CentreMark';
+import { isUserManagementPath } from '@/components/admin/UserManagementSwitcher';
 import { cn } from '@/utils/cn';
-import { isStudentPortalRole, learnerPortalPath } from '@/utils/learnerPortal';
+import { isStudentPortalRole, learnerPortalPath, parentChildrenPath } from '@/utils/learnerPortal';
 import { dashboardNotifyApi, homeworkApi } from '@/api/resources';
 import { NOTIFY_READS_CHANGED } from '@/utils/notifyEvents';
-import { parentChildrenPath } from '@/utils/learnerPortal';
 import type { UserRole } from '@/types';
 
 interface NavItem {
@@ -34,8 +32,7 @@ interface NavItem {
 
 const adminNav: NavItem[] = [
   { label: 'Dashboard', path: '/admin/dashboard', icon: LayoutDashboard },
-  { label: 'Students', path: '/admin/parents', icon: Users },
-  { label: 'Staff Management', path: '/admin/teachers', icon: UserCircle },
+  { label: 'User Management', path: '/admin/parents', icon: Users },
   { label: 'Calendar & Courses', path: '/admin/calendar', icon: CalendarDays },
   { label: 'Leave requests', path: '/admin/leave', icon: CalendarOff },
   { label: 'Announcements', path: '/admin/announcements', icon: Megaphone },
@@ -74,7 +71,6 @@ interface SidebarProps {
 
 export default function Sidebar({ role, open, onClose }: SidebarProps) {
   const { logout } = useAuth();
-  const { centreName } = useCentreBranding();
   const location = useLocation();
   const [unreadNotifyCount, setUnreadNotifyCount] = useState(0);
   const [pendingHomeworkCount, setPendingHomeworkCount] = useState(0);
@@ -134,39 +130,44 @@ export default function Sidebar({ role, open, onClose }: SidebarProps) {
               const isDashboard =
                 role === 'Parent' &&
                 (item.path === '/parent/dashboard' || item.path.endsWith('/dashboard'));
-              const isAssignment =
-                role === 'Parent' && item.path === parentChildrenPath();
+              const isAssignment = role === 'Parent' && item.path === parentChildrenPath();
               const showDot =
                 (isDashboard && unreadNotifyCount > 0) ||
                 (isAssignment && pendingHomeworkCount > 0);
+              const isUserMgmt = item.path === '/admin/parents';
 
               return (
-              <li key={item.path}>
-                <NavLink
-                  to={item.path}
-                  onClick={onClose}
-                  className={({ isActive }) =>
-                    cn(
-                      'relative flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors',
-                      isActive ? 'bg-primary-50 text-primary-700' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
-                    )
-                  }
-                >
-                  <item.icon className="h-5 w-5 shrink-0" />
-                  {item.label}
-                  {showDot && (
-                    <span
-                      className="ml-auto h-2 w-2 shrink-0 rounded-full bg-red-500"
-                      aria-label={
-                        isAssignment
-                          ? `${pendingHomeworkCount} pending homework`
-                          : `${unreadNotifyCount} unread notifications`
-                      }
-                    />
-                  )}
-                </NavLink>
-              </li>
-            );
+                <li key={item.path}>
+                  <NavLink
+                    to={item.path}
+                    onClick={onClose}
+                    className={({ isActive }) => {
+                      const active = isUserMgmt
+                        ? isUserManagementPath(location.pathname)
+                        : isActive;
+                      return cn(
+                        'relative flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors',
+                        active
+                          ? 'bg-primary-50 text-primary-700'
+                          : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                      );
+                    }}
+                  >
+                    <item.icon className="h-5 w-5 shrink-0" />
+                    {item.label}
+                    {showDot && (
+                      <span
+                        className="ml-auto h-2 w-2 shrink-0 rounded-full bg-red-500"
+                        aria-label={
+                          isAssignment
+                            ? `${pendingHomeworkCount} pending homework`
+                            : `${unreadNotifyCount} unread notifications`
+                        }
+                      />
+                    )}
+                  </NavLink>
+                </li>
+              );
             })}
           </ul>
           <ul className="mt-auto space-y-1 border-t border-slate-200 pt-3">
@@ -182,9 +183,6 @@ export default function Sidebar({ role, open, onClose }: SidebarProps) {
             </li>
           </ul>
         </nav>
-        <div className="border-t border-slate-200 p-4 text-center text-xs text-slate-400">
-          {centreName} · v1.0
-        </div>
       </aside>
     </>
   );

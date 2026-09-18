@@ -3,14 +3,11 @@ import { Megaphone } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { AnnouncementRowList } from '@/components/announcements/AnnouncementRowList';
 import { SearchBox } from '@/components/SearchBox';
-import { DataTable } from '@/components/ui/DataTable';
-import { cn } from '@/utils/cn';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { formatDateDDMMYYYY } from '@/utils/dateFormat';
 import {
   filterAnnouncementsBySearch,
   getAnnouncementCategory,
-  isAnnouncementExpired,
   mergeAnnouncements,
 } from '@/utils/announcements';
 import type { Announcement } from '@/types';
@@ -43,33 +40,6 @@ export function MergedAnnouncementsPanel({
 }: MergedAnnouncementsPanelProps) {
   const isDashboard = variant === 'dashboard-admin';
   const isAdminPage = variant === 'page-admin';
-  const isViewerPage = variant === 'page-viewer';
-  const detailEnabled = Boolean(announcementDetailBasePath);
-
-  const titleCell = (a: Announcement) => {
-    const expired = isAnnouncementExpired(a);
-    const title = detailEnabled ? (
-      <Link
-        to={`${announcementDetailBasePath}/${a.id}`}
-        state={{ announcement: a }}
-        className="text-left font-medium text-primary-700 hover:text-primary-800 hover:underline"
-      >
-        {a.title}
-      </Link>
-    ) : (
-      <span className="font-medium text-slate-900">{a.title}</span>
-    );
-    return (
-      <div className="flex flex-wrap items-center gap-2">
-        {title}
-        {expired && isAdminPage && (
-          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">
-            Expired
-          </span>
-        )}
-      </div>
-    );
-  };
 
   const merged = useMemo(() => {
     const combined = mergeAnnouncements(holidays, general);
@@ -90,16 +60,13 @@ export function MergedAnnouncementsPanel({
 
   return (
     <Card className={className}>
-      <CardHeader className="pb-3">
-        <div className="flex flex-wrap items-center justify-between gap-2">
+      <CardHeader className="border-b border-slate-100 pb-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <CardTitle className="flex items-center gap-2 text-base">
-            <Megaphone className="h-4 w-4 text-primary-600" />
+            <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary-50 text-primary-700">
+              <Megaphone className="h-4 w-4" />
+            </span>
             Announcements
-            {merged.length > 0 && (
-              <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-normal text-slate-600">
-                {merged.length}
-              </span>
-            )}
           </CardTitle>
           {announcementsPath && isDashboard && (
             <Link
@@ -110,120 +77,38 @@ export function MergedAnnouncementsPanel({
             </Link>
           )}
         </div>
-      </CardHeader>
-      <CardContent className="pt-0">
+
         {isAdminPage && onSearchChange != null && (
-          <div className="mb-4">
+          <div className="pt-1">
             <SearchBox
               value={search ?? ''}
               onChange={onSearchChange}
-              placeholder="Search announcements..."
+              placeholder="Search by title, content, or sender…"
+              className="max-w-xl"
             />
           </div>
         )}
+      </CardHeader>
 
+      <CardContent className="p-0 sm:p-0">
         {merged.length === 0 ? (
-          <p className="py-8 text-center text-sm text-slate-500">{generalEmptyMessage}</p>
+          <div className="m-4 rounded-xl border border-dashed border-slate-200 bg-slate-50/60 px-4 py-12 text-center">
+            <Megaphone className="mx-auto h-8 w-8 text-slate-300" />
+            <p className="mt-3 text-sm font-medium text-slate-600">{generalEmptyMessage}</p>
+            <p className="mt-1 text-xs text-slate-400">
+              Holidays and centre news will show up here.
+            </p>
+          </div>
         ) : (
-          <>
-            {(isViewerPage || isAdminPage) && (
-              <AnnouncementRowList
-                items={merged}
-                renderTitle={titleCell}
-                senderLabel={senderLabel}
-                dateLabel={dateLabel}
-                className="md:hidden"
-              />
-            )}
-
-            <div className={cn((isViewerPage || isAdminPage) && 'hidden md:block')}>
-              {isViewerPage ? (
-                <DataTable
-                  embedded
-                  data={merged}
-                  emptyMessage={generalEmptyMessage}
-                  columns={[
-                    {
-                      key: 'title',
-                      header: 'Title',
-                      sortable: true,
-                      sortType: 'text',
-                      getSortValue: (a) => a.title,
-                      className: 'whitespace-normal pr-6',
-                      render: (a) => titleCell(a),
-                    },
-                    {
-                      key: 'sender',
-                      header: 'Sender',
-                      colWidth: '10rem',
-                      sortable: true,
-                      sortType: 'text',
-                      getSortValue: (a) => senderLabel(a),
-                      render: (a) => <span className="text-slate-700">{senderLabel(a)}</span>,
-                    },
-                    {
-                      key: 'date',
-                      header: 'Date',
-                      colWidth: '7rem',
-                      sortable: true,
-                      sortType: 'date',
-                      getSortValue: (a) =>
-                        getAnnouncementCategory(a) === 'Holiday' && a.holidayDate
-                          ? a.holidayDate
-                          : a.createdAt,
-                      render: (a) => (
-                        <span className="tabular-nums text-slate-600">{dateLabel(a)}</span>
-                      ),
-                    },
-                  ]}
-                />
-              ) : (
-                <DataTable
-                  embedded
-                  data={merged}
-                  emptyMessage={generalEmptyMessage}
-                  columns={
-                    isAdminPage
-                      ? [
-                          {
-                            key: 'title',
-                            header: 'Title',
-                            className: 'whitespace-normal pr-6',
-                            render: (a) => titleCell(a),
-                          },
-                          {
-                            key: 'sender',
-                            header: 'Sender',
-                            colWidth: '10rem',
-                            render: (a) => senderLabel(a),
-                          },
-                          {
-                            key: 'date',
-                            header: 'Date',
-                            colWidth: '7rem',
-                            render: (a) => dateLabel(a),
-                          },
-                        ]
-                      : [
-                          { key: 'title', header: 'Title', className: 'pr-6' },
-                          {
-                            key: 'sender',
-                            header: 'Sender',
-                            colWidth: '10rem',
-                            render: (a) => senderLabel(a),
-                          },
-                          {
-                            key: 'date',
-                            header: 'Date',
-                            colWidth: '7rem',
-                            render: (a) => dateLabel(a),
-                          },
-                        ]
-                  }
-                />
-              )}
-            </div>
-          </>
+          <div className="px-3 pb-2 sm:px-4">
+            <AnnouncementRowList
+              items={merged}
+              senderLabel={senderLabel}
+              dateLabel={dateLabel}
+              detailBasePath={announcementDetailBasePath}
+              showExpiredBadge={isAdminPage}
+            />
+          </div>
         )}
       </CardContent>
     </Card>

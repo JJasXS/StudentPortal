@@ -39,6 +39,8 @@ interface DataTableProps<T> {
   embedded?: boolean;
   /** Center-align headers and cells */
   centered?: boolean;
+  /** Extra vertical/horizontal cell padding */
+  density?: 'default' | 'comfortable';
   onRowClick?: (item: T) => void;
 }
 
@@ -105,9 +107,12 @@ export function DataTable<T extends object>({
   emptyMessage = 'No records found.',
   embedded = false,
   centered = false,
+  density = 'default',
   onRowClick,
 }: DataTableProps<T>) {
   const defaultAlign: ColumnAlign = centered ? 'center' : 'left';
+  const cellPad = density === 'comfortable' ? 'px-5 py-4' : 'px-4 py-3';
+  const headPad = density === 'comfortable' ? 'px-5 py-3.5' : 'px-4 py-3';
 
   const columnAlignClass = (col: Column<T>) => {
     const align = col.align ?? defaultAlign;
@@ -199,7 +204,8 @@ export function DataTable<T extends object>({
                   <th
                     key={col.key}
                     className={cn(
-                      'px-4 py-3 text-xs font-semibold uppercase tracking-wider text-slate-600',
+                      headPad,
+                      'text-xs font-semibold uppercase tracking-wider text-slate-600',
                       columnAlignClass(col),
                       col.sticky === 'end' &&
                         'sticky right-0 z-20 bg-slate-50 pl-2 pr-3 shadow-[-4px_0_8px_-4px_rgba(15,23,42,0.08)]',
@@ -215,7 +221,8 @@ export function DataTable<T extends object>({
                 <th
                   key={col.key}
                   className={cn(
-                    'px-4 py-3 text-xs font-semibold uppercase tracking-wider text-slate-600',
+                    headPad,
+                    'text-xs font-semibold uppercase tracking-wider text-slate-600',
                     columnAlignClass(col),
                     col.sticky === 'end' &&
                       'sticky right-0 z-20 bg-slate-50 pl-2 pr-3 shadow-[-4px_0_8px_-4px_rgba(15,23,42,0.08)]',
@@ -256,7 +263,8 @@ export function DataTable<T extends object>({
                 <td
                   key={col.key}
                   className={cn(
-                    'px-4 py-3 text-sm text-slate-700',
+                    cellPad,
+                    'text-sm text-slate-700',
                     col.wrap ? 'min-w-0 whitespace-normal break-words' : 'whitespace-nowrap',
                     columnAlignClass(col),
                     col.sticky === 'end' &&

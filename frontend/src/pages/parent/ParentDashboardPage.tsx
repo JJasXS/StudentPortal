@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
 import { PageHeader } from '@/components/PageHeader';
 import { DashboardNotifyFeed } from '@/components/dashboard/DashboardNotifyFeed';
+import { DashboardCentreFooter } from '@/components/dashboard/DashboardCentreFooter';
 import { ParentOutstandingFeesCard } from '@/components/parent/ParentOutstandingFeesCard';
 import { ParentEnrolledClassesSection } from '@/components/parent/ParentEnrolledClassesSection';
 import { Card, CardContent } from '@/components/ui/Card';
@@ -146,6 +147,8 @@ export default function ParentDashboardPage() {
           ))}
         </div>
       )}
+
+      <DashboardCentreFooter />
     </div>
   );
 }

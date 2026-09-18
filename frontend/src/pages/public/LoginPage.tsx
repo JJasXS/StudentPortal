@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, Mail } from 'lucide-react';
+import { ArrowLeft, Lock, Mail } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { authApi } from '@/api/auth';
 import { CentreMark } from '@/components/branding/CentreMark';
@@ -9,9 +9,12 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input, Label } from '@/components/ui/Input';
 import { dashboardPathForRole } from '@/utils/learnerPortal';
 import { getApiErrorMessage } from '@/utils/apiError';
+import { envDemoLogins, type DemoLogin } from '@/utils/demoLogins';
 import type { UserRole } from '@/types';
 
 type LoginStep = 'email' | 'password';
+
+const DEMO_LOGINS = envDemoLogins();
 
 export default function LoginPage() {
   const { login, loginWithUdfEmail, user } = useAuth();
@@ -81,6 +84,13 @@ export default function LoginPage() {
     setStep('email');
     setPassword('');
     setError('');
+  };
+
+  const applyDemoLogin = (demo: DemoLogin) => {
+    setEmail(demo.email);
+    setPassword(demo.password);
+    setError('');
+    setStep('password');
   };
 
   return (
@@ -173,6 +183,29 @@ export default function LoginPage() {
             )}
           </CardContent>
         </Card>
+
+        {DEMO_LOGINS.length > 0 && (
+          <div className="mt-6 space-y-2">
+            <p className="text-center text-xs font-medium uppercase tracking-wide text-slate-400">
+              Dev password logins
+            </p>
+            <ul className="space-y-1.5">
+              {DEMO_LOGINS.map((demo) => (
+                <li key={demo.email}>
+                  <button
+                    type="button"
+                    onClick={() => applyDemoLogin(demo)}
+                    className="flex w-full items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-left text-sm text-slate-700 shadow-sm hover:border-primary-300 hover:bg-primary-50/40"
+                  >
+                    <Lock className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+                    <span className="min-w-[4.5rem] font-medium text-slate-900">{demo.role}</span>
+                    <span className="truncate text-slate-500">{demo.email}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
 
         <p className="mt-6 text-center text-xs text-slate-500">
           Need help signing in? Contact your music centre for account access.

@@ -20,19 +20,19 @@ import type { AnnouncementFormValues } from '@/utils/announcementForm';
 const PAGE_COPY: Record<UserRole | 'Admin', { title: string; description: string }> = {
   Admin: {
     title: 'Announcements',
-    description: 'Create and manage public holidays and centre announcements',
+    description: 'Share holidays and centre news with teachers, students, and parents',
   },
   Teacher: {
     title: 'Announcements',
-    description: 'Holidays and centre news',
+    description: 'Holidays and centre news for your classes',
   },
   Student: {
     title: 'Announcements',
-    description: 'Holidays and latest news',
+    description: 'Holidays and the latest centre updates',
   },
   Parent: {
     title: 'Announcements',
-    description: 'Holidays and news for parents',
+    description: 'Holidays and news for your family',
   },
 };
 

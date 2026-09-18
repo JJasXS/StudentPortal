@@ -3,6 +3,7 @@ import { CalendarDays } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { PageHeader } from '@/components/PageHeader';
 import { DashboardNotifyFeed } from '@/components/dashboard/DashboardNotifyFeed';
+import { DashboardCentreFooter } from '@/components/dashboard/DashboardCentreFooter';
 import { TodayClassesList } from '@/components/TodayClassesList';
 import { classesApi, classSessionsApi } from '@/api/resources';
 import { mockClassSessions } from '@/utils/mockData';
@@ -64,6 +65,8 @@ export default function TeacherDashboard() {
       )}
 
       <TodayClassesList items={todayClasses} loading={loading} />
+
+      <DashboardCentreFooter />
     </div>
   );
 }

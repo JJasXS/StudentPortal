@@ -1,3 +1,4 @@
+using FirebirdSql.Data.FirebirdClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Storage;
@@ -968,6 +969,134 @@ public static class DbInitializer
         await using var connection = localDb.OpenConnection();
         await connection.OpenAsync();
         await PortalFirebirdSchema.EnsureAllTablesAsync(connection);
+        await EnsureDemoPortalAnnouncementsAsync(connection);
+    }
+
+    private const string PortalAnnSeedMarker = "portal-ann-seed-v1";
+
+    private static async Task EnsureDemoPortalAnnouncementsAsync(FbConnection connection)
+    {
+        if (!await PortalFirebirdSchema.TableExistsAsync(connection, "PORTAL_ANNOUNCEMENTS", CancellationToken.None))
+            return;
+
+        await using (var check = new FbCommand(
+            "SELECT COUNT(*) FROM PORTAL_ANNOUNCEMENTS WHERE RELATEDID = @marker",
+            connection))
+        {
+            check.Parameters.AddWithValue("@marker", PortalAnnSeedMarker);
+            var count = Convert.ToInt32(await check.ExecuteScalarAsync());
+            if (count > 0)
+                return;
+        }
+
+        await using (var del = new FbCommand("DELETE FROM PORTAL_ANNOUNCEMENTS", connection))
+            await del.ExecuteNonQueryAsync();
+
+        var adminId = "11111111-1111-1111-1111-111111111111";
+        var now = DateTime.UtcNow.Date;
+
+        var samples = new (
+            string Title,
+            string Content,
+            string Category,
+            DateTime? HolidayDate,
+            string TargetRole,
+            int DaysAgo,
+            bool IsMarker
+        )[]
+        {
+            (
+                "King's Birthday — Centre Closed",
+                "The music centre will be closed on Saturday, 7 June 2026 in observance of the King's Birthday public holiday. All group and individual classes on this date are cancelled. Your teacher will reach out to schedule any required makeup lessons. Please check Class Sessions in the portal once classes resume for your updated timetable.",
+                "Holiday", new DateTime(2026, 6, 7), "All", 2, false
+            ),
+            (
+                "Public Holiday — Class Reschedule",
+                "Due to the public holiday on 2 June 2026, all classes originally scheduled for that day have been postponed. Updated session times are published under Class Sessions. If you are unsure of your new slot, please contact the front desk or your teacher before your next lesson.",
+                "Holiday", new DateTime(2026, 6, 2), "All", 5, false
+            ),
+            (
+                "Mid-Year Break",
+                "The centre will close for our mid-year break beginning 20 July 2026. There will be no teaching during this period. Normal classes resume on the following Monday unless your teacher advises otherwise. We hope students enjoy a restful break and return ready for the second half of the term.",
+                "Holiday", new DateTime(2026, 7, 20), "All", 8, false
+            ),
+            (
+                "Merdeka Day — Centre Closed",
+                "In observance of Merdeka Day on 31 August 2026, the centre will be closed and no classes will run. The front desk reopens on the next working day. We wish everyone a meaningful national day celebration.",
+                "Holiday", new DateTime(2026, 8, 31), "All", 12, false
+            ),
+            (
+                "Malaysia Day — Centre Closed",
+                "The centre will be closed on 16 September 2026 for Malaysia Day. There will be no lessons or practice-room bookings. Regular classes resume on the next scheduled teaching day. Makeup sessions for affected students will be arranged by your teacher.",
+                "Holiday", new DateTime(2026, 9, 16), "All", 14, false
+            ),
+            (
+                "Deepavali — Centre Closed",
+                "The music centre will be closed on Monday, 20 October 2026 for Deepavali. There will be no lessons, rehearsals, or practice room bookings on that day. We encourage students to continue light practice at home and to review lesson notes from the past week so skills stay fresh. Regular classes resume on the next scheduled teaching day. If you had a lesson booked on this date, your teacher will contact you about a makeup session. We wish all our families a joyful Deepavali.",
+                "Holiday", new DateTime(2026, 10, 20), "All", 18, false
+            ),
+            (
+                "Chinese New Year Opening Hours",
+                "Over Chinese New Year the centre will run reduced hours. On CNY Eve we close at 15:00. We are closed on the first two public holiday days, then reopen with normal class schedules. Families planning travel should confirm makeup options with teachers before the break.",
+                "Holiday", new DateTime(2026, 2, 17), "All", 40, false
+            ),
+            (
+                "Centre Open Day",
+                "We invite all families to our Centre Open Day this Saturday from 10:00 to 14:00. Tour our studios, meet your child's teacher, and enjoy short performances from students across our programmes. Light refreshments will be served in the lobby. No registration is required — simply drop in at any time during the event.",
+                "General", null, "All", 3, false
+            ),
+            (
+                "Parking & Drop-off Reminder",
+                "During peak hours (16:00–19:00), please use the rear car park and avoid blocking the fire lane. For safety, students under 12 must be collected at the main lobby. Thank you for helping us keep arrival and dismissal smooth for everyone.",
+                "General", null, "All", 6, false
+            ),
+            (
+                "Monthly Teacher Meeting",
+                "All teaching staff are required to attend the monthly meeting this Friday at 16:00 in the staff room. We will review recital planning, updated attendance guidelines, and term schedules. Please bring your class roll if you have outstanding attendance entries to discuss.",
+                "General", null, "Teacher", 7, false
+            ),
+            (
+                "Lesson Observation Week",
+                "Lesson Observation Week runs from 9 to 13 June. Please sign up for a peer observation slot on the staff board. Observations will focus on warm-ups, student feedback, and homework follow-up. Participation supports our continuous professional development goals.",
+                "General", null, "Teacher", 9, false
+            ),
+            (
+                "Annual Recital Registration",
+                "Registration for the annual student recital is now open until 15 June. Speak with your teacher to confirm your repertoire, then submit the signed registration form at the front desk. Late entries may not be guaranteed a performance slot.",
+                "General", null, "Student", 10, true
+            ),
+        };
+
+        const string insertSql = """
+            INSERT INTO PORTAL_ANNOUNCEMENTS (
+                ID, TITLE, CONTENT, CATEGORY, HOLIDAYDATE, EXPIRYDATE, TARGETROLE,
+                CREATEDBYUSERID, CREATEDBYNAME, ISSYSTEM, RELATEDTYPE, RELATEDID,
+                CREATEDAT, UPDATEDAT
+            ) VALUES (
+                @id, @title, @content, @category, @holidayDate, NULL, @targetRole,
+                @createdByUserId, @createdByName, 0, @relatedType, @relatedId,
+                @createdAt, @updatedAt
+            )
+            """;
+
+        foreach (var row in samples)
+        {
+            var createdAt = now.AddDays(-row.DaysAgo).AddHours(10);
+            await using var cmd = new FbCommand(insertSql, connection);
+            cmd.Parameters.AddWithValue("@id", Guid.NewGuid().ToString());
+            cmd.Parameters.AddWithValue("@title", row.Title);
+            cmd.Parameters.AddWithValue("@content", row.Content);
+            cmd.Parameters.AddWithValue("@category", row.Category);
+            cmd.Parameters.AddWithValue("@holidayDate", (object?)row.HolidayDate?.Date ?? DBNull.Value);
+            cmd.Parameters.AddWithValue("@targetRole", row.TargetRole);
+            cmd.Parameters.AddWithValue("@createdByUserId", adminId);
+            cmd.Parameters.AddWithValue("@createdByName", "System Admin");
+            cmd.Parameters.AddWithValue("@relatedType", row.IsMarker ? "DemoSeed" : DBNull.Value);
+            cmd.Parameters.AddWithValue("@relatedId", row.IsMarker ? PortalAnnSeedMarker : DBNull.Value);
+            cmd.Parameters.AddWithValue("@createdAt", createdAt);
+            cmd.Parameters.AddWithValue("@updatedAt", createdAt);
+            await cmd.ExecuteNonQueryAsync();
+        }
     }
 
     private static async Task EnsureEmploymentTypeColumnAsync(AppDbContext context)
@@ -1053,39 +1182,60 @@ public static class DbInitializer
 
     private static async Task EnsureDemoAuditLogsAsync(AppDbContext context)
     {
-        if (await context.AuditLogs.AnyAsync()) return;
+        const string seedMarker = "audit-demo-seed-v2";
+        if (await context.AuditLogs.AnyAsync(a => a.EntityId == seedMarker))
+            return;
+
+        await context.Database.ExecuteSqlRawAsync("DELETE FROM \"AuditLogs\"");
 
         var adminId = Guid.Parse("11111111-1111-1111-1111-111111111111");
+        var teacherId = Guid.Parse("22222222-2222-2222-2222-222222222221");
         var now = DateTime.UtcNow;
 
-        var samples = new (string Action, string EntityType, string? EntityId, string? EntityLabel, string? Details, int DaysAgo)[]
+        var samples = new (
+            Guid? ActorId,
+            string ActorName,
+            string ActorRole,
+            string Action,
+            string EntityType,
+            string? EntityId,
+            string? EntityLabel,
+            string? Details,
+            int DaysAgo,
+            int Hour
+        )[]
         {
-            ("settings.updated", "Settings", null, "Centre settings", "Updated invoice prefix and bank details", 0),
-            ("invoice.sent", "Invoice", "inv-0042", "INV-2026-0042", "Sent to Michael Tan — Piano Mon AM", 1),
-            ("enrollment.created", "Enrollment", "enr-101", "Emily Tan → Piano Mon AM", "Active", 2),
-            ("teacher.rate_updated", "Teacher", "22222222-2222-2222-2222-222222222221", "Sarah Chen", "$85/hr", 3),
-            ("course.created", "Course", null, "Piano Grade 5", null, 4),
-            ("class.created", "Class", null, "Piano Mon AM", null, 5),
-            ("student.updated", "Student", "33333333-3333-3333-3333-333333333331", "Emily Tan", null, 6),
-            ("announcement.created", "Announcement", null, "Labour Day closure", null, 7),
-            ("invoice.monthly_billing", "Invoice", null, "June 2026 monthly run", "12 invoices created", 8),
-            ("parent.updated", "Parent", "44444444-4444-4444-4444-444444444441", "Michael Tan", null, 9),
+            (adminId, "System Admin", "Admin", "announcement.created", "Announcement", null, "CNY holiday hours", "Posted centre-wide notice for Chinese New Year opening hours", 0, 11),
+            (adminId, "System Admin", "Admin", "invoice.sent", "Invoice", "inv-0042", "INV-2026-0042", "Sent INV-2026-0042 to Michael Tan (Piano Mon AM)", 0, 9),
+            (adminId, "System Admin", "Admin", "invoice.marked_paid", "Invoice", "inv-0038", "INV-2026-0038", "Marked INV-2026-0038 paid — Lisa Lim / James Lim Violin", 1, 16),
+            (adminId, "System Admin", "Admin", "enrollment.created", "Enrollment", "enr-101", "Emily Tan → Piano Mon AM", "Enrolled Emily Tan in Piano Mon AM (Active)", 1, 14),
+            (adminId, "System Admin", "Admin", "enrollment.cancelled", "Enrollment", "enr-088", "Chloe Ng → Guitar Wed Eve", "Cancelled Chloe Ng enrollment — family relocating", 2, 10),
+            (teacherId, "Sarah Chen", "Teacher", "student.updated", "Student", "33333333-3333-3333-3333-333333333331", "Emily Tan", "Updated level to Grade 4 and emergency contact", 2, 18),
+            (adminId, "System Admin", "Admin", "teacher.rate_updated", "Teacher", "22222222-2222-2222-2222-222222222221", "Sarah Chen", "Hourly rate set to RM 85", 3, 15),
+            (adminId, "System Admin", "Admin", "teacher.created", "Teacher", "22222222-2222-2222-2222-222222222222", "David Wong", "Added teacher David Wong (Guitar / Full-time)", 3, 11),
+            (adminId, "System Admin", "Admin", "class.created", "Class", null, "Violin Thu PM", "Created Violin Thu PM · room Studio B · capacity 6", 4, 10),
+            (adminId, "System Admin", "Admin", "course.created", "Course", null, "Piano Grade 5", "Created course Piano Grade 5 · ABRSM track", 5, 9),
+            (adminId, "System Admin", "Admin", "parent.created", "Parent", "44444444-4444-4444-4444-444444444441", "Michael Tan", "Registered parent Michael Tan linked to Emily Tan", 6, 13),
+            (adminId, "System Admin", "Admin", "student.created", "Student", "33333333-3333-3333-3333-333333333332", "James Lim", "Registered student James Lim (Violin beginner)", 7, 12),
+            (adminId, "System Admin", "Admin", "invoice.monthly_billing", "Invoice", null, "July 2026 monthly run", "Generated 12 invoices for July 2026 billing period", 8, 7),
+            (adminId, "System Admin", "Admin", "settings.updated", "Settings", null, "Centre settings", "Updated invoice prefix to INV and bank account details", 9, 9),
+            (adminId, "System Admin", "Admin", "announcement.updated", "Announcement", seedMarker, "Studio renovation", "Rescheduled renovation notice end date to 31 Aug 2026", 10, 8),
         };
 
-        foreach (var (action, entityType, entityId, entityLabel, details, daysAgo) in samples)
+        foreach (var row in samples)
         {
             context.AuditLogs.Add(new AuditLog
             {
                 Id = Guid.NewGuid(),
-                ActorUserId = adminId,
-                ActorName = "System Admin",
-                ActorRole = "Admin",
-                Action = action,
-                EntityType = entityType,
-                EntityId = entityId,
-                EntityLabel = entityLabel,
-                Details = details,
-                CreatedAt = now.AddDays(-daysAgo).AddHours(-2)
+                ActorUserId = row.ActorId,
+                ActorName = row.ActorName,
+                ActorRole = row.ActorRole,
+                Action = row.Action,
+                EntityType = row.EntityType,
+                EntityId = row.EntityId,
+                EntityLabel = row.EntityLabel,
+                Details = row.Details,
+                CreatedAt = now.Date.AddDays(-row.DaysAgo).AddHours(row.Hour)
             });
         }
 

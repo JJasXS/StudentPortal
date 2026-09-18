@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { RefreshCw, UserCircle } from 'lucide-react';
 import { PageHeader } from '@/components/PageHeader';
 import { SearchBox } from '@/components/SearchBox';
+import { UserManagementSwitcher } from '@/components/admin/UserManagementSwitcher';
 import { Card, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { DataTable } from '@/components/ui/DataTable';
@@ -60,13 +61,16 @@ export default function TeachersManagement() {
   return (
     <div>
       <PageHeader
-        title="Staff Management"
+        title="User Management"
         description="View-only list from SQL Account SY_USER (non-admin users)."
         actions={
-          <Button variant="outline" onClick={() => void load()} disabled={loading}>
-            <RefreshCw className={cn('mr-1.5 h-4 w-4', loading && 'animate-spin')} />
-            Refresh
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button variant="outline" onClick={() => void load()} disabled={loading}>
+              <RefreshCw className={cn('mr-1.5 h-4 w-4', loading && 'animate-spin')} />
+              Refresh
+            </Button>
+            <UserManagementSwitcher />
+          </div>
         }
       />
 
