@@ -11,7 +11,7 @@ interface SearchBoxProps {
 
 export function SearchBox({ value, onChange, placeholder = 'Search...', className }: SearchBoxProps) {
   return (
-    <div className={cn('relative w-full max-w-sm', className)}>
+    <div className={cn('relative w-full max-w-full sm:max-w-sm', className)}>
       <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
       <Input
         value={value}

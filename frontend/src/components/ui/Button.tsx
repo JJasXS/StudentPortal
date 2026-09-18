@@ -15,9 +15,9 @@ const variants = {
 };
 
 const sizes = {
-  sm: 'h-8 px-3 text-sm',
-  md: 'h-10 px-4',
-  lg: 'h-11 px-6',
+  sm: 'min-h-9 px-3 text-sm sm:h-8 sm:min-h-0',
+  md: 'min-h-10 px-4',
+  lg: 'min-h-11 px-6',
 };
 
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(

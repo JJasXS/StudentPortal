@@ -291,8 +291,8 @@ export default function AdminCalendarPage() {
         title="Calendar"
         description="Monthly class schedule"
         actions={
-          <div className="flex flex-wrap items-end gap-3">
-            <div className="space-y-1">
+          <div className="grid w-full grid-cols-1 gap-3 sm:flex sm:w-auto sm:flex-wrap sm:items-end">
+            <div className="min-w-0 flex-1 space-y-1 sm:min-w-[12rem] sm:flex-none">
               <label htmlFor="teacherFilter" className="text-sm font-medium text-slate-600">
                 Teacher
               </label>
@@ -300,7 +300,7 @@ export default function AdminCalendarPage() {
                 id="teacherFilter"
                 value={teacherFilter}
                 onChange={(e) => setTeacherFilter(e.target.value)}
-                className="w-52 sm:w-56"
+                className="w-full sm:w-52 md:w-56"
               >
                 <option value="">All teachers</option>
                 {teacherOptions.map((t) => (
@@ -311,7 +311,7 @@ export default function AdminCalendarPage() {
               </Select>
             </div>
 
-            <div className="space-y-1">
+            <div className="min-w-0 flex-1 space-y-1 sm:min-w-[12rem] sm:flex-none">
               <label htmlFor="studentFilter" className="text-sm font-medium text-slate-600">
                 Student
               </label>
@@ -319,7 +319,7 @@ export default function AdminCalendarPage() {
                 id="studentFilter"
                 value={studentFilter}
                 onChange={(e) => setStudentFilter(e.target.value)}
-                className="w-52 sm:w-56"
+                className="w-full sm:w-52 md:w-56"
               >
                 <option value="">All students</option>
                 {studentOptions.map((s) => (

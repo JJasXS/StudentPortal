@@ -20,8 +20,40 @@ export function LeaveWorkflowSteps({ status, compact }: LeaveWorkflowStepsProps)
   const terminal = status === 'Rejected' || status === 'Approved';
 
   return (
-    <div className={cn('overflow-x-auto', compact ? 'pb-1' : 'pb-2')}>
-      <ol className="flex min-w-[24rem] gap-0">
+    <div className={cn(compact ? 'pb-1' : 'pb-2')}>
+      {/* Mobile: vertical checklist */}
+      <ol className="space-y-2 sm:hidden">
+        {STEPS.map((label, i) => {
+          const stepNum = i + 1;
+          const done = stepNum < current || (terminal && stepNum <= 3);
+          const active = stepNum === current && !terminal;
+          return (
+            <li key={label} className="flex items-center gap-2.5">
+              <span
+                className={cn(
+                  'flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-bold',
+                  done && 'bg-primary-600 text-white',
+                  active && 'bg-primary-100 text-primary-700 ring-2 ring-primary-500',
+                  !done && !active && 'bg-slate-100 text-slate-400'
+                )}
+              >
+                {stepNum}
+              </span>
+              <span
+                className={cn(
+                  'min-w-0 text-xs leading-snug',
+                  active ? 'font-semibold text-primary-700' : 'text-slate-600'
+                )}
+              >
+                {label}
+              </span>
+            </li>
+          );
+        })}
+      </ol>
+
+      {/* sm+: horizontal stepper */}
+      <ol className="hidden min-w-0 sm:flex">
         {STEPS.map((label, i) => {
           const stepNum = i + 1;
           const done = stepNum < current || (terminal && stepNum <= 3);
@@ -49,7 +81,7 @@ export function LeaveWorkflowSteps({ status, compact }: LeaveWorkflowStepsProps)
               {!compact && (
                 <span
                   className={cn(
-                    'mt-1 line-clamp-2 text-[9px] leading-tight',
+                    'mt-1 line-clamp-2 text-[9px] leading-tight md:text-[10px]',
                     active ? 'font-semibold text-primary-700' : 'text-slate-500'
                   )}
                 >

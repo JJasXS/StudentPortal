@@ -175,21 +175,27 @@ export default function TeacherLeavePage() {
               {
                 key: 'class',
                 header: 'Class',
+                wrap: true,
+                colWidth: '40%',
                 render: (r) => (
-                  <div>
-                    <p className="font-medium text-slate-900">{r.className ?? 'Class'}</p>
-                    <p className="text-xs text-slate-500">{r.branchName}</p>
+                  <div className="min-w-0">
+                    <p className="line-clamp-2 break-words font-medium text-slate-900" title={r.className ?? undefined}>
+                      {r.className ?? 'Class'}
+                    </p>
+                    <p className="truncate text-xs text-slate-500">{r.branchName}</p>
                   </div>
                 ),
               },
               {
                 key: 'session',
                 header: 'Session',
+                colWidth: '8rem',
                 render: (r) => formatPortalSlotDate(r.sessionDate, undefined, undefined),
               },
               {
                 key: 'status',
                 header: 'Status',
+                colWidth: '9rem',
                 render: (r) => (
                   <StatusBadge status={r.status} label={portalLeaveStatusLabel(r.status)} />
                 ),
@@ -197,6 +203,8 @@ export default function TeacherLeavePage() {
               {
                 key: 'replacement',
                 header: 'Replacement',
+                wrap: true,
+                colWidth: '9rem',
                 render: (r) =>
                   r.status === 'Confirmed' && r.replDate ? (
                     <span className="text-sm text-emerald-800">

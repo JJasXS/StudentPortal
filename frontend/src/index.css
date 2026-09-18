@@ -16,8 +16,20 @@
     --primary-900: #1e3a8a;
   }
 
+  html {
+    /* Prevent 100vw scrollbar gutter from widening the page */
+    scrollbar-gutter: stable;
+  }
+
   body {
     @apply bg-slate-50 text-slate-900 antialiased;
+  }
+
+  img,
+  video,
+  canvas {
+    max-width: 100%;
+    height: auto;
   }
 }
 

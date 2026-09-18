@@ -734,11 +734,11 @@ export const mockInvoices: Invoice[] = dashboardSeedInvoices;
 export interface DemoCredential {
   email: string;
   password: string;
-  role: 'Admin' | 'Teacher' | 'Student';
+  role: 'Admin' | 'Teacher' | 'Parent';
 }
 
 export const demoCredentials: DemoCredential[] = [
   { email: 'admin@demo.com', password: 'Admin@123', role: 'Admin' },
   { email: 'sarah.chen@demo.com', password: 'Teacher@123', role: 'Teacher' },
-  { email: 'emily.tan@demo.com', password: 'Student@123', role: 'Student' },
+  { email: 'michael.tan@demo.com', password: 'Parent@123', role: 'Parent' },
 ];

@@ -62,7 +62,5 @@ dotnet ef database update
 |---------|-----------------------|--------------|
 | Teacher | sarah.chen@demo.com   | Teacher@123  |
 | Teacher | david.wong@demo.com   | Teacher@123  |
-| Student | emily.tan@demo.com    | Student@123  |
-| Student | james.lim@demo.com    | Student@123  |
 | Parent  | michael.tan@demo.com  | Parent@123   |
 | Parent  | lisa.lim@demo.com     | Parent@123   |

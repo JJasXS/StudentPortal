@@ -4,6 +4,8 @@ export type DemoLogin = {
   password: string;
 };
 
+const ALLOWED_DEMO_ROLES = new Set(['Admin', 'Teacher', 'Parent']);
+
 /** Parse `VITE_DEMO_LOGINS` — entries separated by `;`, each `Role|email|password`. */
 export function parseDemoLogins(raw: string | undefined): DemoLogin[] {
   if (!raw?.trim()) return [];
@@ -15,6 +17,7 @@ export function parseDemoLogins(raw: string | undefined): DemoLogin[] {
     .map((entry) => {
       const [role, email, password] = entry.split('|').map((p) => p.trim());
       if (!role || !email || !password) return null;
+      if (!ALLOWED_DEMO_ROLES.has(role)) return null;
       return { role, email, password };
     })
     .filter((x): x is DemoLogin => x != null);

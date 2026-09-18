@@ -105,7 +105,7 @@ export default function ForgotPasswordPage() {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-slate-50 p-4">
+    <div className="flex min-h-dvh items-center justify-center bg-slate-50 p-4">
       <Card className="w-full max-w-md">
         <CardHeader>
           <CardTitle>{step === 'request' ? 'Forgot password' : 'Reset password'}</CardTitle>

@@ -15,6 +15,7 @@ import { leaveApi, parentsApi } from '@/api/resources';
 import { formatDateDDMMYYYY } from '@/utils/dateFormat';
 import { formatPortalSlotDate, isLeaveSessionEligible, portalLeaveStatusLabel } from '@/utils/portalLeave';
 import { getApiErrorMessage } from '@/utils/apiError';
+import { cn } from '@/utils/cn';
 import type { SqlAccountChild, ErpCalendarEvent } from '@/types/sqlAccount';
 import type { PortalLeaveRequest, ReplacementOption } from '@/types/portal';
 
@@ -175,7 +176,7 @@ export default function StudentLeavePage() {
   }
 
   return (
-    <div className="mx-auto max-w-2xl space-y-6">
+    <div className={cn('mx-auto space-y-6', step === 'list' ? 'max-w-5xl' : 'max-w-2xl')}>
       <PageHeader
         title="Leave"
         description="Request leave for an upcoming class session. Admin will review and arrange a replacement if needed."
@@ -373,21 +374,31 @@ export default function StudentLeavePage() {
                     {
                       key: 'className',
                       header: 'Class',
-                      render: (r) => r.className ?? '—',
+                      wrap: true,
+                      colWidth: '40%',
+                      className: 'min-w-0',
+                      render: (r) => (
+                        <span className="line-clamp-2 break-words" title={r.className ?? undefined}>
+                          {r.className ?? '—'}
+                        </span>
+                      ),
                     },
                     {
                       key: 'branchName',
                       header: 'Student',
+                      colWidth: '6rem',
                       render: (r) => r.branchName,
                     },
                     {
                       key: 'sessionDate',
                       header: 'Leave date',
+                      colWidth: '7rem',
                       render: (r) => formatDateDDMMYYYY(r.sessionDate),
                     },
                     {
                       key: 'status',
                       header: 'Status',
+                      colWidth: '9rem',
                       render: (r) => (
                         <StatusBadge status={r.status} label={portalLeaveStatusLabel(r.status)} />
                       ),

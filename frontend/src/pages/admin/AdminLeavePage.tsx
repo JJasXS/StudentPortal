@@ -188,8 +188,13 @@ export default function AdminLeavePage() {
                   sortable: true,
                   sortType: 'text',
                   getSortValue: (r) => r.className ?? '',
-                  className: 'max-w-[14rem] whitespace-normal',
-                  render: (r) => r.className ?? '—',
+                  className: 'min-w-0 max-w-[14rem]',
+                  wrap: true,
+                  render: (r) => (
+                    <span className="line-clamp-2 break-words" title={r.className ?? undefined}>
+                      {r.className ?? '—'}
+                    </span>
+                  ),
                 },
                 {
                   key: 'sessionDate',
@@ -197,11 +202,13 @@ export default function AdminLeavePage() {
                   sortable: true,
                   sortType: 'date',
                   getSortValue: (r) => r.sessionDate,
+                  colWidth: '8rem',
                   render: (r) => formatDateDDMMYYYY(r.sessionDate),
                 },
                 {
                   key: 'status',
                   header: 'Status',
+                  colWidth: '9rem',
                   render: (r) => (
                     <StatusBadge status={r.status} label={portalLeaveStatusLabel(r.status)} />
                   ),
@@ -209,7 +216,8 @@ export default function AdminLeavePage() {
                 {
                   key: 'replOptions',
                   header: 'Proposed replacements',
-                  className: 'max-w-[14rem] whitespace-normal',
+                  className: 'min-w-0 max-w-[14rem]',
+                  wrap: true,
                   render: (r) =>
                     r.replOptions && r.replOptions.length > 0 ? (
                       <ul className="space-y-0.5 text-sm text-slate-700">

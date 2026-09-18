@@ -146,7 +146,7 @@ export function PayInvoiceModal({
 
         {error && <p className="text-sm text-red-600">{error}</p>}
 
-        <div className="flex justify-end gap-2 border-t border-slate-100 pt-4">
+        <div className="flex flex-col-reverse gap-2 border-t sm:flex-row sm:justify-end [&>button]:w-full sm:[&>button]:w-auto border-slate-100 pt-4">
           <Button type="button" variant="outline" onClick={onClose} disabled={paying}>
             Cancel
           </Button>

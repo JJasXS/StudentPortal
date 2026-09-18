@@ -71,29 +71,30 @@ export function MonthCalendar({
 
   return (
     <>
-      <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-4 py-3">
-          <div>
+      <div className="min-w-0 overflow-hidden rounded-xl border border-slate-200 bg-white">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 px-3 py-3 sm:gap-3 sm:px-4">
+          <div className="min-w-0">
             <p className="text-sm font-semibold text-slate-900">Month view</p>
-            <p className="text-xs text-slate-500">{label}</p>
+            <p className="truncate text-xs text-slate-500">{label}</p>
           </div>
           <div className="flex items-center gap-1">
-            <Button type="button" variant="ghost" size="sm" onClick={() => shiftMonth(-1)} aria-label="Previous month">
+            <Button type="button" variant="ghost" size="sm" onClick={() => shiftMonth(-1)} aria-label="Previous month" className="h-10 w-10 p-0 sm:h-8 sm:w-8">
               <ChevronLeft className="h-4 w-4" />
             </Button>
             <Button type="button" variant="outline" size="sm" onClick={() => onAnchorChange(new Date())}>
               Today
             </Button>
-            <Button type="button" variant="ghost" size="sm" onClick={() => shiftMonth(1)} aria-label="Next month">
+            <Button type="button" variant="ghost" size="sm" onClick={() => shiftMonth(1)} aria-label="Next month" className="h-10 w-10 p-0 sm:h-8 sm:w-8">
               <ChevronRight className="h-4 w-4" />
             </Button>
           </div>
         </div>
 
-        <div className="grid grid-cols-7 border-b border-slate-200 bg-slate-50 text-center text-xs font-semibold uppercase tracking-wide text-slate-500">
+        <div className="grid grid-cols-7 border-b border-slate-200 bg-slate-50 text-center text-[10px] font-semibold uppercase tracking-wide text-slate-500 sm:text-xs">
           {DAY_LABELS.map((d) => (
-            <div key={d} className="px-1 py-2">
-              {d}
+            <div key={d} className="px-0.5 py-1.5 sm:px-1 sm:py-2">
+              <span className="sm:hidden">{d.charAt(0)}</span>
+              <span className="hidden sm:inline">{d}</span>
             </div>
           ))}
         </div>
@@ -119,13 +120,13 @@ export function MonthCalendar({
                   }
                 }}
                 className={cn(
-                  'min-h-[8.5rem] border-b border-r border-slate-100 p-1.5 last:border-r-0',
+                  'min-h-[3.25rem] border-b border-r border-slate-100 p-1 last:border-r-0 sm:min-h-[6.5rem] sm:p-1.5 md:min-h-[8.5rem]',
                   !cell.inMonth && 'bg-slate-50/80',
                   isToday && cell.inMonth && 'bg-primary-50/30',
                   hasEvents && 'cursor-pointer transition hover:bg-slate-50/90'
                 )}
               >
-                <div className="mb-1 flex justify-end">
+                <div className="mb-0.5 flex items-center justify-between gap-0.5 sm:mb-1 sm:justify-end">
                   <span
                     className={cn(
                       'inline-flex h-6 min-w-6 items-center justify-center rounded-full px-1 text-xs font-medium',
@@ -138,10 +139,26 @@ export function MonthCalendar({
                   >
                     {cell.day}
                   </span>
+                  {hasEvents && (
+                    <span className="inline-flex items-center gap-0.5 sm:hidden">
+                      {dayEvents.slice(0, 3).map((event) => (
+                        <span
+                          key={event.id}
+                          className="h-1.5 w-1.5 rounded-full bg-primary-500"
+                          aria-hidden
+                        />
+                      ))}
+                      {dayEvents.length > 3 && (
+                        <span className="text-[9px] font-semibold text-primary-600">
+                          +{dayEvents.length - 3}
+                        </span>
+                      )}
+                    </span>
+                  )}
                 </div>
-                <div className="space-y-0.5">
+                <div className="hidden space-y-0.5 sm:block">
                   {visible.map((event) => (
-                    <div key={event.id} onClick={(e) => e.stopPropagation()}>
+                    <div key={event.id} onClick={(e) => e.stopPropagation()} className="min-w-0">
                       <CalendarEventChip
                         event={event}
                         onClick={onEventClick ? () => onEventClick(event) : undefined}
@@ -184,7 +201,7 @@ export function MonthCalendar({
             <p className="text-sm text-slate-500">
               {selectedDay.events.length} class{selectedDay.events.length === 1 ? '' : 'es'} this day
             </p>
-            <ul className="max-h-[min(24rem,60vh)] space-y-2 overflow-y-auto">
+            <ul className="max-h-[min(24rem,50dvh)] space-y-2 overflow-y-auto">
               {selectedDay.events.map((event) => (
                 <li key={event.id}>
                   <button

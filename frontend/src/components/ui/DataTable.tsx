@@ -111,8 +111,10 @@ export function DataTable<T extends object>({
   onRowClick,
 }: DataTableProps<T>) {
   const defaultAlign: ColumnAlign = centered ? 'center' : 'left';
-  const cellPad = density === 'comfortable' ? 'px-5 py-4' : 'px-4 py-3';
-  const headPad = density === 'comfortable' ? 'px-5 py-3.5' : 'px-4 py-3';
+  const cellPad =
+    density === 'comfortable' ? 'px-3 py-3 sm:px-5 sm:py-4' : 'px-3 py-2.5 sm:px-4 sm:py-3';
+  const headPad =
+    density === 'comfortable' ? 'px-3 py-3 sm:px-5 sm:py-3.5' : 'px-3 py-2.5 sm:px-4 sm:py-3';
 
   const columnAlignClass = (col: Column<T>) => {
     const align = col.align ?? defaultAlign;
@@ -175,14 +177,14 @@ export function DataTable<T extends object>({
   return (
     <div
       className={cn(
-        'overflow-x-auto [scrollbar-gutter:stable]',
+        'min-w-0 overflow-x-auto overscroll-x-contain [-webkit-overflow-scrolling:touch] [scrollbar-gutter:stable]',
         !embedded && 'rounded-lg border border-slate-200'
       )}
     >
       <table
         className={cn(
           'w-full divide-y divide-slate-200',
-          useFixedLayout ? 'table-fixed' : 'min-w-full'
+          useFixedLayout ? 'table-fixed' : 'min-w-[36rem]'
         )}
       >
         {useFixedLayout && (
@@ -265,7 +267,7 @@ export function DataTable<T extends object>({
                   className={cn(
                     cellPad,
                     'text-sm text-slate-700',
-                    col.wrap ? 'min-w-0 whitespace-normal break-words' : 'whitespace-nowrap',
+                    col.wrap ? 'min-w-0 whitespace-normal break-words' : 'max-w-0 overflow-hidden text-ellipsis whitespace-nowrap',
                     columnAlignClass(col),
                     col.sticky === 'end' &&
                       'sticky right-0 z-10 bg-white pl-2 pr-3 shadow-[-4px_0_8px_-4px_rgba(15,23,42,0.08)] group-hover:bg-slate-50',

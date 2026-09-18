@@ -111,20 +111,32 @@ export default function Sidebar({ role, open, onClose }: SidebarProps) {
 
   return (
     <>
-      {open && <div className="fixed inset-0 z-40 bg-black/50 lg:hidden" onClick={onClose} />}
+      {open && (
+        <div
+          className="fixed inset-0 z-40 bg-black/50 lg:hidden"
+          onClick={onClose}
+          aria-hidden
+        />
+      )}
       <aside
         className={cn(
-          'fixed inset-y-0 left-0 z-50 flex w-64 flex-col border-r border-slate-200 bg-white transition-transform lg:static lg:translate-x-0',
+          'fixed inset-y-0 left-0 z-50 flex w-[min(16rem,85vw)] flex-col border-r border-slate-200 bg-white transition-transform duration-200 ease-out lg:static lg:w-64 lg:translate-x-0',
           open ? 'translate-x-0' : '-translate-x-full'
         )}
+        aria-label="Main navigation"
       >
-        <div className="flex h-16 items-center justify-between border-b border-slate-200 px-4">
+        <div className="flex h-14 items-center justify-between gap-2 border-b border-slate-200 px-3 sm:h-16 sm:px-4">
           <CentreMarkInline className="min-w-0 flex-1" />
-          <button onClick={onClose} className="rounded-lg p-1 hover:bg-slate-100 lg:hidden">
+          <button
+            type="button"
+            onClick={onClose}
+            className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-lg hover:bg-slate-100 lg:hidden"
+            aria-label="Close menu"
+          >
             <X className="h-5 w-5" />
           </button>
         </div>
-        <nav className="flex flex-1 flex-col overflow-y-auto p-3">
+        <nav className="flex flex-1 flex-col overflow-y-auto overscroll-contain p-3">
           <ul className="space-y-1">
             {items.map((item) => {
               const isDashboard =
@@ -146,7 +158,7 @@ export default function Sidebar({ role, open, onClose }: SidebarProps) {
                         ? isUserManagementPath(location.pathname)
                         : isActive;
                       return cn(
-                        'relative flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors',
+                        'relative flex min-h-11 items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors',
                         active
                           ? 'bg-primary-50 text-primary-700'
                           : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
@@ -154,7 +166,7 @@ export default function Sidebar({ role, open, onClose }: SidebarProps) {
                     }}
                   >
                     <item.icon className="h-5 w-5 shrink-0" />
-                    {item.label}
+                    <span className="min-w-0 truncate">{item.label}</span>
                     {showDot && (
                       <span
                         className="ml-auto h-2 w-2 shrink-0 rounded-full bg-red-500"
@@ -175,7 +187,7 @@ export default function Sidebar({ role, open, onClose }: SidebarProps) {
               <button
                 type="button"
                 onClick={handleLogout}
-                className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-red-600 transition-colors hover:bg-red-50 hover:text-red-700"
+                className="flex min-h-11 w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-red-600 transition-colors hover:bg-red-50 hover:text-red-700"
               >
                 <LogOut className="h-5 w-5 shrink-0" />
                 Log out

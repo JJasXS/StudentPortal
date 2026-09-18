@@ -85,7 +85,7 @@ export default function AdminAuditLogPage() {
                   ))}
                 </Select>
               </div>
-              <div className="min-w-[10rem]">
+              <div className="min-w-0 sm:min-w-[10rem]">
                 <Label htmlFor="audit-from">From</Label>
                 <Input
                   id="audit-from"
@@ -94,7 +94,7 @@ export default function AdminAuditLogPage() {
                   onChange={(e) => setFromDate(e.target.value)}
                 />
               </div>
-              <div className="min-w-[10rem]">
+              <div className="min-w-0 sm:min-w-[10rem]">
                 <Label htmlFor="audit-to">To</Label>
                 <Input
                   id="audit-to"

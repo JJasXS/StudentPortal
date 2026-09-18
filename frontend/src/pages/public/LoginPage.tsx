@@ -94,7 +94,7 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-slate-50 via-white to-primary-50/40 p-4 sm:p-6">
+    <div className="flex min-h-dvh items-center justify-center bg-gradient-to-br from-slate-50 via-white to-primary-50/40 p-4 sm:p-6">
       <div className="w-full max-w-[420px]">
         <CentreMark
           className="mb-8"
