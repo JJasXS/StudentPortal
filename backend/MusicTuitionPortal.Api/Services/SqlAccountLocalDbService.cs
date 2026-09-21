@@ -64,7 +64,7 @@ public class SqlAccountLocalDbService
             await connection.OpenAsync(cancellationToken);
 
             const string sql = """
-                SELECT CODE, NAME, EMAIL, UDF_ISADMIN
+                SELECT CODE, NAME, EMAIL, MOBILE, PHONE, UDF_ISADMIN
                 FROM SY_USER
                 WHERE EMAIL IS NOT NULL
                   AND TRIM(EMAIL) <> ''
@@ -79,11 +79,13 @@ public class SqlAccountLocalDbService
                 return null;
 
             var matchedEmail = ReadString(reader, "EMAIL") ?? email.Trim();
+            var mobile = ReadString(reader, "MOBILE") ?? ReadString(reader, "PHONE");
             return new SqlAccountStaffUserMatch(
                 ReadString(reader, "CODE") ?? string.Empty,
                 ReadString(reader, "NAME") ?? matchedEmail,
                 matchedEmail,
-                ReadBool(reader, "UDF_ISADMIN"));
+                ReadBool(reader, "UDF_ISADMIN"),
+                string.IsNullOrWhiteSpace(mobile) ? null : mobile.Trim());
         }
         catch (Exception ex)
         {
@@ -207,7 +209,7 @@ public class SqlAccountLocalDbService
             await connection.OpenAsync(cancellationToken);
 
             const string sql = """
-                SELECT CODE, NAME, EMAIL, UDF_ISADMIN
+                SELECT CODE, NAME, EMAIL, MOBILE, PHONE, UDF_ISADMIN
                 FROM SY_USER
                 WHERE (UDF_ISADMIN IS NULL OR UDF_ISADMIN = FALSE)
                 ORDER BY NAME
@@ -221,11 +223,13 @@ public class SqlAccountLocalDbService
                 var email = ReadString(reader, "EMAIL")?.Trim() ?? string.Empty;
                 var code = ReadString(reader, "CODE") ?? string.Empty;
                 var name = ReadString(reader, "NAME");
+                var mobile = ReadString(reader, "MOBILE") ?? ReadString(reader, "PHONE");
                 results.Add(new SqlAccountStaffUserMatch(
                     code,
                     string.IsNullOrWhiteSpace(name) ? (string.IsNullOrWhiteSpace(email) ? code : email) : name.Trim(),
                     email,
-                    ReadBool(reader, "UDF_ISADMIN")));
+                    ReadBool(reader, "UDF_ISADMIN"),
+                    string.IsNullOrWhiteSpace(mobile) ? null : mobile.Trim()));
             }
 
             return results;
@@ -249,7 +253,7 @@ public class SqlAccountLocalDbService
             await connection.OpenAsync(cancellationToken);
 
             const string sql = """
-                SELECT CODE, NAME, EMAIL, UDF_ISADMIN
+                SELECT CODE, NAME, EMAIL, MOBILE, PHONE, UDF_ISADMIN
                 FROM SY_USER
                 WHERE EMAIL IS NOT NULL
                   AND TRIM(EMAIL) <> ''
@@ -267,11 +271,13 @@ public class SqlAccountLocalDbService
 
                 var code = ReadString(reader, "CODE") ?? string.Empty;
                 var name = ReadString(reader, "NAME");
+                var mobile = ReadString(reader, "MOBILE") ?? ReadString(reader, "PHONE");
                 results.Add(new SqlAccountStaffUserMatch(
                     code,
                     string.IsNullOrWhiteSpace(name) ? email : name.Trim(),
                     email,
-                    ReadBool(reader, "UDF_ISADMIN")));
+                    ReadBool(reader, "UDF_ISADMIN"),
+                    string.IsNullOrWhiteSpace(mobile) ? null : mobile.Trim()));
             }
 
             return results;

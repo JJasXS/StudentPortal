@@ -45,6 +45,8 @@ if (args.Contains("--create-assign-log")
     || args.Contains("--sync-billing-to-student")
     || args.Contains("--normalize-customer-as-student")
     || args.Contains("--rename-customers-as-students")
+    || args.Contains("--rename-teachers-as-music")
+    || args.Contains("--set-teacher-mobiles")
     || args.Contains("--probe-domain")
     || args.Contains("--probe-sodtl-values"))
 {
@@ -70,6 +72,16 @@ if (args.Contains("--create-assign-log")
     if (args.Contains("--rename-customers-as-students"))
     {
         return await RenameCustomersAsStudentsAsync(assignConnection);
+    }
+
+    if (args.Contains("--rename-teachers-as-music"))
+    {
+        return await RenameTeachersAsMusicAsync(assignConnection);
+    }
+
+    if (args.Contains("--set-teacher-mobiles"))
+    {
+        return await SetMusicTeacherMobilesAsync(assignConnection);
     }
 
     if (args.Contains("--normalize-customer-as-student"))
@@ -1147,6 +1159,225 @@ static async Task MigrateClassEndDateColumnAsync(FbConnection connection)
 }
 
 /// <summary>
+/// Replace non-admin SY_USER rows with music teachers:
+/// CODE = instrument/subject, NAME = person, EMAIL = login, MOBILE = mock MY number.
+/// Inserts until 10 teachers exist; remaps SL_SODTL.UDF_CONDUCTEDBY from old NAME to new NAME.
+/// </summary>
+static async Task<int> RenameTeachersAsMusicAsync(FbConnection connection)
+{
+    var roster = MusicTeacherRoster();
+
+    var existing = await LoadNonAdminSyUsersAsync(connection);
+    existing = OrderSyUsersForMusicRename(existing);
+
+    Console.WriteLine($"Found {existing.Count} non-admin SY_USER row(s). Target roster: {roster.Length}.");
+    foreach (var row in existing)
+        Console.WriteLine($"  BEFORE {row.Code} | {row.Name} | {row.Email} | autokey={row.AutoKey}");
+
+    var oldNameToNewName = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+    var updateCount = Math.Min(existing.Count, roster.Length);
+
+    // Stage 1: move existing codes to temporary values to avoid unique conflicts.
+    for (var i = 0; i < updateCount; i++)
+    {
+        var row = existing[i];
+        var tempCode = $"TMP-T{i + 1}";
+        await using var stage = new FbCommand(
+            """
+            UPDATE SY_USER
+            SET CODE = @code
+            WHERE AUTOKEY = @autokey
+            """,
+            connection);
+        stage.Parameters.AddWithValue("@code", tempCode);
+        stage.Parameters.AddWithValue("@autokey", row.AutoKey);
+        await stage.ExecuteNonQueryAsync();
+    }
+
+    // Stage 2: apply final CODE / NAME / EMAIL / MOBILE.
+    for (var i = 0; i < updateCount; i++)
+    {
+        var row = existing[i];
+        var (code, name, email, mobile) = roster[i];
+        if (!string.IsNullOrWhiteSpace(row.Name))
+            oldNameToNewName[row.Name.Trim()] = name;
+
+        await using var upd = new FbCommand(
+            """
+            UPDATE SY_USER
+            SET CODE = @code, NAME = @name, EMAIL = @email, MOBILE = @mobile, UDF_ISADMIN = FALSE
+            WHERE AUTOKEY = @autokey
+            """,
+            connection);
+        upd.Parameters.AddWithValue("@code", code);
+        upd.Parameters.AddWithValue("@name", name);
+        upd.Parameters.AddWithValue("@email", email);
+        upd.Parameters.AddWithValue("@mobile", mobile);
+        upd.Parameters.AddWithValue("@autokey", row.AutoKey);
+        await upd.ExecuteNonQueryAsync();
+        Console.WriteLine($"  UPDATE autokey={row.AutoKey}: {row.Code}/{row.Name} → {code}/{name} <{email}> mobile={mobile}");
+    }
+
+    // Stage 3: insert remaining roster entries.
+    if (existing.Count < roster.Length)
+    {
+        await using var maxCmd = new FbCommand("SELECT COALESCE(MAX(AUTOKEY), 0) FROM SY_USER", connection);
+        var maxObj = await maxCmd.ExecuteScalarAsync();
+        var nextKey = Convert.ToInt64(maxObj) + 1;
+
+        for (var i = existing.Count; i < roster.Length; i++)
+        {
+            var (code, name, email, mobile) = roster[i];
+            await using var insert = new FbCommand(
+                """
+                INSERT INTO SY_USER (AUTOKEY, CODE, NAME, EMAIL, MOBILE, UDF_ISADMIN, ISACTIVE)
+                VALUES (@autokey, @code, @name, @email, @mobile, FALSE, TRUE)
+                """,
+                connection);
+            insert.Parameters.AddWithValue("@autokey", nextKey);
+            insert.Parameters.AddWithValue("@code", code);
+            insert.Parameters.AddWithValue("@name", name);
+            insert.Parameters.AddWithValue("@email", email);
+            insert.Parameters.AddWithValue("@mobile", mobile);
+            await insert.ExecuteNonQueryAsync();
+            Console.WriteLine($"  INSERT autokey={nextKey}: {code}/{name} <{email}> mobile={mobile}");
+            nextKey++;
+        }
+    }
+
+    // Remap conducted-by from old department NAME to new teacher NAME.
+    var remapped = 0;
+    foreach (var (oldName, newName) in oldNameToNewName)
+    {
+        if (string.Equals(oldName, newName, StringComparison.OrdinalIgnoreCase))
+            continue;
+        await using var remap = new FbCommand(
+            """
+            UPDATE SL_SODTL
+            SET UDF_CONDUCTEDBY = @newName
+            WHERE TRIM(UDF_CONDUCTEDBY) = @oldName
+            """,
+            connection);
+        remap.Parameters.AddWithValue("@newName", newName);
+        remap.Parameters.AddWithValue("@oldName", oldName);
+        remapped += await remap.ExecuteNonQueryAsync();
+    }
+    Console.WriteLine($"Remapped UDF_CONDUCTEDBY on {remapped} sales-order line(s).");
+
+    await SetMusicTeacherMobilesAsync(connection);
+
+    var after = await LoadNonAdminSyUsersAsync(connection);
+    Console.WriteLine("AFTER:");
+    foreach (var row in after.OrderBy(r => r.Name, StringComparer.OrdinalIgnoreCase))
+        Console.WriteLine($"  {row.Code} | {row.Name} | {row.Email}");
+
+    if (after.Count < roster.Length)
+    {
+        Console.WriteLine($"Expected {roster.Length} teachers, found {after.Count}.");
+        return 1;
+    }
+
+    Console.WriteLine("Teacher rename complete.");
+    return 0;
+}
+
+static (string Code, string Name, string Email, string Mobile)[] MusicTeacherRoster() =>
+[
+    ("Piano", "Sarah Chen", "sarahchen@gmail.com", "+60198765401"),
+    ("Guitar", "David Wong", "davidwong@gmail.com", "+60198765402"),
+    ("Violin", "Michelle Yap", "michelleyap@gmail.com", "+60198765403"),
+    ("Drums", "Kevin Lim", "kevinlim@gmail.com", "+60198765404"),
+    ("Voice", "Amira Hassan", "amirahassan@gmail.com", "+60198765405"),
+    ("Cello", "Jason Ooi", "jasonooi@gmail.com", "+60198765406"),
+    ("Flute", "Lily Chan", "lilychan@gmail.com", "+60198765407"),
+    ("Saxophone", "Marcus Lee", "marcuslee@gmail.com", "+60198765408"),
+    ("Theory", "Nadia Ibrahim", "nadiaibrahim@gmail.com", "+60198765409"),
+    ("Keyboard", "Oliver Tan", "olivertan@gmail.com", "+60198765410"),
+];
+
+/// <summary>Set mock MOBILE on music teachers by email (safe to re-run).</summary>
+static async Task<int> SetMusicTeacherMobilesAsync(FbConnection connection)
+{
+    var updated = 0;
+    foreach (var (_, name, email, mobile) in MusicTeacherRoster())
+    {
+        await using var upd = new FbCommand(
+            """
+            UPDATE SY_USER
+            SET MOBILE = @mobile
+            WHERE LOWER(TRIM(EMAIL)) = LOWER(@email)
+            """,
+            connection);
+        upd.Parameters.AddWithValue("@mobile", mobile);
+        upd.Parameters.AddWithValue("@email", email);
+        var n = await upd.ExecuteNonQueryAsync();
+        updated += n;
+        Console.WriteLine($"{(n > 0 ? "OK" : "MISS")} {name} <{email}> mobile={mobile}");
+    }
+
+    Console.WriteLine($"Updated MOBILE on {updated} SY_USER row(s).");
+    return updated > 0 ? 0 : 1;
+}
+
+static async Task<List<SyUserRow>> LoadNonAdminSyUsersAsync(FbConnection connection)
+{
+    const string sql = """
+        SELECT AUTOKEY, CODE, NAME, EMAIL
+        FROM SY_USER
+        WHERE EMAIL IS NOT NULL
+          AND TRIM(EMAIL) <> ''
+          AND (UDF_ISADMIN IS NULL OR UDF_ISADMIN = FALSE)
+        ORDER BY NAME
+        """;
+
+    var rows = new List<SyUserRow>();
+    await using var cmd = new FbCommand(sql, connection);
+    await using var reader = await cmd.ExecuteReaderAsync();
+    while (await reader.ReadAsync())
+    {
+        var code = reader["CODE"]?.ToString()?.Trim() ?? string.Empty;
+        var name = reader["NAME"]?.ToString()?.Trim() ?? string.Empty;
+        var email = reader["EMAIL"]?.ToString()?.Trim() ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(email))
+            continue;
+        rows.Add(new SyUserRow(Convert.ToInt64(reader["AUTOKEY"]), code, name, email));
+    }
+    return rows;
+}
+
+static List<SyUserRow> OrderSyUsersForMusicRename(List<SyUserRow> all)
+{
+    if (all.Count == 0)
+        return all;
+
+    var ordered = new List<SyUserRow>();
+    var used = new HashSet<long>();
+    var slotMatchers = new Func<SyUserRow, bool>[]
+    {
+        t => t.Email.StartsWith("test1@", StringComparison.OrdinalIgnoreCase),
+        t => t.Email.StartsWith("test2@", StringComparison.OrdinalIgnoreCase),
+        t => t.Email.StartsWith("test3@", StringComparison.OrdinalIgnoreCase),
+        t => t.Email.StartsWith("test4@", StringComparison.OrdinalIgnoreCase)
+             || t.Email.StartsWith("tes4@", StringComparison.OrdinalIgnoreCase),
+        t => t.Email.StartsWith("test5@", StringComparison.OrdinalIgnoreCase),
+    };
+
+    foreach (var matches in slotMatchers)
+    {
+        var match = all.FirstOrDefault(t => !used.Contains(t.AutoKey) && matches(t));
+        if (match.AutoKey == 0 && string.IsNullOrEmpty(match.Email))
+            continue;
+        ordered.Add(match);
+        used.Add(match.AutoKey);
+    }
+
+    foreach (var teacher in all.Where(t => !used.Contains(t.AutoKey)))
+        ordered.Add(teacher);
+
+    return ordered;
+}
+
+/// <summary>
 /// Rename every AR_CUSTOMER to a student display name and set email to {firstname}@gmail.com.
 /// Also syncs sole non-billing branch name/email (creates branch if missing).
 /// </summary>
@@ -1868,4 +2099,5 @@ static async Task SyncSodtlUdfClassDatesAsync(
 }
 
 readonly record struct SyTeacher(string Name, string Email);
+readonly record struct SyUserRow(long AutoKey, string Code, string Name, string Email);
 readonly record struct ClassSchedule(string ItemCode, string TeacherName, string DayOfWeek, decimal UdfClassTime);

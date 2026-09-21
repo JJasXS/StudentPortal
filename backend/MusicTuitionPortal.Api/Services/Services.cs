@@ -1201,7 +1201,8 @@ public class TeacherService
                     t.UserId,
                     string.IsNullOrWhiteSpace(t.UserName) ? t.Email : t.UserName,
                     t.Email,
-                    mappedPortalUserId);
+                    mappedPortalUserId,
+                    t.Mobile);
             })
             .ToList();
     }

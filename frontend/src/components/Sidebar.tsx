@@ -111,7 +111,7 @@ export default function Sidebar({ role, open, onClose }: SidebarProps) {
       )}
       <aside
         className={cn(
-          'fixed inset-y-0 left-0 z-50 flex w-[min(16rem,85vw)] flex-col border-r border-slate-200 bg-white transition-transform duration-200 ease-out lg:static lg:w-64 lg:translate-x-0',
+          'fixed inset-y-0 left-0 z-50 flex h-dvh w-[min(16rem,85vw)] flex-col border-r border-slate-200 bg-white transition-transform duration-200 ease-out lg:sticky lg:top-0 lg:z-0 lg:w-64 lg:translate-x-0 lg:self-start',
           open ? 'translate-x-0' : '-translate-x-full'
         )}
         aria-label="Main navigation"
@@ -127,7 +127,7 @@ export default function Sidebar({ role, open, onClose }: SidebarProps) {
             <X className="h-5 w-5" />
           </button>
         </div>
-        <nav className="flex flex-1 flex-col overflow-y-auto overscroll-contain p-3">
+        <nav className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-3">
           <ul className="space-y-1">
             {items.map((item) => {
               const isDashboard =
@@ -173,19 +173,17 @@ export default function Sidebar({ role, open, onClose }: SidebarProps) {
               );
             })}
           </ul>
-          <ul className="mt-auto space-y-1 border-t border-slate-200 pt-3">
-            <li>
-              <button
-                type="button"
-                onClick={handleLogout}
-                className="flex min-h-11 w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-red-600 transition-colors hover:bg-red-50 hover:text-red-700"
-              >
-                <LogOut className="h-5 w-5 shrink-0" />
-                Log out
-              </button>
-            </li>
-          </ul>
         </nav>
+        <div className="shrink-0 border-t border-slate-200 p-3">
+          <button
+            type="button"
+            onClick={handleLogout}
+            className="flex min-h-11 w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-red-600 transition-colors hover:bg-red-50 hover:text-red-700"
+          >
+            <LogOut className="h-5 w-5 shrink-0" />
+            Log out
+          </button>
+        </div>
       </aside>
     </>
   );

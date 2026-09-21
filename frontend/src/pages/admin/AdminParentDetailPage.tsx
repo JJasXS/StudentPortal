@@ -31,7 +31,7 @@ const mockParents: SqlAccountParent[] = [
   },
 ];
 
-type Tab = 'children' | 'assign' | 'enrollments';
+type Tab = 'assign' | 'enrollments';
 
 type CalendarTeacher = {
   erpUserId: string;
@@ -76,11 +76,9 @@ function newAssignLineRow(): AssignLineRow {
 }
 
 function resolveInitialTab(initialTab: string | undefined): Tab {
-  if (initialTab === 'schedule') return 'assign';
-  if (initialTab === 'assign' || initialTab === 'enrollments' || initialTab === 'children') {
-    return initialTab;
-  }
-  return 'children';
+  if (initialTab === 'enrollments') return 'enrollments';
+  // assign | schedule | children (legacy) | missing → assign
+  return 'assign';
 }
 
 export default function AdminParentDetailPage() {
@@ -95,10 +93,12 @@ export default function AdminParentDetailPage() {
   const [parent, setParent] = useState<SqlAccountParent | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [tab, setTab] = useState<Tab>(() => {
-    const resolved = resolveInitialTab(initialTab);
-    return initialBranch && resolved === 'children' ? 'assign' : resolved;
-  });
+  const [tab, setTab] = useState<Tab>(() => resolveInitialTab(initialTab));
+
+  // Keep tab in sync when navigating with ?tab=… (e.g. Manage student → assign)
+  useEffect(() => {
+    setTab(resolveInitialTab(searchParams.get('tab')?.trim() ?? undefined));
+  }, [searchParams]);
 
   const [assignBranch, setAssignBranch] = useState('');
   const [assignLines, setAssignLines] = useState<AssignLineRow[]>([newAssignLineRow()]);
@@ -167,7 +167,7 @@ export default function AdminParentDetailPage() {
       );
       if (!match) {
         setParent(null);
-        setError('Parent not found.');
+        setError('Student not found.');
         return;
       }
       setParent(match);
@@ -277,15 +277,15 @@ export default function AdminParentDetailPage() {
   };
 
   if (loading) {
-    return <p className="text-sm text-slate-500">Loading parent…</p>;
+    return <p className="text-sm text-slate-500">Loading student…</p>;
   }
 
   if (!parent) {
     return (
       <div className="space-y-4">
-        <p className="text-sm text-red-600">{error || 'Parent not found.'}</p>
+        <p className="text-sm text-red-600">{error || 'Student not found.'}</p>
         <Link to="/admin/parents" className="text-primary-600 hover:underline">
-          Back to parents
+          Back to students
         </Link>
       </div>
     );
@@ -297,7 +297,6 @@ export default function AdminParentDetailPage() {
 
       <PageHeader
         title={parent.parentName}
-        description={`${parent.customerCode}${parent.parentEmail ? ` · ${parent.parentEmail}` : ''}`}
         actions={
           <div className="flex flex-wrap items-center gap-2">
             <Link to="/admin/parents">
@@ -316,84 +315,64 @@ export default function AdminParentDetailPage() {
 
       <Card>
         <SlidingTabs
-          tabs={['children', 'assign', 'enrollments'] as const}
+          tabs={['assign', 'enrollments'] as const}
           value={tab}
           onChange={(v) => setTab(v as Tab)}
           labels={{
-            children: 'Children',
             assign: 'Assign course',
             enrollments: 'Enrollments',
           }}
-        />
-
-        <CardContent className="p-4">
-          {tab === 'children' && (
-            <div className="overflow-x-auto rounded-lg border border-slate-200">
-              <table className="min-w-full text-sm">
-                <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
-                  <tr>
-                    <th className="px-3 py-2 font-medium">Branch</th>
-                    <th className="px-3 py-2 font-medium">Attention</th>
-                    <th className="px-3 py-2 font-medium">Email</th>
-                    <th className="px-3 py-2 font-medium">Phone</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {parent.children.map((child, index) => (
-                    <tr key={`${child.branchName}-${index}`} className="hover:bg-slate-50/50">
-                      <td className="px-3 py-2 font-medium text-slate-900">{child.branchName}</td>
-                      <td className="px-3 py-2 text-slate-600">{child.attention || '—'}</td>
-                      <td className="px-3 py-2 text-slate-600">{child.email || '—'}</td>
-                      <td className="px-3 py-2 text-slate-600">{child.phone || '—'}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-
-          {tab === 'assign' && (
-            <div className="space-y-3">
-              <div className="space-y-1">
-                <Label htmlFor="assignBranch">Child</Label>
-                <Select
-                  id="assignBranch"
-                  value={assignBranch}
-                  onChange={(e) => setAssignBranch(e.target.value)}
-                  className="max-w-xs"
-                >
-                  {parent.children.map((c) => (
-                    <option key={c.branchName} value={c.branchName}>
-                      {c.branchName}
-                      {c.attention ? ` (${c.attention})` : ''}
-                    </option>
-                  ))}
-                </Select>
-              </div>
+          trailing={
+            tab === 'assign' ? (
               <Input
                 type="search"
                 placeholder="Filter classes…"
                 value={classFilter}
                 onChange={(e) => setClassFilter(e.target.value)}
                 disabled={courseOptionsLoading}
-                className="max-w-xs"
+                className="h-8 w-48"
               />
+            ) : undefined
+          }
+        />
+
+        <CardContent className="p-4 pt-4 sm:p-6 sm:pt-6">
+          {tab === 'assign' && (
+            <div className="space-y-3">
+              {parent.children.length > 1 && (
+                <div className="space-y-1">
+                  <Label htmlFor="assignBranch">Branch</Label>
+                  <Select
+                    id="assignBranch"
+                    value={assignBranch}
+                    onChange={(e) => setAssignBranch(e.target.value)}
+                    className="max-w-xs"
+                  >
+                    {parent.children.map((c) => (
+                      <option key={c.branchName} value={c.branchName}>
+                        {c.branchName}
+                        {c.attention ? ` (${c.attention})` : ''}
+                      </option>
+                    ))}
+                  </Select>
+                </div>
+              )}
               <div className="overflow-x-auto rounded-lg border border-slate-200">
                 <table className="min-w-full text-sm">
                   <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
                     <tr>
-                      <th className="px-2 py-2 font-medium">Class</th>
-                      <th className="px-2 py-2 font-medium">Teacher</th>
-                      <th className="px-2 py-2 font-medium">From</th>
-                      <th className="px-2 py-2 font-medium">To</th>
-                      <th className="px-2 py-2 font-medium">Days</th>
-                      <th className="w-10 px-1 py-2" />
+                      <th className="px-3 py-3 font-medium">Class</th>
+                      <th className="px-3 py-3 font-medium">Teacher</th>
+                      <th className="px-3 py-3 font-medium">From</th>
+                      <th className="px-3 py-3 font-medium">To</th>
+                      <th className="px-3 py-3 font-medium">Days</th>
+                      <th className="w-10 px-2 py-3" />
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
                     {assignLines.map((line) => (
                       <tr key={line.id} className="align-top">
-                        <td className="px-2 py-1.5">
+                        <td className="px-3 py-3">
                           <Select
                             value={line.itemCode}
                             onChange={(e) => updateAssignLine(line.id, { itemCode: e.target.value })}
@@ -408,7 +387,7 @@ export default function AdminParentDetailPage() {
                             ))}
                           </Select>
                         </td>
-                        <td className="px-2 py-1.5">
+                        <td className="px-3 py-3">
                           <Select
                             value={line.teacherUserId}
                             onChange={(e) =>
@@ -429,7 +408,7 @@ export default function AdminParentDetailPage() {
                             ))}
                           </Select>
                         </td>
-                        <td className="px-2 py-1.5">
+                        <td className="px-3 py-3">
                           <Input
                             type="date"
                             value={line.startDate}
@@ -437,7 +416,7 @@ export default function AdminParentDetailPage() {
                             className="min-w-[8.5rem] text-sm"
                           />
                         </td>
-                        <td className="px-2 py-1.5">
+                        <td className="px-3 py-3">
                           <Input
                             type="date"
                             value={line.endDate}
@@ -445,7 +424,7 @@ export default function AdminParentDetailPage() {
                             className="min-w-[8.5rem] text-sm"
                           />
                         </td>
-                        <td className="px-2 py-1.5">
+                        <td className="px-3 py-3">
                           <div className="flex flex-wrap gap-0.5">
                             {WEEKDAYS.map((day) => {
                               const active = line.classDays.includes(day.value);
@@ -466,7 +445,7 @@ export default function AdminParentDetailPage() {
                             })}
                           </div>
                         </td>
-                        <td className="px-1 py-1.5 text-center">
+                        <td className="px-2 py-3 text-center">
                           <button
                             type="button"
                             className="rounded p-1 text-slate-400 hover:text-red-600 disabled:opacity-30"
@@ -500,7 +479,7 @@ export default function AdminParentDetailPage() {
                   }
                   onClick={() => void handleAssignCourse()}
                 >
-                  {assignSaving ? 'Creating…' : 'Create sales order'}
+                  {assignSaving ? 'Creating…' : 'Create record'}
                 </Button>
               </div>
               {isMock && (
@@ -511,32 +490,47 @@ export default function AdminParentDetailPage() {
 
           {tab === 'enrollments' && (
             <div className="space-y-3">
-              <div className="flex flex-wrap items-end gap-2">
-                <div className="space-y-1">
-                  <Label htmlFor="enrollBranch">Child</Label>
-                  <Select
-                    id="enrollBranch"
-                    value={enrollmentBranch}
-                    onChange={(e) => setEnrollmentBranch(e.target.value)}
-                    className="w-40"
+              {parent.children.length > 1 && (
+                <div className="flex flex-wrap items-end gap-2">
+                  <div className="space-y-1">
+                    <Label htmlFor="enrollBranch">Branch</Label>
+                    <Select
+                      id="enrollBranch"
+                      value={enrollmentBranch}
+                      onChange={(e) => setEnrollmentBranch(e.target.value)}
+                      className="w-40"
+                    >
+                      {parent.children.map((c) => (
+                        <option key={c.branchName} value={c.branchName}>
+                          {c.branchName}
+                        </option>
+                      ))}
+                    </Select>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => void loadEnrollments(enrollmentBranch)}
                   >
-                    {parent.children.map((c) => (
-                      <option key={c.branchName} value={c.branchName}>
-                        {c.branchName}
-                      </option>
-                    ))}
-                  </Select>
+                    <RefreshCw className="mr-1 h-4 w-4" />
+                    Refresh
+                  </Button>
                 </div>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => void loadEnrollments(enrollmentBranch)}
-                >
-                  <RefreshCw className="mr-1 h-4 w-4" />
-                  Refresh
-                </Button>
-              </div>
+              )}
+              {parent.children.length <= 1 && (
+                <div className="flex justify-end">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => void loadEnrollments(enrollmentBranch)}
+                  >
+                    <RefreshCw className="mr-1 h-4 w-4" />
+                    Refresh
+                  </Button>
+                </div>
+              )}
               {enrollmentsLoading ? (
                 <p className="text-sm text-slate-500">Loading enrollments…</p>
               ) : (

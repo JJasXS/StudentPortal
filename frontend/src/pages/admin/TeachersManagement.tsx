@@ -12,9 +12,9 @@ import { cn } from '@/utils/cn';
 import { getApiErrorMessage } from '@/utils/apiError';
 
 const mockStaff: SqlAccountCalendarTeacher[] = [
-  { erpUserId: 'SALES', fullName: 'SALES', email: 'test1@gmail.com' },
-  { erpUserId: 'PURCHASING', fullName: 'PURCHASING', email: 'test2@gmail.com' },
-  { erpUserId: 'API', fullName: 'API', email: 'test3@gmail.com' },
+  { erpUserId: 'Piano', fullName: 'Sarah Chen', email: 'sarahchen@gmail.com', mobile: '+60198765401' },
+  { erpUserId: 'Guitar', fullName: 'David Wong', email: 'davidwong@gmail.com', mobile: '+60198765402' },
+  { erpUserId: 'Violin', fullName: 'Michelle Yap', email: 'michelleyap@gmail.com', mobile: '+60198765403' },
 ];
 
 export default function TeachersManagement() {
@@ -54,7 +54,8 @@ export default function TeachersManagement() {
       (member) =>
         member.fullName.toLowerCase().includes(term) ||
         member.erpUserId.toLowerCase().includes(term) ||
-        member.email.toLowerCase().includes(term)
+        member.email.toLowerCase().includes(term) ||
+        (member.mobile ?? '').toLowerCase().includes(term)
     );
   }, [staff, search]);
 
@@ -62,7 +63,6 @@ export default function TeachersManagement() {
     <div>
       <PageHeader
         title="User Management"
-        description="View-only list from SQL Account SY_USER (non-admin users)."
         actions={
           <div className="flex flex-wrap items-center gap-2">
             <Button variant="outline" onClick={() => void load()} disabled={loading}>
@@ -84,7 +84,7 @@ export default function TeachersManagement() {
         <SearchBox
           value={search}
           onChange={setSearch}
-          placeholder="Search name, user code, or email..."
+          placeholder="Search name, code, email, or mobile..."
           className="max-w-md"
         />
         <div className="flex items-center gap-2 text-sm text-slate-500">
@@ -123,6 +123,14 @@ export default function TeachersManagement() {
                   sortType: 'text',
                   getSortValue: (m) => m.email,
                   render: (m) => m.email || '—',
+                },
+                {
+                  key: 'mobile',
+                  header: 'Mobile',
+                  sortable: true,
+                  sortType: 'text',
+                  getSortValue: (m) => m.mobile ?? '',
+                  render: (m) => m.mobile || '—',
                 },
               ]}
               emptyMessage={search ? 'No staff match your search.' : 'No non-admin SY_USER records found.'}

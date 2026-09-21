@@ -237,7 +237,8 @@ public record SqlAccountCalendarTeacherDto(
     string ErpUserId,
     string FullName,
     string Email,
-    Guid? PortalUserId);
+    Guid? PortalUserId,
+    string? Mobile = null);
 
 public record SqlAccountChildEnrollmentDto(
     int DocKey,

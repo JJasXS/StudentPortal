@@ -3,6 +3,7 @@ export interface SqlAccountCalendarTeacher {
   fullName: string;
   email: string;
   portalUserId?: string | null;
+  mobile?: string | null;
 }
 
 export interface ErpCalendarEvent {

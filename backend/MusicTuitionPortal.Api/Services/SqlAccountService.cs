@@ -24,7 +24,7 @@ public record SqlAccountCustomerMatch(
     string? ParentEmail,
     IReadOnlyList<SqlAccountChildDto> Children);
 
-public record SqlAccountStaffUserMatch(string UserId, string UserName, string Email, bool IsAdmin);
+public record SqlAccountStaffUserMatch(string UserId, string UserName, string Email, bool IsAdmin, string? Mobile = null);
 
 public class SqlAccountService
 {
@@ -85,26 +85,27 @@ public class SqlAccountService
     public async Task<IReadOnlyList<SqlAccountStaffUserMatch>> GetStaffTeachersAsync(
         CancellationToken cancellationToken = default)
     {
-        if (IsConfigured)
-        {
-            try
-            {
-                var rows = await GetDocumentsAsync(UserResource, cancellationToken);
-                var teachers = rows
-                    .Select(MapStaffUser)
-                    .Where(s => !s.IsAdmin)
-                    .OrderBy(s => s.UserName, StringComparer.OrdinalIgnoreCase)
-                    .ToList();
-                if (teachers.Count > 0)
-                    return teachers;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "SQL Account user teacher list failed; trying local database");
-            }
-        }
+        var local = await _localDb.GetStaffTeachersAsync(cancellationToken);
+        if (local.Count > 0)
+            return local;
 
-        return await _localDb.GetStaffTeachersAsync(cancellationToken);
+        if (!IsConfigured)
+            return Array.Empty<SqlAccountStaffUserMatch>();
+
+        try
+        {
+            var rows = await GetDocumentsAsync(UserResource, cancellationToken);
+            return rows
+                .Select(MapStaffUser)
+                .Where(s => !s.IsAdmin)
+                .OrderBy(s => s.UserName, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "SQL Account user teacher list failed");
+            return Array.Empty<SqlAccountStaffUserMatch>();
+        }
     }
 
     public async Task<SqlAccountCustomerMatch?> FindCustomerByUdfEmailAsync(
@@ -157,7 +158,14 @@ public class SqlAccountService
         return staff
             .Where(s => s.IsAdmin == admins && !string.IsNullOrWhiteSpace(s.Email))
             .GroupBy(s => s.Email.Trim(), StringComparer.OrdinalIgnoreCase)
-            .Select(g => new DevLoginOptionDto(g.First().UserName, g.Key))
+            .Select(g =>
+            {
+                var first = g.First();
+                var label = !admins && !string.IsNullOrWhiteSpace(first.UserId)
+                    ? $"{first.UserName} ({first.UserId})"
+                    : first.UserName;
+                return new DevLoginOptionDto(label, g.Key);
+            })
             .OrderBy(p => p.Name, StringComparer.OrdinalIgnoreCase)
             .ToList();
     }
@@ -572,7 +580,8 @@ public class SqlAccountService
         var userId = GetString(row, "code") ?? GetString(row, "userid") ?? string.Empty;
         var userName = GetString(row, "name") ?? GetString(row, "username") ?? email;
         var isAdmin = ParseIsAdmin(row);
-        return new SqlAccountStaffUserMatch(userId, userName, email, isAdmin);
+        var mobile = GetString(row, "mobile") ?? GetString(row, "phone") ?? GetString(row, "phone1");
+        return new SqlAccountStaffUserMatch(userId, userName, email, isAdmin, mobile);
     }
 
     private static bool ParseIsAdmin(JsonElement row)

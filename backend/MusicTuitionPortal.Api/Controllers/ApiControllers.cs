@@ -730,6 +730,7 @@ public class TeachersController : ControllerBase
             fullName = t.FullName,
             email = t.Email,
             portalUserId = t.PortalUserId?.ToString(),
+            mobile = t.Mobile,
         }));
 
     [HttpGet("{id:guid}")]
