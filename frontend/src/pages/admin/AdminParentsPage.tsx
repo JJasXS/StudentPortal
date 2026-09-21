@@ -41,16 +41,17 @@ function studentDisplayName(child: SqlAccountChild): string {
 function flattenStudents(parents: SqlAccountParent[]): StudentListRow[] {
   const rows: StudentListRow[] = [];
   for (const parent of parents) {
-    for (const child of parent.children) {
-      rows.push({
-        id: `${parent.customerCode}|${child.branchName}`,
-        studentName: studentDisplayName(child),
-        branchName: child.branchName,
-        customerCode: parent.customerCode,
-        parentName: parent.parentName,
-        parentEmail: parent.parentEmail,
-      });
-    }
+    // One customer = one student: prefer company/parentName as display name
+    const sole = parent.children[0];
+    if (!sole) continue;
+    rows.push({
+      id: parent.customerCode,
+      studentName: parent.parentName?.trim() || studentDisplayName(sole),
+      branchName: sole.branchName,
+      customerCode: parent.customerCode,
+      parentName: parent.parentName,
+      parentEmail: parent.parentEmail,
+    });
   }
   return rows.sort((a, b) => a.studentName.localeCompare(b.studentName, undefined, { sensitivity: 'base' }));
 }
@@ -165,7 +166,7 @@ export default function AdminParentsPage() {
     <div>
       <PageHeader
         title="User Management"
-        description="All students from SQL Account (AR_CUSTOMERBRANCH). Use the menu to manage enrollments and schedules."
+        description="Students from SQL Account (one AR_CUSTOMER = one student). Use the menu to manage enrollments and schedules."
         actions={
           <div className="flex flex-wrap items-center gap-2">
             <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600">
@@ -200,7 +201,7 @@ export default function AdminParentsPage() {
       </div>
 
       <Card>
-        <CardContent className="divide-y divide-slate-100 p-0">
+        <CardContent className="p-0">
           {loading ? (
             <div className="px-6 py-10 text-center text-sm text-slate-500">Loading students…</div>
           ) : filtered.length === 0 ? (
@@ -208,26 +209,37 @@ export default function AdminParentsPage() {
               {search ? 'No students match your search.' : 'No students found in SQL Account.'}
             </div>
           ) : (
-            filtered.map((row) => (
-              <div
-                key={row.id}
-                className="flex items-center gap-3 px-4 py-4 sm:px-6"
-              >
-                <div className="min-w-0 flex-1">
-                  <p className="font-medium text-slate-900">{row.studentName}</p>
-                  <p className="text-sm text-slate-500">
-                    Branch {row.branchName} · {row.parentName} ({row.customerCode})
-                  </p>
-                  {row.parentEmail && (
-                    <p className="mt-0.5 text-xs text-slate-400">{row.parentEmail}</p>
-                  )}
-                </div>
-                <StudentActionsMenu
-                  customerCode={row.customerCode}
-                  branchName={row.branchName}
-                />
-              </div>
-            ))
+            <div className="overflow-x-auto">
+              <table className="min-w-full text-sm">
+                <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+                  <tr>
+                    <th className="px-4 py-3 font-medium sm:px-6">Name</th>
+                    <th className="px-4 py-3 font-medium">Branch</th>
+                    <th className="px-4 py-3 font-medium">Code</th>
+                    <th className="px-4 py-3 font-medium">Email</th>
+                    <th className="px-4 py-3 font-medium sm:px-6">
+                      <span className="sr-only">Actions</span>
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {filtered.map((row) => (
+                    <tr key={row.id} className="hover:bg-slate-50/70">
+                      <td className="px-4 py-3 font-medium text-slate-900 sm:px-6">{row.studentName}</td>
+                      <td className="px-4 py-3 text-slate-700">{row.branchName}</td>
+                      <td className="px-4 py-3 font-mono text-slate-600">{row.customerCode}</td>
+                      <td className="px-4 py-3 text-slate-600">{row.parentEmail || '—'}</td>
+                      <td className="px-4 py-3 text-right sm:px-6">
+                        <StudentActionsMenu
+                          customerCode={row.customerCode}
+                          branchName={row.branchName}
+                        />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
         </CardContent>
       </Card>

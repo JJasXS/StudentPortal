@@ -10,7 +10,6 @@ import {
   LogOut,
   X,
   History,
-  BookOpenCheck,
   CalendarOff,
   GraduationCap,
 } from 'lucide-react';
@@ -18,7 +17,7 @@ import { useAuth } from '@/context/AuthContext';
 import { CentreMarkInline } from '@/components/branding/CentreMark';
 import { isUserManagementPath } from '@/components/admin/UserManagementSwitcher';
 import { cn } from '@/utils/cn';
-import { isStudentPortalRole, learnerPortalPath, parentChildrenPath } from '@/utils/learnerPortal';
+import { isStudentPortalRole } from '@/utils/learnerPortal';
 import { dashboardNotifyApi, homeworkApi } from '@/api/resources';
 import { NOTIFY_READS_CHANGED } from '@/utils/notifyEvents';
 import type { UserRole } from '@/types';
@@ -27,7 +26,6 @@ interface NavItem {
   label: string;
   path: string;
   icon: React.ComponentType<{ className?: string }>;
-  parentLabel?: string;
 }
 
 const adminNav: NavItem[] = [
@@ -51,8 +49,7 @@ const teacherNav: NavItem[] = [
 const learnerNav: NavItem[] = [
   { label: 'Dashboard', path: '/student/dashboard', icon: LayoutDashboard },
   { label: 'Schedule', path: '/student/schedule', icon: CalendarDays },
-  { label: 'My Courses', path: '/student/courses', icon: GraduationCap, parentLabel: 'Assignment' },
-  { label: 'Homework', path: '/student/homework', icon: BookOpenCheck },
+  { label: 'Assignment', path: '/student/courses', icon: GraduationCap },
   { label: 'Leave', path: '/student/leave', icon: CalendarOff },
   { label: 'Announcements', path: '/student/announcements', icon: Megaphone },
 ];
@@ -76,7 +73,7 @@ export default function Sidebar({ role, open, onClose }: SidebarProps) {
   const [pendingHomeworkCount, setPendingHomeworkCount] = useState(0);
 
   useEffect(() => {
-    if (role !== 'Parent') return;
+    if (!isStudentPortalRole(role)) return;
 
     const refresh = () => {
       dashboardNotifyApi
@@ -96,12 +93,6 @@ export default function Sidebar({ role, open, onClose }: SidebarProps) {
 
   const items = isStudentPortalRole(role)
     ? learnerNav
-        .filter((item) => !(role === 'Parent' && item.path === '/student/homework'))
-        .map((item) => ({
-          ...item,
-          label: role === 'Parent' && item.parentLabel ? item.parentLabel : item.label,
-          path: learnerPortalPath(item.path, role),
-        }))
     : navByRole[role as Exclude<UserRole, 'Parent'>];
 
   const handleLogout = () => {
@@ -140,9 +131,9 @@ export default function Sidebar({ role, open, onClose }: SidebarProps) {
           <ul className="space-y-1">
             {items.map((item) => {
               const isDashboard =
-                role === 'Parent' &&
-                (item.path === '/parent/dashboard' || item.path.endsWith('/dashboard'));
-              const isAssignment = role === 'Parent' && item.path === parentChildrenPath();
+                isStudentPortalRole(role) && item.path.endsWith('/dashboard');
+              const isAssignment =
+                isStudentPortalRole(role) && item.path === '/student/courses';
               const showDot =
                 (isDashboard && unreadNotifyCount > 0) ||
                 (isAssignment && pendingHomeworkCount > 0);

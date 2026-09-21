@@ -4,6 +4,11 @@ public record UserDto(Guid Id, string FullName, string Email, string? PhoneNumbe
 public record LoginRequest(string Email, string Password);
 public record LoginMethodRequest(string Email);
 public record LoginMethodResponse(string Method, bool BypassOtp);
+public record DevLoginOptionDto(string Name, string Email);
+public record DevLoginDirectoryDto(
+    IReadOnlyList<DevLoginOptionDto> Admins,
+    IReadOnlyList<DevLoginOptionDto> Teachers,
+    IReadOnlyList<DevLoginOptionDto> Students);
 public record UdfEmailLoginRequest(string Email);
 public record RequestLoginOtpRequest(string Email);
 public record RequestLoginOtpResponse(string Message, bool BypassOtp, string? OtpCode);
@@ -206,12 +211,27 @@ public record NotificationDto(
 
 public record SqlAccountChildDto(string BranchName, string? Attention, string? Email, string? Phone);
 
+/// <summary>One AR_CUSTOMER = one student (sole non-billing branch kept for SO compatibility).</summary>
+public record SqlAccountStudentDto(
+    string CustomerCode,
+    string StudentName,
+    string? Email,
+    string? Phone,
+    string BranchName);
+
 public record SqlAccountParentDto(
     string CustomerCode, string ParentName, string? ParentEmail, IReadOnlyList<SqlAccountChildDto> Children);
 
 public record SqlAccountStatusDto(bool Configured, bool Connected, string? DatabasePath);
 
 public record SqlAccountMyChildrenDto(string ParentName, IReadOnlyList<SqlAccountChildDto> Children);
+
+public record SqlAccountMyStudentDto(
+    string CustomerCode,
+    string StudentName,
+    string? Email,
+    string? Phone,
+    string BranchName);
 
 public record SqlAccountCalendarTeacherDto(
     string ErpUserId,

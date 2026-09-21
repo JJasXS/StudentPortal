@@ -60,24 +60,26 @@ public class SqlAccountService
 
         var normalized = email.Trim();
 
-        if (IsConfigured)
-        {
-            try
-            {
-                var rows = await GetDocumentsAsync(UserResource, cancellationToken);
-                var match = rows
-                    .Select(MapStaffUser)
-                    .FirstOrDefault(a => EmailMatches(a.Email, normalized));
-                if (match != null)
-                    return match;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "SQL Account user email lookup failed for {Email}", normalized);
-            }
-        }
+        var local = await _localDb.FindStaffByEmailAsync(normalized, cancellationToken);
+        if (local != null)
+            return local;
 
-        return await _localDb.FindStaffByEmailAsync(normalized, cancellationToken);
+        // Local PORTAL.FDB is authoritative. Don't wait on the cloud user API for every login.
+        if (_localDb.CanReadLocalDb || !IsConfigured)
+            return null;
+
+        try
+        {
+            var rows = await GetDocumentsAsync(UserResource, cancellationToken);
+            return rows
+                .Select(MapStaffUser)
+                .FirstOrDefault(a => EmailMatches(a.Email, normalized));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "SQL Account user email lookup failed for {Email}", normalized);
+            return null;
+        }
     }
 
     public async Task<IReadOnlyList<SqlAccountStaffUserMatch>> GetStaffTeachersAsync(
@@ -109,23 +111,55 @@ public class SqlAccountService
         string email,
         CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(email) || !IsConfigured)
+        if (string.IsNullOrWhiteSpace(email))
             return null;
 
         var normalized = email.Trim();
 
+        // PORTAL.FDB branch email is the login address. Do not match AR_CUSTOMER UDF email.
+        var local = await _localDb.FindCustomerByUdfEmailAsync(normalized, cancellationToken);
+        if (local != null)
+            return local;
+
+        if (!IsConfigured)
+            return null;
+
         try
         {
-            var fromScan = await MatchFromAllCustomersAsync(normalized, cancellationToken);
-            if (fromScan != null)
-                return fromScan;
+            return await MatchFromAllCustomersAsync(normalized, cancellationToken);
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "SQL Account parent branch email lookup failed for {Email}", normalized);
+            _logger.LogWarning(ex, "SQL Account branch email lookup failed for {Email}", normalized);
+            return null;
         }
+    }
 
-        return await _localDb.FindCustomerByUdfEmailAsync(normalized, cancellationToken);
+    /// <summary>Student logins from local AR_CUSTOMERBRANCH.EMAIL (non-billing branch).</summary>
+    public async Task<IReadOnlyList<DevLoginOptionDto>> ListLocalStudentLoginsAsync(
+        CancellationToken cancellationToken = default)
+    {
+        var parents = await _localDb.GetParentChildrenAsync(cancellationToken);
+        return parents
+            .Where(p => !string.IsNullOrWhiteSpace(p.ParentEmail))
+            .GroupBy(p => p.ParentEmail!.Trim(), StringComparer.OrdinalIgnoreCase)
+            .Select(g => new DevLoginOptionDto(g.First().ParentName, g.Key))
+            .OrderBy(p => p.Name, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    /// <summary>Admin and teacher logins from local SY_USER.EMAIL.</summary>
+    public async Task<IReadOnlyList<DevLoginOptionDto>> ListLocalStaffLoginsAsync(
+        bool admins,
+        CancellationToken cancellationToken = default)
+    {
+        var staff = await _localDb.GetStaffUsersAsync(cancellationToken);
+        return staff
+            .Where(s => s.IsAdmin == admins && !string.IsNullOrWhiteSpace(s.Email))
+            .GroupBy(s => s.Email.Trim(), StringComparer.OrdinalIgnoreCase)
+            .Select(g => new DevLoginOptionDto(g.First().UserName, g.Key))
+            .OrderBy(p => p.Name, StringComparer.OrdinalIgnoreCase)
+            .ToList();
     }
 
     private async Task<SqlAccountCustomerMatch?> MatchFromAllCustomersAsync(
@@ -497,9 +531,7 @@ public class SqlAccountService
         var children = ParseBranches(customer);
         var parentEmail = children
             .Select(c => c.Email)
-            .FirstOrDefault(e => !string.IsNullOrWhiteSpace(e))
-            ?? GetString(customer, "udf_email")
-            ?? GetString(customer, "udf_emaill");
+            .FirstOrDefault(e => !string.IsNullOrWhiteSpace(e));
 
         return new SqlAccountParentDto(code, parentName, parentEmail, children);
     }

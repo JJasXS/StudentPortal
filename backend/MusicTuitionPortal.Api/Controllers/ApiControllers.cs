@@ -62,6 +62,18 @@ public class AuthController : ControllerBase
         }
     }
 
+    [HttpGet("dev-logins")]
+    [AllowAnonymous]
+    public async Task<IActionResult> GetDevLogins(CancellationToken cancellationToken)
+    {
+        var env = HttpContext.RequestServices.GetRequiredService<IWebHostEnvironment>();
+        if (!env.IsDevelopment())
+            return NotFound();
+
+        var directory = await _authService.GetDevLoginDirectoryAsync(cancellationToken);
+        return Ok(directory);
+    }
+
     [HttpPost("login/otp/request")]
     [AllowAnonymous]
     public async Task<IActionResult> RequestLoginOtp([FromBody] RequestLoginOtpRequest request)
@@ -265,7 +277,13 @@ public class UsersController : ControllerBase
 public class StudentsController : ControllerBase
 {
     private readonly StudentService _service;
-    public StudentsController(StudentService service) => _service = service;
+    private readonly ParentService _parentService;
+
+    public StudentsController(StudentService service, ParentService parentService)
+    {
+        _service = service;
+        _parentService = parentService;
+    }
 
     [HttpGet]
     public async Task<IActionResult> GetAll() => Ok(MapList(await _service.GetAllAsync()));
@@ -277,6 +295,140 @@ public class StudentsController : ControllerBase
         var userId = Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
         var profile = await _service.GetSelfProfileAsync(userId);
         return profile == null ? NotFound() : Ok(MapSelf(profile));
+    }
+
+    [HttpGet("me/sql-account")]
+    [Authorize(Roles = "Student")]
+    public async Task<IActionResult> GetMySqlAccount(CancellationToken cancellationToken)
+    {
+        var email = User.FindFirst(ClaimTypes.Email)?.Value;
+        if (string.IsNullOrWhiteSpace(email))
+            return Unauthorized(new { message = "Email not found in token." });
+
+        var student = await _parentService.GetSqlAccountStudentForEmailAsync(email, cancellationToken);
+        if (student == null)
+            return NotFound(new { message = "No SQL Account student found for this email." });
+
+        return Ok(new
+        {
+            customerCode = student.CustomerCode,
+            studentName = student.StudentName,
+            email = student.Email,
+            phone = student.Phone,
+            branchName = student.BranchName,
+        });
+    }
+
+    [HttpGet("me/outstanding-invoices")]
+    [Authorize(Roles = "Student")]
+    public async Task<IActionResult> GetMyOutstandingInvoices(CancellationToken cancellationToken)
+    {
+        var email = User.FindFirst(ClaimTypes.Email)?.Value;
+        if (string.IsNullOrWhiteSpace(email))
+            return Unauthorized(new { message = "Email not found in token." });
+
+        var invoices = await _parentService.GetOutstandingInvoicesForEmailAsync(email, cancellationToken);
+        return Ok(new
+        {
+            invoices = invoices.Select(i => new
+            {
+                docKey = i.DocKey,
+                docNo = i.DocNo,
+                docDate = i.DocDate,
+                dueDate = i.DueDate,
+                docAmt = i.DocAmt,
+                paymentAmt = i.PaymentAmt,
+                outstanding = i.Outstanding,
+                description = i.Description,
+            }),
+        });
+    }
+
+    [HttpGet("me/calendar-events")]
+    [Authorize(Roles = "Student")]
+    public async Task<IActionResult> GetMyCalendarEvents(
+        [FromQuery] string? branchName,
+        CancellationToken cancellationToken)
+    {
+        var email = User.FindFirst(ClaimTypes.Email)?.Value;
+        if (string.IsNullOrWhiteSpace(email))
+            return Unauthorized(new { message = "Email not found in token." });
+
+        var events = await _parentService.GetCalendarEventsForEmailAsync(email, branchName, cancellationToken);
+        return Ok(events.Select(MapErpCalendarEvent).ToList());
+    }
+
+    private static object MapErpCalendarEvent(ErpCalendarEventDto e) => new
+    {
+        id = e.Id,
+        docKey = e.DocKey,
+        seq = e.Seq,
+        classId = e.ClassId?.ToString(),
+        courseId = e.CourseId?.ToString(),
+        className = e.ClassName,
+        courseName = e.CourseName,
+        teacherUserId = e.TeacherUserId?.ToString(),
+        teacherName = e.TeacherName,
+        studentName = e.StudentName,
+        branchName = e.BranchName,
+        itemCode = e.ItemCode,
+        customerCode = e.CustomerCode,
+        sessionDate = e.SessionDate,
+        startTime = e.StartTime,
+        endTime = e.EndTime,
+        status = e.Status,
+    };
+
+    [HttpGet("me/enrollments")]
+    [Authorize(Roles = "Student")]
+    public async Task<IActionResult> GetMyEnrollments(CancellationToken cancellationToken)
+    {
+        var email = User.FindFirst(ClaimTypes.Email)?.Value;
+        if (string.IsNullOrWhiteSpace(email))
+            return Unauthorized(new { message = "Email not found in token." });
+
+        var student = await _parentService.GetSqlAccountStudentForEmailAsync(email, cancellationToken);
+        if (student == null)
+            return NotFound(new { message = "No SQL Account student found for this email." });
+
+        var result = await _parentService.GetSqlAccountChildEnrollmentsForEmailAsync(
+            email,
+            student.BranchName,
+            cancellationToken);
+
+        if (result == null)
+            return NotFound(new { message = "Enrollments not found." });
+
+        return Ok(new
+        {
+            customerCode = result.CustomerCode,
+            branchName = result.BranchName,
+            enrollments = result.Enrollments.Select(e => new
+            {
+                docKey = e.DocKey,
+                seq = e.Seq,
+                docNo = e.DocNo,
+                docDate = e.DocDate,
+                className = e.ClassName,
+                itemCode = e.ItemCode,
+                qty = e.Qty,
+                unitPrice = e.UnitPrice,
+                amount = e.Amount,
+                deliveryDate = e.DeliveryDate,
+                classDay = e.ClassDay,
+                classTime = e.ClassTime,
+                classDate = e.ClassDate,
+                studentName = e.StudentName,
+                conductedBy = e.ConductedBy,
+                linkedClassId = e.LinkedClassId,
+                linkedClassName = e.LinkedClassName,
+                linkedClassDayOfWeek = e.LinkedClassDayOfWeek,
+                linkedClassStartTime = e.LinkedClassStartTime,
+                linkedClassEndTime = e.LinkedClassEndTime,
+                linkedClassTeacherName = e.LinkedClassTeacherName,
+                nextSessionDate = e.NextSessionDate,
+            }),
+        });
     }
 
     [HttpPut("me")]
@@ -379,7 +531,7 @@ public class ParentsController : ControllerBase
     public async Task<IActionResult> GetAll() => Ok(MapList(await _service.GetAllAsync()));
 
     [HttpGet("me/sql-account-children")]
-    [Authorize(Roles = "Parent")]
+    [Authorize(Roles = "Student")]
     public async Task<IActionResult> GetMySqlAccountChildren(CancellationToken cancellationToken)
     {
         var email = User.FindFirst(System.Security.Claims.ClaimTypes.Email)?.Value;
@@ -401,7 +553,7 @@ public class ParentsController : ControllerBase
     }
 
     [HttpGet("me/outstanding-invoices")]
-    [Authorize(Roles = "Parent")]
+    [Authorize(Roles = "Student")]
     public async Task<IActionResult> GetMyOutstandingInvoices(CancellationToken cancellationToken)
     {
         var email = User.FindFirst(System.Security.Claims.ClaimTypes.Email)?.Value;
@@ -426,7 +578,7 @@ public class ParentsController : ControllerBase
     }
 
     [HttpGet("me/calendar-events")]
-    [Authorize(Roles = "Parent")]
+    [Authorize(Roles = "Student")]
     public async Task<IActionResult> GetMyCalendarEvents(
         [FromQuery] string? branchName,
         CancellationToken cancellationToken)
@@ -440,7 +592,7 @@ public class ParentsController : ControllerBase
     }
 
     [HttpGet("me/sql-account-children/{branchName}/enrollments")]
-    [Authorize(Roles = "Parent")]
+    [Authorize(Roles = "Student")]
     public async Task<IActionResult> GetMySqlAccountChildEnrollments(
         string branchName,
         CancellationToken cancellationToken)
@@ -1102,7 +1254,7 @@ public class LessonNotesController : ControllerBase
     public async Task<IActionResult> GetByStudent(Guid studentId) => Ok(MapList(await _service.GetByStudentAsync(studentId)));
 
     [HttpGet("for-branch/{branchName}")]
-    [Authorize(Roles = "Parent")]
+    [Authorize(Roles = "Student")]
     public async Task<IActionResult> GetForBranch(string branchName, CancellationToken cancellationToken)
     {
         var email = User.FindFirst(ClaimTypes.Email)?.Value;
@@ -1243,7 +1395,7 @@ public class InvoicesController : ControllerBase
     }
 
     [HttpPost("{id:guid}/billplz")]
-    [Authorize(Roles = "Parent")]
+    [Authorize(Roles = "Student")]
     public async Task<IActionResult> PayWithBillplz(Guid id, [FromBody] BillplzPayRequest? request)
     {
         var parentUserId = Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);

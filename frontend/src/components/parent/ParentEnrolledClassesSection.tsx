@@ -47,18 +47,22 @@ export function ParentEnrolledClassesSection({ students }: ParentEnrolledClasses
       </CardHeader>
       <CardContent className="space-y-4 p-4 pt-0">
         <div className="max-w-xs space-y-1">
-          <Label htmlFor="dashboardStudentFilter">Student</Label>
-          <Select
-            id="dashboardStudentFilter"
-            value={selectedBranch}
-            onChange={(e) => setSelectedBranch(e.target.value)}
-          >
-            {students.map((child) => (
-              <option key={child.branchName} value={child.branchName}>
-                {displayStudentName(child)}
-              </option>
-            ))}
-          </Select>
+          {students.length > 1 && (
+            <>
+              <Label htmlFor="dashboardStudentFilter">Student</Label>
+              <Select
+                id="dashboardStudentFilter"
+                value={selectedBranch}
+                onChange={(e) => setSelectedBranch(e.target.value)}
+              >
+                {students.map((child) => (
+                  <option key={child.branchName} value={child.branchName}>
+                    {displayStudentName(child)}
+                  </option>
+                ))}
+              </Select>
+            </>
+          )}
         </div>
 
         {loading ? (

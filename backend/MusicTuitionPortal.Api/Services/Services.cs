@@ -42,13 +42,18 @@ public class AuthService
         if (await IsSqlAccountTeacherEmailAsync(normalized))
             return new LoginMethodResponse("udf_email", true);
 
+        // Student login is AR_CUSTOMERBRANCH.EMAIL, even if a portal user row already exists.
+        if (await _sqlAccount.FindCustomerByUdfEmailAsync(normalized) != null)
+            return new LoginMethodResponse("udf_email", true);
+
         if (user?.Role is Roles.Teacher)
             return new LoginMethodResponse("password", false);
 
-        if (user?.Role is Roles.Student)
+        // Demo learners may still be seeded as Parent; treat as password student login.
+        if (user?.Role is Roles.Student or Roles.Parent)
             return new LoginMethodResponse("password", false);
 
-        if (await IsSqlAccountParentEmailAsync(normalized) || _authSettings.IsDevParentEmail(normalized))
+        if (_authSettings.IsDevStudentEmail(normalized))
             return new LoginMethodResponse("udf_email", true);
 
         if (user?.Role is Roles.Admin)
@@ -58,7 +63,7 @@ public class AuthService
             "This email is not found in SQL Account (SY_USER email or AR_CUSTOMERBRANCH email). Contact the centre for access.");
     }
 
-    /// <summary>Sign in when email matches SY_USER (admin/teacher), or AR_CUSTOMERBRANCH email (parent).</summary>
+    /// <summary>Sign in when email matches SY_USER (admin/teacher), or AR_CUSTOMERBRANCH email (student).</summary>
     public async Task<LoginResponse?> LoginWithUdfEmailAsync(string email)
     {
         var normalized = NormalizeEmail(email);
@@ -85,15 +90,23 @@ public class AuthService
             return new LoginResponse(teacherToken, MapUser(teacherUser));
         }
 
-        if (!await IsSqlAccountParentEmailAsync(normalized) && !_authSettings.IsDevParentEmail(normalized))
+        if (!await IsSqlAccountStudentEmailAsync(normalized) && !_authSettings.IsDevStudentEmail(normalized))
             return null;
 
-        var user = await EnsureParentUserForEmailAsync(normalized);
+        var user = await EnsureStudentUserForEmailAsync(normalized);
         if (user == null || !Roles.CanSignIn(user.Role))
             return null;
 
         var token = JwtHelper.GenerateToken(user, _jwtSettings);
         return new LoginResponse(token, MapUser(user));
+    }
+
+    public async Task<DevLoginDirectoryDto> GetDevLoginDirectoryAsync(CancellationToken cancellationToken = default)
+    {
+        var admins = await _sqlAccount.ListLocalStaffLoginsAsync(admins: true, cancellationToken);
+        var teachers = await _sqlAccount.ListLocalStaffLoginsAsync(admins: false, cancellationToken);
+        var students = await _sqlAccount.ListLocalStudentLoginsAsync(cancellationToken);
+        return new DevLoginDirectoryDto(admins, teachers, students);
     }
 
     public async Task<RequestLoginOtpResponse> RequestLoginOtpAsync(string email)
@@ -149,7 +162,7 @@ public class AuthService
             await _context.SaveChangesAsync();
         }
 
-        var user = await EnsureParentUserForEmailAsync(normalized);
+        var user = await EnsureStudentUserForEmailAsync(normalized);
         if (user == null || !Roles.CanSignIn(user.Role))
             return null;
 
@@ -175,9 +188,9 @@ public class AuthService
         return staff != null && !staff.IsAdmin;
     }
 
-    private async Task<bool> IsSqlAccountParentEmailAsync(string normalizedEmail)
+    private async Task<bool> IsSqlAccountStudentEmailAsync(string normalizedEmail)
     {
-        if (_authSettings.IsDevParentEmail(normalizedEmail))
+        if (_authSettings.IsDevStudentEmail(normalizedEmail))
             return true;
 
         if (!_sqlAccount.IsConfigured)
@@ -187,31 +200,57 @@ public class AuthService
         return customer != null;
     }
 
-    private async Task<User?> EnsureParentUserForEmailAsync(string normalizedEmail)
+    private async Task<User?> EnsureStudentUserForEmailAsync(string normalizedEmail)
     {
         var user = await _context.Users
+            .Include(u => u.StudentProfile)
             .Include(u => u.ParentProfile)
             .FirstOrDefaultAsync(u => u.Email.ToLower() == normalizedEmail);
 
         if (user != null)
         {
-            if (user.Role == Roles.Parent)
+            if (user.Role == Roles.Student)
                 return user.IsActive ? user : null;
 
-            if (user.Role == Roles.Student || user.Role is Roles.Admin or Roles.Teacher)
-                throw new InvalidOperationException("This email is not a parent login.");
+            // Migrate former Parent learners to Student
+            if (user.Role == Roles.Parent)
+            {
+                user.Role = Roles.Student;
+                user.UpdatedAt = DateTime.UtcNow;
+                if (user.StudentProfile == null)
+                {
+                    _context.StudentProfiles.Add(new StudentProfile
+                    {
+                        Id = Guid.NewGuid(),
+                        UserId = user.Id,
+                        StudentCode = $"STU-{user.Id.ToString("N")[..8].ToUpperInvariant()}",
+                    });
+                }
+
+                var customerForName = _sqlAccount.IsConfigured
+                    ? await _sqlAccount.FindCustomerByUdfEmailAsync(normalizedEmail)
+                    : null;
+                if (!string.IsNullOrWhiteSpace(customerForName?.ParentName))
+                    user.FullName = customerForName.ParentName;
+
+                await _context.SaveChangesAsync();
+                return user.IsActive ? user : null;
+            }
+
+            if (user.Role is Roles.Admin or Roles.Teacher)
+                throw new InvalidOperationException("This email is not a student login.");
         }
 
         var customer = _sqlAccount.IsConfigured
             ? await _sqlAccount.FindCustomerByUdfEmailAsync(normalizedEmail)
             : null;
 
-        if (customer == null && !_authSettings.IsDevParentEmail(normalizedEmail))
+        if (customer == null && !_authSettings.IsDevStudentEmail(normalizedEmail))
             return null;
 
         var displayEmail = customer?.ParentEmail?.Trim() ?? normalizedEmail;
         var fullName = customer?.ParentName
-            ?? (_authSettings.IsDevParentEmail(normalizedEmail) ? displayEmail.Split('@')[0] : displayEmail);
+            ?? (_authSettings.IsDevStudentEmail(normalizedEmail) ? displayEmail.Split('@')[0] : displayEmail);
 
         user = new User
         {
@@ -219,17 +258,17 @@ public class AuthService
             FullName = fullName,
             Email = displayEmail,
             PasswordHash = PasswordHelper.Hash(Guid.NewGuid().ToString("N")),
-            Role = Roles.Parent,
+            Role = Roles.Student,
             IsActive = true
         };
-        var profile = new ParentProfile
+        var profile = new StudentProfile
         {
             Id = Guid.NewGuid(),
             UserId = user.Id,
-            Relationship = "Guardian"
+            StudentCode = $"STU-{user.Id.ToString("N")[..8].ToUpperInvariant()}",
         };
         _context.Users.Add(user);
-        _context.ParentProfiles.Add(profile);
+        _context.StudentProfiles.Add(profile);
         await _context.SaveChangesAsync();
         return user;
     }
@@ -243,7 +282,7 @@ public class AuthService
             if (user.Role == Roles.Admin)
                 return user.IsActive ? user : null;
 
-            if (user.Role == Roles.Parent)
+            if (user.Role == Roles.Parent || user.Role == Roles.Student)
             {
                 user.Role = Roles.Admin;
                 user.UpdatedAt = DateTime.UtcNow;
@@ -251,7 +290,7 @@ public class AuthService
                 return user.IsActive ? user : null;
             }
 
-            if (user.Role is Roles.Teacher or Roles.Student)
+            if (user.Role is Roles.Teacher)
                 throw new InvalidOperationException("This email is not an admin login.");
 
             return null;
@@ -335,12 +374,31 @@ public class AuthService
 
     public async Task<LoginResponse?> LoginAsync(LoginRequest request)
     {
-        var user = await _context.Users.FirstOrDefaultAsync(u => u.Email == request.Email && u.IsActive);
+        var user = await _context.Users
+            .Include(u => u.StudentProfile)
+            .FirstOrDefaultAsync(u => u.Email == request.Email && u.IsActive);
         if (user == null || !PasswordHelper.Verify(request.Password, user.PasswordHash))
             return null;
 
         if (!Roles.CanSignIn(user.Role))
             throw new InvalidOperationException("This account cannot sign in here.");
+
+        // Migrate former Parent demo accounts to Student (Customer = Student).
+        if (user.Role == Roles.Parent)
+        {
+            user.Role = Roles.Student;
+            user.UpdatedAt = DateTime.UtcNow;
+            if (user.StudentProfile == null)
+            {
+                _context.StudentProfiles.Add(new StudentProfile
+                {
+                    Id = Guid.NewGuid(),
+                    UserId = user.Id,
+                    StudentCode = $"STU-{user.Id.ToString("N")[..8].ToUpperInvariant()}",
+                });
+            }
+            await _context.SaveChangesAsync();
+        }
 
         var token = JwtHelper.GenerateToken(user, _jwtSettings);
         return new LoginResponse(token, MapUser(user));
@@ -790,6 +848,24 @@ public class ParentService
         _portalSessions = portalSessions;
     }
 
+    public async Task<SqlAccountMyStudentDto?> GetSqlAccountStudentForEmailAsync(
+        string email,
+        CancellationToken cancellationToken = default)
+    {
+        var children = await GetSqlAccountChildrenForEmailAsync(email, cancellationToken);
+        var child = children.Children.FirstOrDefault();
+        if (child == null)
+            return null;
+
+        var customerCode = await ResolveCustomerCodeForEmailAsync(email, cancellationToken) ?? string.Empty;
+        return new SqlAccountMyStudentDto(
+            customerCode,
+            children.ParentName,
+            child.Email,
+            child.Phone,
+            child.BranchName);
+    }
+
     public async Task<SqlAccountMyChildrenDto> GetSqlAccountChildrenForEmailAsync(
         string email,
         CancellationToken cancellationToken = default)
@@ -802,9 +878,9 @@ public class ParentService
             return new SqlAccountMyChildrenDto(customer.ParentName, customer.Children);
         }
 
-        if (_authSettings.IsDevParentEmail(normalized))
+        if (_authSettings.IsDevStudentEmail(normalized))
         {
-            var devCode = _authSettings.GetDevParentCustomerCode(normalized);
+            var devCode = _authSettings.GetDevStudentCustomerCode(normalized);
             if (!string.IsNullOrWhiteSpace(devCode))
             {
                 var byCode = await _sqlAccount.FindCustomerByCodeAsync(devCode, cancellationToken);

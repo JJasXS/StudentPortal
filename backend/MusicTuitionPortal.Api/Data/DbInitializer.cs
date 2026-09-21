@@ -212,7 +212,7 @@ public static class DbInitializer
             Email = "michael.tan@demo.com",
             PasswordHash = PasswordHelper.Hash("Parent@123"),
             PhoneNumber = "+60123456782",
-            Role = Roles.Parent,
+            Role = Roles.Student,
             IsActive = true
         };
 
@@ -223,7 +223,7 @@ public static class DbInitializer
             Email = "lisa.lim@demo.com",
             PasswordHash = PasswordHelper.Hash("Parent@123"),
             PhoneNumber = "+60123456783",
-            Role = Roles.Parent,
+            Role = Roles.Student,
             IsActive = true
         };
 

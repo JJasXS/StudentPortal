@@ -1,4 +1,4 @@
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { Menu, User } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { TeacherTodoToggleBubble } from '@/components/teacher/TeacherTodoToggleBubble';
@@ -12,6 +12,10 @@ interface NavbarProps {
 
 export default function Navbar({ onMenuClick }: NavbarProps) {
   const { user } = useAuth();
+  const { pathname } = useLocation();
+  const adminTitle = pathname.startsWith('/admin/parents') || pathname.startsWith('/admin/teachers')
+    ? 'User management'
+    : 'Admin Dashboard';
 
   return (
     <header className="sticky top-0 z-30 flex h-14 min-w-0 items-center justify-between gap-2 border-b border-slate-200 bg-white px-3 sm:h-16 sm:px-4 lg:px-6">
@@ -33,10 +37,16 @@ export default function Navbar({ onMenuClick }: NavbarProps) {
             </div>
           )}
           <div className="min-w-0">
-            <p className="hidden text-sm text-slate-500 sm:block">Welcome back,</p>
-            <p className="truncate text-sm font-semibold text-slate-900 sm:text-base">
-              {user?.fullName}
-            </p>
+            {user?.role === 'Admin' ? (
+              <p className="truncate text-sm font-semibold text-slate-900 sm:text-base">{adminTitle}</p>
+            ) : (
+              <>
+                <p className="hidden text-sm text-slate-500 sm:block">Welcome back,</p>
+                <p className="truncate text-sm font-semibold text-slate-900 sm:text-base">
+                  {user?.fullName}
+                </p>
+              </>
+            )}
           </div>
         </div>
       </div>

@@ -1,12 +1,13 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ChevronLeft, ChevronRight, MoreVertical } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { ScheduleLessonCard } from '@/components/schedule/ScheduleLessonCard';
 import type { ScheduleLessonItem } from '@/components/schedule/ScheduleLessonCard';
 import { Button } from '@/components/ui/Button';
 import { useAuth } from '@/context/AuthContext';
-import { useSqlAccountChildren } from '@/hooks/useSqlAccountChildren';
+import { useSqlAccountStudent } from '@/hooks/useSqlAccountStudent';
 import { useStudentPortalData } from '@/hooks/useStudentPortalData';
-import { parentsApi } from '@/api/resources';
+import { studentsApi } from '@/api/resources';
+import { isStudentPortalRole } from '@/utils/learnerPortal';
 import { cn } from '@/utils/cn';
 import { generateMockSessions, loadAllSessions } from '@/utils/mockSessionStore';
 import { erpEventToScheduleItem, sessionToScheduleItem } from '@/utils/learnerSchedule';
@@ -106,72 +107,6 @@ function isCurrentWeek(mondayIso: string): boolean {
   return mondayIso === startOfWeekMonday(new Date());
 }
 
-function ChildFilterMenu({
-  childOptions,
-  childFilter,
-  onSelect,
-}: {
-  childOptions: string[];
-  childFilter: string;
-  onSelect: (branch: string) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const menuRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    const handleClick = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setOpen(false);
-    };
-    document.addEventListener('mousedown', handleClick);
-    return () => document.removeEventListener('mousedown', handleClick);
-  }, [open]);
-
-  const label = childFilter || 'Students';
-
-  return (
-    <div className="relative mb-4 flex justify-end" ref={menuRef}>
-      <Button type="button" variant="outline" size="sm" onClick={() => setOpen((v) => !v)}>
-        <MoreVertical className="mr-1.5 h-4 w-4" />
-        {label}
-      </Button>
-      {open && (
-        <div className="absolute right-0 top-full z-20 mt-1 min-w-[10rem] rounded-lg border border-slate-200 bg-white py-1 shadow-lg">
-          <button
-            type="button"
-            className={cn(
-              'block w-full px-3 py-2 text-left text-sm hover:bg-slate-50',
-              childFilter === '' && 'font-medium text-primary-700'
-            )}
-            onClick={() => {
-              onSelect('');
-              setOpen(false);
-            }}
-          >
-            Students
-          </button>
-          {childOptions.map((branch) => (
-            <button
-              key={branch}
-              type="button"
-              className={cn(
-                'block w-full px-3 py-2 text-left text-sm capitalize hover:bg-slate-50',
-                childFilter === branch && 'font-medium text-primary-700'
-              )}
-              onClick={() => {
-                onSelect(branch);
-                setOpen(false);
-              }}
-            >
-              {branch}
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
 function ensureMockSessionsForMonth(
   classes: ClassItem[],
   classIds: Set<string>,
@@ -186,9 +121,9 @@ function ensureMockSessionsForMonth(
 
 export default function LearnerSchedulePage() {
   const { user } = useAuth();
-  const isParent = user?.role === 'Parent';
+  const isErpLearner = isStudentPortalRole(user?.role);
   const isMock = import.meta.env.VITE_USE_MOCK === 'true';
-  const { children, loading: childrenLoading, error: childrenError } = useSqlAccountChildren(isParent);
+  const { student, loading: studentLoading, error: studentError } = useSqlAccountStudent(isErpLearner);
   const {
     classIds,
     classes: studentClasses,
@@ -196,7 +131,7 @@ export default function LearnerSchedulePage() {
     loading: portalLoading,
     error: portalError,
     isMock: portalMock,
-  } = useStudentPortalData(!isParent);
+  } = useStudentPortalData(!isErpLearner);
   const [anchor, setAnchor] = useState(() => {
     const n = new Date();
     return { year: n.getFullYear(), month: n.getMonth() };
@@ -221,9 +156,8 @@ export default function LearnerSchedulePage() {
     setLoading(true);
     setError('');
     try {
-      const events = isMock
-        ? []
-        : await parentsApi.getMyCalendarEvents(childFilter || undefined);
+      const branch = childFilter || student?.branchName || undefined;
+      const events = isMock ? [] : await studentsApi.getMyCalendarEvents(branch);
       setErpEvents(events);
     } catch {
       setError('Could not load schedule from SQL Account.');
@@ -231,10 +165,16 @@ export default function LearnerSchedulePage() {
     } finally {
       setLoading(false);
     }
-  }, [childFilter, isMock]);
+  }, [childFilter, isMock, student?.branchName]);
 
   useEffect(() => {
-    if (isParent) {
+    if (student?.branchName) {
+      setChildFilter(student.branchName);
+    }
+  }, [student?.branchName]);
+
+  useEffect(() => {
+    if (isErpLearner) {
       void loadParentSchedule();
       return;
     }
@@ -246,7 +186,7 @@ export default function LearnerSchedulePage() {
     setLoading(portalLoading);
     setError(portalError);
   }, [
-    isParent,
+    isErpLearner,
     loadParentSchedule,
     loadStudentSchedule,
     portalMock,
@@ -344,13 +284,7 @@ export default function LearnerSchedulePage() {
   const nextWeek = () => setWeekStart((w) => addDaysToIso(w, 7));
   const showingCurrentWeek = isCurrentWeek(weekStart);
 
-  const childOptions = useMemo(() => {
-    return children
-      .map((child) => child.branchName?.trim())
-      .filter((branch): branch is string => Boolean(branch));
-  }, [children]);
-
-  const pageLoading = loading || (isParent && childrenLoading);
+  const pageLoading = loading || (isErpLearner && studentLoading);
 
   const activeWeekData = useMemo(
     () => weeks.find((w) => w.weekNum === activeWeek) ?? weeks[0],
@@ -366,28 +300,20 @@ export default function LearnerSchedulePage() {
     <div className="mx-auto w-full max-w-lg">
       <div className="mb-4 sm:mb-5">
         <h1 className="text-xl font-bold text-[#5C4033] sm:text-2xl">Schedule</h1>
-        {isParent && (
+        {isErpLearner && student && (
           <p className="mt-1 text-sm text-slate-500">
-            {childFilter ? `Showing ${childFilter}'s lessons` : 'Students'}
+            {student.studentName || student.branchName}
           </p>
         )}
       </div>
 
-      {isParent && childOptions.length > 0 && (
-        <ChildFilterMenu
-          childOptions={childOptions}
-          childFilter={childFilter}
-          onSelect={setChildFilter}
-        />
-      )}
-
-      {(error || childrenError || (!isParent && portalError)) && (
+      {(error || studentError || (!isErpLearner && portalError)) && (
         <p className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800 sm:px-4">
-          {error || childrenError || portalError}
+          {error || studentError || portalError}
         </p>
       )}
 
-      {isParent ? (
+      {isErpLearner ? (
         <>
           <div className="mb-4 flex gap-2">
             <Button

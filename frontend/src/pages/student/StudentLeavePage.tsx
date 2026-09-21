@@ -11,7 +11,7 @@ import { StatusBadge } from '@/components/ui/StatusBadge';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { useAuth } from '@/context/AuthContext';
 import { useToast } from '@/context/ToastContext';
-import { leaveApi, parentsApi } from '@/api/resources';
+import { leaveApi, studentsApi } from '@/api/resources';
 import { formatDateDDMMYYYY } from '@/utils/dateFormat';
 import { formatPortalSlotDate, isLeaveSessionEligible, portalLeaveStatusLabel } from '@/utils/portalLeave';
 import { getApiErrorMessage } from '@/utils/apiError';
@@ -93,14 +93,21 @@ export default function StudentLeavePage() {
   }, []);
 
   useEffect(() => {
-    if (user?.role !== 'Parent') {
+    if (user?.role !== 'Student' && user?.role !== 'Parent') {
       setLoading(false);
       return;
     }
     setLoading(true);
-    Promise.all([parentsApi.getMySqlAccountChildren(), leaveApi.getMine()])
-      .then(([childData, leaveData]) => {
-        setChildren(childData.children);
+    Promise.all([studentsApi.getMySqlAccount(), leaveApi.getMine()])
+      .then(([account, leaveData]) => {
+        setChildren([
+          {
+            branchName: account.branchName,
+            attention: account.studentName,
+            email: account.email,
+            phone: account.phone,
+          },
+        ]);
         setRequests(leaveData);
       })
       .catch(() => {
@@ -122,7 +129,7 @@ export default function StudentLeavePage() {
 
   const loadSessions = async (child: SqlAccountChild) => {
     try {
-      const data = await parentsApi.getMyCalendarEvents(child.branchName);
+      const data = await studentsApi.getMyCalendarEvents(child.branchName);
       setEvents(data);
     } catch {
       setEvents([]);
@@ -159,17 +166,17 @@ export default function StudentLeavePage() {
     }
   };
 
-  if (user?.role !== 'Parent') {
+  if (user?.role !== 'Student' && user?.role !== 'Parent') {
     return (
       <div className="mx-auto max-w-2xl space-y-6">
         <PageHeader
           title="Leave requests"
-          description="Leave is requested by parents for enrolled children."
+          description="Leave is requested by students for enrolled classes."
         />
         <EmptyState
           icon={CalendarOff}
-          title="Parent account required"
-          description="Please sign in as a parent to request leave."
+          title="Student account required"
+          description="Please sign in as a student to request leave."
         />
       </div>
     );

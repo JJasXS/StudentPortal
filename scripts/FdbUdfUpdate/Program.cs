@@ -42,6 +42,9 @@ if (args.Contains("--create-assign-log")
     || args.Contains("--restore-so-udf-dates")
     || args.Contains("--migrate-udf-classdate-to-bcd")
     || args.Contains("--sync-parent-email-to-branches")
+    || args.Contains("--sync-billing-to-student")
+    || args.Contains("--normalize-customer-as-student")
+    || args.Contains("--rename-customers-as-students")
     || args.Contains("--probe-domain")
     || args.Contains("--probe-sodtl-values"))
 {
@@ -64,9 +67,25 @@ if (args.Contains("--create-assign-log")
         return await MigrateUdfClassDatesToBcdAsync(assignConnection);
     }
 
+    if (args.Contains("--rename-customers-as-students"))
+    {
+        return await RenameCustomersAsStudentsAsync(assignConnection);
+    }
+
+    if (args.Contains("--normalize-customer-as-student"))
+    {
+        var dryRun = args.Contains("--dry-run");
+        return await NormalizeCustomerAsStudentAsync(assignConnection, dryRun);
+    }
+
     if (args.Contains("--sync-parent-email-to-branches"))
     {
         return await SyncParentEmailToBranchesAsync(assignConnection);
+    }
+
+    if (args.Contains("--sync-billing-to-student"))
+    {
+        return await SyncBillingToStudentAsync(assignConnection);
     }
 
     if (args.Contains("--migrate-classenddate"))
@@ -1127,6 +1146,413 @@ static async Task MigrateClassEndDateColumnAsync(FbConnection connection)
     Console.WriteLine("Added UDF_CLASSENDDATE to SL_SODTL.");
 }
 
+/// <summary>
+/// Rename every AR_CUSTOMER to a student display name and set email to {firstname}@gmail.com.
+/// Also syncs sole non-billing branch name/email (creates branch if missing).
+/// </summary>
+static async Task<int> RenameCustomersAsStudentsAsync(FbConnection connection)
+{
+    var emailColumn = await ResolveCustomerEmailColumnAsync(connection);
+    if (emailColumn == null)
+    {
+        Console.WriteLine("AR_CUSTOMER has no UDF_EMAIL / UDF_EMAILL — cannot set student emails.");
+        return 1;
+    }
+
+    // CODE → (StudentName, email local-part)
+    var map = new Dictionary<string, (string Name, string EmailLocal)>(StringComparer.OrdinalIgnoreCase)
+    {
+        ["300-A0001"] = ("Aiden Lim", "aidenlim"),
+        ["300-B0001"] = ("Bob Tan", "bobtan"),
+        ["300-C0001"] = ("Chloe Tan", "chloetan"),
+        ["300-C0002"] = ("Casey Ng", "caseyng"),
+        ["300-D0001"] = ("Dylan Ong", "dylanong"),
+        ["300-E0001"] = ("Ethan Koh", "ethankoh"),
+        ["300-G0001"] = ("Goh Jun Wei", "gohjunwei"),
+        ["300-G0002"] = ("Grace Teo", "graceteo"),
+        ["300-G0003"] = ("Giselle Ho", "giselleho"),
+        ["300-H0001"] = ("Yara Soh", "yarasoh"),
+        ["300-J0001"] = ("Jason Lee", "jasonlee"),
+        ["300-P0001"] = ("Mia Wong", "miawong"),
+        ["300-P0002"] = ("Noah Tan", "noahtan"),
+        ["300-P0003"] = ("Sofia Lim", "sofialim"),
+        ["300-P0004"] = ("Alex Park", "alexpark"),
+        ["300-T0001"] = ("Tina Nguyen", "tinanguyen"),
+        ["300-W0001"] = ("Woody Tan", "woodytan"),
+        ["300-W0002"] = ("Wendy Chong", "wendychong"),
+    };
+
+    foreach (var (code, (name, emailLocal)) in map)
+    {
+        var email = $"{emailLocal}@gmail.com";
+        var branches = await LoadChildBranchesAsync(connection, code);
+        var oldBranch = branches.FirstOrDefault().BranchName;
+
+        Console.WriteLine($"--- {code}: → {name} <{email}>");
+
+        await using (var upd = new FbCommand(
+            $"""
+            UPDATE AR_CUSTOMER
+            SET COMPANYNAME = @name, {emailColumn} = @email
+            WHERE CODE = @code
+            """,
+            connection))
+        {
+            upd.Parameters.AddWithValue("@name", name);
+            upd.Parameters.AddWithValue("@email", email);
+            upd.Parameters.AddWithValue("@code", code);
+            var n = await upd.ExecuteNonQueryAsync();
+            if (n == 0)
+            {
+                Console.WriteLine("  SKIP (customer not found)");
+                continue;
+            }
+        }
+
+        if (string.IsNullOrWhiteSpace(oldBranch))
+        {
+            await EnsureStudentBranchAsync(connection, code, name, email);
+            Console.WriteLine($"  created branch '{name}'");
+        }
+        else if (!string.Equals(oldBranch, name, StringComparison.OrdinalIgnoreCase))
+        {
+            await RemapBranchNameAsync(connection, code, oldBranch, name);
+            await RenameChildBranchAsync(connection, code, oldBranch, name);
+            Console.WriteLine($"  renamed branch '{oldBranch}' → '{name}'");
+        }
+
+        await using (var syncBranch = new FbCommand(
+            """
+            UPDATE AR_CUSTOMERBRANCH
+            SET EMAIL = @email, ATTENTION = @name
+            WHERE CODE = @code
+              AND BRANCHTYPE <> 'B'
+              AND TRIM(BRANCHNAME) <> 'BILLING'
+            """,
+            connection))
+        {
+            syncBranch.Parameters.AddWithValue("@email", email);
+            syncBranch.Parameters.AddWithValue("@name", name);
+            syncBranch.Parameters.AddWithValue("@code", code);
+            await syncBranch.ExecuteNonQueryAsync();
+        }
+    }
+
+    Console.WriteLine("Rename complete.");
+    return 0;
+}
+
+static async Task EnsureStudentBranchAsync(
+    FbConnection connection,
+    string customerCode,
+    string branchName,
+    string email)
+{
+    // Already have a child branch?
+    var existing = await LoadChildBranchesAsync(connection, customerCode);
+    if (existing.Count > 0)
+        return;
+
+    await using var maxCmd = new FbCommand("SELECT COALESCE(MAX(DTLKEY), 0) FROM AR_CUSTOMERBRANCH", connection);
+    var maxObj = await maxCmd.ExecuteScalarAsync();
+    var nextKey = Convert.ToInt32(maxObj) + 1;
+
+    await using var insert = new FbCommand(
+        """
+        INSERT INTO AR_CUSTOMERBRANCH (DTLKEY, CODE, BRANCHTYPE, BRANCHNAME, ATTENTION, EMAIL)
+        VALUES (@dtlKey, @code, 'D', @branch, @attention, @email)
+        """,
+        connection);
+    insert.Parameters.AddWithValue("@dtlKey", nextKey);
+    insert.Parameters.AddWithValue("@code", customerCode);
+    insert.Parameters.AddWithValue("@branch", branchName);
+    insert.Parameters.AddWithValue("@attention", branchName);
+    insert.Parameters.AddWithValue("@email", email);
+    await insert.ExecuteNonQueryAsync();
+}
+
+/// <summary>
+/// One customer = one student: keep a single non-billing branch per customer,
+/// remap SO/PORTAL_* BRANCHNAME from extras, ensure AR_CUSTOMER email is set.
+/// Pass --dry-run to report without writing.
+/// </summary>
+static async Task<int> NormalizeCustomerAsStudentAsync(FbConnection connection, bool dryRun)
+{
+    var emailColumn = await ResolveCustomerEmailColumnAsync(connection);
+    Console.WriteLine(dryRun
+        ? "DRY RUN — no changes will be written."
+        : "APPLY — writing normalize changes.");
+    Console.WriteLine(emailColumn == null
+        ? "AR_CUSTOMER has no UDF_EMAIL / UDF_EMAILL — customer email backfill skipped."
+        : $"Using AR_CUSTOMER.{emailColumn} for customer email.");
+
+    const string customersSql = """
+        SELECT CODE, COMPANYNAME
+        FROM AR_CUSTOMER
+        ORDER BY CODE
+        """;
+
+    var customers = new List<(string Code, string CompanyName)>();
+    await using (var cmd = new FbCommand(customersSql, connection))
+    await using (var reader = await cmd.ExecuteReaderAsync())
+    {
+        while (await reader.ReadAsync())
+        {
+            var code = reader["CODE"]?.ToString()?.Trim() ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(code)) continue;
+            customers.Add((code, reader["COMPANYNAME"]?.ToString()?.Trim() ?? code));
+        }
+    }
+
+    var changed = 0;
+    foreach (var (code, companyName) in customers)
+    {
+        var branches = await LoadChildBranchesAsync(connection, code);
+        if (branches.Count == 0)
+        {
+            Console.WriteLine($"SKIP {code} ({companyName}): no non-billing branches");
+            continue;
+        }
+
+        string? customerEmail = null;
+        if (emailColumn != null)
+            customerEmail = await ReadCustomerEmailAsync(connection, code, emailColumn);
+
+        var canonical = PickCanonicalBranch(branches, customerEmail);
+        var targetName = string.IsNullOrWhiteSpace(companyName) ? canonical.BranchName : companyName;
+        // Firebird BRANCHNAME length is typically 40–100; keep within 100.
+        if (targetName.Length > 100) targetName = targetName[..100];
+
+        var extras = branches
+            .Where(b => !string.Equals(b.BranchName, canonical.BranchName, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+        Console.WriteLine($"--- {code} | {companyName}");
+        Console.WriteLine($"  branches: {string.Join(", ", branches.Select(b => b.BranchName))}");
+        Console.WriteLine($"  canonical: {canonical.BranchName} → target BRANCHNAME '{targetName}'");
+        if (extras.Count > 0)
+            Console.WriteLine($"  merge/delete: {string.Join(", ", extras.Select(b => b.BranchName))}");
+
+        if (dryRun)
+        {
+            changed++;
+            continue;
+        }
+
+        // Ensure customer email from branch if empty
+        if (emailColumn != null && string.IsNullOrWhiteSpace(customerEmail))
+        {
+            var sourceEmail = branches
+                .Select(b => b.Email)
+                .FirstOrDefault(e => !string.IsNullOrWhiteSpace(e));
+            if (!string.IsNullOrWhiteSpace(sourceEmail))
+            {
+                await using var setEmail = new FbCommand(
+                    $"UPDATE AR_CUSTOMER SET {emailColumn} = @email WHERE CODE = @code",
+                    connection);
+                setEmail.Parameters.AddWithValue("@email", sourceEmail.Trim());
+                setEmail.Parameters.AddWithValue("@code", code);
+                await setEmail.ExecuteNonQueryAsync();
+                customerEmail = sourceEmail.Trim();
+                Console.WriteLine($"  set customer email ← {customerEmail}");
+            }
+        }
+
+        // Remap extras → canonical name first (before rename), then rename canonical → target
+        foreach (var extra in extras)
+        {
+            await RemapBranchNameAsync(connection, code, extra.BranchName, canonical.BranchName);
+            await DeleteChildBranchAsync(connection, code, extra.BranchName);
+            Console.WriteLine($"  remapped+deleted branch '{extra.BranchName}' → '{canonical.BranchName}'");
+        }
+
+        if (!string.Equals(canonical.BranchName, targetName, StringComparison.OrdinalIgnoreCase))
+        {
+            // If target name already exists as another row (shouldn't after extras deleted), skip rename
+            await RemapBranchNameAsync(connection, code, canonical.BranchName, targetName);
+            await RenameChildBranchAsync(connection, code, canonical.BranchName, targetName);
+            Console.WriteLine($"  renamed branch '{canonical.BranchName}' → '{targetName}'");
+        }
+
+        // Sync branch email from customer email
+        if (!string.IsNullOrWhiteSpace(customerEmail))
+        {
+            await using var syncBranchEmail = new FbCommand(
+                """
+                UPDATE AR_CUSTOMERBRANCH
+                SET EMAIL = @email
+                WHERE CODE = @code
+                  AND BRANCHTYPE <> 'B'
+                  AND TRIM(BRANCHNAME) <> 'BILLING'
+                """,
+                connection);
+            syncBranchEmail.Parameters.AddWithValue("@email", customerEmail.Trim());
+            syncBranchEmail.Parameters.AddWithValue("@code", code);
+            await syncBranchEmail.ExecuteNonQueryAsync();
+        }
+
+        changed++;
+    }
+
+    Console.WriteLine(dryRun
+        ? $"Dry run complete. {changed} customer(s) would be normalized."
+        : $"Normalize complete. {changed} customer(s) processed.");
+    return 0;
+}
+
+static async Task<List<(string BranchName, string? Email)>> LoadChildBranchesAsync(
+    FbConnection connection,
+    string customerCode)
+{
+    const string sql = """
+        SELECT BRANCHNAME, EMAIL, BRANCHTYPE
+        FROM AR_CUSTOMERBRANCH
+        WHERE CODE = @code
+        ORDER BY BRANCHNAME
+        """;
+    var list = new List<(string BranchName, string? Email)>();
+    await using var cmd = new FbCommand(sql, connection);
+    cmd.Parameters.AddWithValue("@code", customerCode);
+    await using var reader = await cmd.ExecuteReaderAsync();
+    while (await reader.ReadAsync())
+    {
+        var type = reader["BRANCHTYPE"]?.ToString()?.Trim();
+        var name = reader["BRANCHNAME"]?.ToString()?.Trim() ?? string.Empty;
+        if (string.Equals(type, "B", StringComparison.OrdinalIgnoreCase)) continue;
+        if (string.Equals(name, "BILLING", StringComparison.OrdinalIgnoreCase)) continue;
+        if (string.IsNullOrWhiteSpace(name)) continue;
+        list.Add((name, reader["EMAIL"]?.ToString()?.Trim()));
+    }
+
+    return list;
+}
+
+static (string BranchName, string? Email) PickCanonicalBranch(
+    List<(string BranchName, string? Email)> branches,
+    string? customerEmail)
+{
+    if (!string.IsNullOrWhiteSpace(customerEmail))
+    {
+        var match = branches.FirstOrDefault(b =>
+            string.Equals(b.Email, customerEmail.Trim(), StringComparison.OrdinalIgnoreCase));
+        if (!string.IsNullOrWhiteSpace(match.BranchName))
+            return match;
+    }
+
+    return branches
+        .OrderBy(b => b.BranchName, StringComparer.OrdinalIgnoreCase)
+        .First();
+}
+
+static async Task<string?> ReadCustomerEmailAsync(FbConnection connection, string code, string emailColumn)
+{
+    await using var cmd = new FbCommand(
+        $"SELECT TRIM({emailColumn}) FROM AR_CUSTOMER WHERE CODE = @code",
+        connection);
+    cmd.Parameters.AddWithValue("@code", code);
+    var value = await cmd.ExecuteScalarAsync();
+    var email = value?.ToString()?.Trim();
+    return string.IsNullOrWhiteSpace(email) ? null : email;
+}
+
+static async Task RemapBranchNameAsync(
+    FbConnection connection,
+    string customerCode,
+    string fromBranch,
+    string toBranch)
+{
+    if (string.Equals(fromBranch, toBranch, StringComparison.OrdinalIgnoreCase))
+        return;
+
+    // SL_SO
+    await ExecUpdateAsync(connection,
+        "UPDATE SL_SO SET BRANCHNAME = @to WHERE CODE = @code AND BRANCHNAME = @from",
+        customerCode, fromBranch, toBranch);
+
+    foreach (var table in new[]
+             {
+                 "PORTAL_HOMEWORK",
+                 "PORTAL_LEAVE_REQUESTS",
+                 "PORTAL_CLASS_SESSIONS",
+             })
+    {
+        if (!await RelationExistsAsync(connection, table))
+            continue;
+
+        await ExecUpdateAsync(connection,
+            $"UPDATE {table} SET BRANCHNAME = @to WHERE CUSTOMERCODE = @code AND BRANCHNAME = @from",
+            customerCode, fromBranch, toBranch);
+    }
+}
+
+static async Task ExecUpdateAsync(
+    FbConnection connection,
+    string sql,
+    string customerCode,
+    string fromBranch,
+    string toBranch)
+{
+    await using var cmd = new FbCommand(sql, connection);
+    cmd.Parameters.AddWithValue("@to", toBranch);
+    cmd.Parameters.AddWithValue("@code", customerCode);
+    cmd.Parameters.AddWithValue("@from", fromBranch);
+    var n = await cmd.ExecuteNonQueryAsync();
+    if (n > 0)
+        Console.WriteLine($"    {n} row(s): {sql.Split('\n')[0].Trim()}…");
+}
+
+static async Task RenameChildBranchAsync(
+    FbConnection connection,
+    string customerCode,
+    string fromBranch,
+    string toBranch)
+{
+    if (string.Equals(fromBranch, toBranch, StringComparison.OrdinalIgnoreCase))
+        return;
+
+    await using var cmd = new FbCommand(
+        """
+        UPDATE AR_CUSTOMERBRANCH
+        SET BRANCHNAME = @to
+        WHERE CODE = @code AND BRANCHNAME = @from
+          AND BRANCHTYPE <> 'B'
+        """,
+        connection);
+    cmd.Parameters.AddWithValue("@to", toBranch);
+    cmd.Parameters.AddWithValue("@code", customerCode);
+    cmd.Parameters.AddWithValue("@from", fromBranch);
+    await cmd.ExecuteNonQueryAsync();
+}
+
+static async Task DeleteChildBranchAsync(
+    FbConnection connection,
+    string customerCode,
+    string branchName)
+{
+    await using var cmd = new FbCommand(
+        """
+        DELETE FROM AR_CUSTOMERBRANCH
+        WHERE CODE = @code AND BRANCHNAME = @branch
+          AND BRANCHTYPE <> 'B'
+          AND TRIM(BRANCHNAME) <> 'BILLING'
+        """,
+        connection);
+    cmd.Parameters.AddWithValue("@code", customerCode);
+    cmd.Parameters.AddWithValue("@branch", branchName);
+    await cmd.ExecuteNonQueryAsync();
+}
+
+static async Task<bool> RelationExistsAsync(FbConnection connection, string relationName)
+{
+    const string sql = """
+        SELECT 1 FROM RDB$RELATIONS
+        WHERE TRIM(RDB$RELATION_NAME) = @name
+        """;
+    await using var cmd = new FbCommand(sql, connection);
+    cmd.Parameters.AddWithValue("@name", relationName.ToUpperInvariant());
+    return await cmd.ExecuteScalarAsync() != null;
+}
+
 static async Task<int> SyncParentEmailToBranchesAsync(FbConnection connection)
 {
     var emailColumn = await ResolveCustomerEmailColumnAsync(connection);
@@ -1183,6 +1609,95 @@ static async Task<int> SyncParentEmailToBranchesAsync(FbConnection connection)
         Console.WriteLine($"{match} {code} / {branch}: PARENT={udf} BRANCH={email}");
     }
 
+    return 0;
+}
+
+/// <summary>
+/// Customer = student: copy student name + login email onto billing branch contact fields.
+/// Leaves BRANCHNAME as BILLING; does not change address/phone.
+/// </summary>
+static async Task<int> SyncBillingToStudentAsync(FbConnection connection)
+{
+    var emailColumn = await ResolveCustomerEmailColumnAsync(connection);
+    if (emailColumn == null)
+    {
+        Console.WriteLine("AR_CUSTOMER has no UDF_EMAIL / UDF_EMAILL column — nothing to copy.");
+        return 1;
+    }
+
+    Console.WriteLine($"Using AR_CUSTOMER.COMPANYNAME + {emailColumn} for billing ATTENTION/EMAIL.");
+
+    var updateSql = $"""
+        UPDATE AR_CUSTOMERBRANCH B
+        SET
+            ATTENTION = (
+                SELECT TRIM(A.COMPANYNAME)
+                FROM AR_CUSTOMER A
+                WHERE A.CODE = B.CODE
+            ),
+            EMAIL = (
+                SELECT TRIM(A.{emailColumn})
+                FROM AR_CUSTOMER A
+                WHERE A.CODE = B.CODE
+            )
+        WHERE EXISTS (
+            SELECT 1
+            FROM AR_CUSTOMER A
+            WHERE A.CODE = B.CODE
+              AND A.{emailColumn} IS NOT NULL
+              AND TRIM(A.{emailColumn}) <> ''
+        )
+          AND (
+              B.BRANCHTYPE = 'B'
+              OR UPPER(TRIM(B.BRANCHNAME)) = 'BILLING'
+          )
+        """;
+
+    await using var update = new FbCommand(updateSql, connection);
+    var updated = await update.ExecuteNonQueryAsync();
+    Console.WriteLine($"Updated ATTENTION/EMAIL on {updated} billing branch row(s).");
+
+    var verifySql = $"""
+        SELECT A.CODE,
+               TRIM(A.COMPANYNAME) AS STUDENT_NAME,
+               TRIM(A.{emailColumn}) AS STUDENT_EMAIL,
+               TRIM(B.BRANCHNAME) AS BRANCH,
+               TRIM(B.ATTENTION) AS ATTENTION,
+               TRIM(B.EMAIL) AS BRANCH_EMAIL
+        FROM AR_CUSTOMER A
+        INNER JOIN AR_CUSTOMERBRANCH B ON A.CODE = B.CODE
+        WHERE A.{emailColumn} IS NOT NULL
+          AND TRIM(A.{emailColumn}) <> ''
+          AND (
+              B.BRANCHTYPE = 'B'
+              OR UPPER(TRIM(B.BRANCHNAME)) = 'BILLING'
+          )
+        ORDER BY A.CODE
+        """;
+
+    await using var verify = new FbCommand(verifySql, connection);
+    await using var reader = await verify.ExecuteReaderAsync();
+    var mismatches = 0;
+    while (await reader.ReadAsync())
+    {
+        var code = reader["CODE"]?.ToString()?.Trim();
+        var name = reader["STUDENT_NAME"]?.ToString()?.Trim();
+        var email = reader["STUDENT_EMAIL"]?.ToString()?.Trim();
+        var attn = reader["ATTENTION"]?.ToString()?.Trim();
+        var branchEmail = reader["BRANCH_EMAIL"]?.ToString()?.Trim();
+        var ok = string.Equals(name, attn, StringComparison.OrdinalIgnoreCase)
+                 && string.Equals(email, branchEmail, StringComparison.OrdinalIgnoreCase);
+        if (!ok) mismatches++;
+        Console.WriteLine($"{(ok ? "OK" : "MISMATCH")} {code}: student={name} <{email}> billing attn={attn} email={branchEmail}");
+    }
+
+    if (mismatches > 0)
+    {
+        Console.WriteLine($"{mismatches} billing row(s) still mismatched.");
+        return 1;
+    }
+
+    Console.WriteLine("All billing contacts match student name/email.");
     return 0;
 }
 

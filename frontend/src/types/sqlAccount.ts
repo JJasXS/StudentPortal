@@ -41,6 +41,15 @@ export interface SqlAccountChild {
   phone?: string | null;
 }
 
+/** One AR_CUSTOMER = one student (sole branch kept for ERP SO lines). */
+export interface SqlAccountStudent {
+  customerCode: string;
+  studentName: string;
+  email?: string | null;
+  phone?: string | null;
+  branchName: string;
+}
+
 export interface SqlAccountParent {
   customerCode: string;
   parentName: string;

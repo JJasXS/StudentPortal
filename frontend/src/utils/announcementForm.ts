@@ -6,7 +6,7 @@ export const ANNOUNCEMENT_TARGET_ROLES = ['All', 'Teacher', 'Student'] as const;
 export const ANNOUNCEMENT_TARGET_ROLE_LABELS: Record<AnnouncementTargetRole, string> = {
   All: 'Everyone',
   Teacher: 'Teachers',
-  Student: 'Students & Parents',
+  Student: 'Students',
 };
 
 export type AnnouncementCategory = (typeof ANNOUNCEMENT_CATEGORIES)[number];

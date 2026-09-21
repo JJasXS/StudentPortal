@@ -27,6 +27,26 @@ export const studentsApi = {
   getAll: () => apiClient.get<StudentProfile[]>('/students').then((r) => r.data),
   getById: (id: string) => apiClient.get<StudentProfile>(`/students/${id}`).then((r) => r.data),
   getMe: () => apiClient.get<StudentSelfProfile>('/students/me').then((r) => r.data),
+  getMySqlAccount: () =>
+    apiClient
+      .get<import('@/types/sqlAccount').SqlAccountStudent>('/students/me/sql-account')
+      .then((r) => r.data),
+  getMyEnrollments: () =>
+    apiClient
+      .get<import('@/types/sqlAccount').SqlAccountChildEnrollments>('/students/me/enrollments')
+      .then((r) => r.data),
+  getMyCalendarEvents: (branchName?: string) =>
+    apiClient
+      .get<import('@/types/sqlAccount').ErpCalendarEvent[]>('/students/me/calendar-events', {
+        params: branchName ? { branchName } : undefined,
+      })
+      .then((r) => r.data),
+  getOutstandingInvoices: () =>
+    apiClient
+      .get<{ invoices: import('@/types/sqlAccount').SqlAccountOutstandingInvoice[] }>(
+        '/students/me/outstanding-invoices'
+      )
+      .then((r) => r.data.invoices),
   updateMe: (data: {
     dateOfBirth?: string;
     gender?: string;

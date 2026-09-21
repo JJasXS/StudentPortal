@@ -237,6 +237,52 @@ public class SqlAccountLocalDbService
         }
     }
 
+    public async Task<IReadOnlyList<SqlAccountStaffUserMatch>> GetStaffUsersAsync(
+        CancellationToken cancellationToken = default)
+    {
+        if (!CanReadLocalDb)
+            return Array.Empty<SqlAccountStaffUserMatch>();
+
+        try
+        {
+            await using var connection = OpenConnection();
+            await connection.OpenAsync(cancellationToken);
+
+            const string sql = """
+                SELECT CODE, NAME, EMAIL, UDF_ISADMIN
+                FROM SY_USER
+                WHERE EMAIL IS NOT NULL
+                  AND TRIM(EMAIL) <> ''
+                ORDER BY NAME
+                """;
+
+            var results = new List<SqlAccountStaffUserMatch>();
+            await using var command = new FbCommand(sql, connection);
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                var email = ReadString(reader, "EMAIL")?.Trim() ?? string.Empty;
+                if (string.IsNullOrWhiteSpace(email))
+                    continue;
+
+                var code = ReadString(reader, "CODE") ?? string.Empty;
+                var name = ReadString(reader, "NAME");
+                results.Add(new SqlAccountStaffUserMatch(
+                    code,
+                    string.IsNullOrWhiteSpace(name) ? email : name.Trim(),
+                    email,
+                    ReadBool(reader, "UDF_ISADMIN")));
+            }
+
+            return results;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Local SQL Account SY_USER list read failed");
+            return Array.Empty<SqlAccountStaffUserMatch>();
+        }
+    }
+
     public async Task<int> UpdateClassDateByItemCodesAsync(
         IReadOnlyList<string> itemCodes,
         DateTime? classDateTime,
@@ -870,10 +916,16 @@ public class SqlAccountLocalDbService
         FbConnection connection,
         CancellationToken cancellationToken)
     {
-        const string sql = """
+        var emailColumn = await ResolveCustomerEmailColumnAsync(connection, cancellationToken);
+        var emailSelect = emailColumn != null
+            ? $"TRIM(A.{emailColumn}) AS CUSTOMER_EMAIL"
+            : "CAST(NULL AS VARCHAR(200)) AS CUSTOMER_EMAIL";
+
+        var sql = $"""
             SELECT
                 A.CODE,
                 A.COMPANYNAME,
+                {emailSelect},
                 B.BRANCHTYPE,
                 B.BRANCHNAME,
                 B.ATTENTION,
@@ -887,7 +939,7 @@ public class SqlAccountLocalDbService
 
         await using var command = new FbCommand(sql, connection);
 
-        var grouped = new Dictionary<string, (SqlAccountParentDto Parent, List<SqlAccountChildDto> Children)>(
+        var grouped = new Dictionary<string, (SqlAccountParentDto Parent, List<SqlAccountChildDto> Children, string? CustomerEmail)>(
             StringComparer.OrdinalIgnoreCase);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -905,7 +957,13 @@ public class SqlAccountLocalDbService
                         ReadString(reader, "COMPANYNAME") ?? string.Empty,
                         null,
                         Array.Empty<SqlAccountChildDto>()),
-                    new List<SqlAccountChildDto>());
+                    new List<SqlAccountChildDto>(),
+                    ReadString(reader, "CUSTOMER_EMAIL"));
+                grouped[code] = entry;
+            }
+            else if (string.IsNullOrWhiteSpace(entry.CustomerEmail))
+            {
+                entry = entry with { CustomerEmail = ReadString(reader, "CUSTOMER_EMAIL") };
                 grouped[code] = entry;
             }
 
@@ -918,7 +976,7 @@ public class SqlAccountLocalDbService
                 continue;
 
             entry.Children.Add(new SqlAccountChildDto(
-                branchName,
+                branchName!,
                 ReadString(reader, "ATTENTION"),
                 ReadString(reader, "EMAIL"),
                 ReadString(reader, "PHONE1")));
@@ -927,18 +985,55 @@ public class SqlAccountLocalDbService
         return grouped.Values
             .Select(pair =>
             {
-                var parentEmail = pair.Children
+                // Login email is the student branch email (AR_CUSTOMERBRANCH.EMAIL), not AR_CUSTOMER UDF.
+                var email = pair.Children
                     .Select(c => c.Email)
                     .FirstOrDefault(e => !string.IsNullOrWhiteSpace(e));
+
+                // After normalize: at most one child branch; keep first if multiple remain.
+                var children = pair.Children
+                    .OrderBy(c => c.BranchName, StringComparer.OrdinalIgnoreCase)
+                    .Take(1)
+                    .ToList();
+
                 return pair.Parent with
                 {
-                    ParentEmail = string.IsNullOrWhiteSpace(parentEmail) ? null : parentEmail.Trim(),
-                    Children = pair.Children,
+                    ParentEmail = string.IsNullOrWhiteSpace(email) ? null : email.Trim(),
+                    Children = children,
                 };
             })
             .Where(p => p.Children.Count > 0)
             .OrderBy(p => p.ParentName, StringComparer.OrdinalIgnoreCase)
             .ToList();
+    }
+
+    private static async Task<string?> ResolveCustomerEmailColumnAsync(
+        FbConnection connection,
+        CancellationToken cancellationToken)
+    {
+        if (await ColumnExistsAsync(connection, "AR_CUSTOMER", "UDF_EMAIL", cancellationToken))
+            return "UDF_EMAIL";
+        if (await ColumnExistsAsync(connection, "AR_CUSTOMER", "UDF_EMAILL", cancellationToken))
+            return "UDF_EMAILL";
+        return null;
+    }
+
+    private static async Task<bool> ColumnExistsAsync(
+        FbConnection connection,
+        string relation,
+        string column,
+        CancellationToken cancellationToken)
+    {
+        const string sql = """
+            SELECT 1
+            FROM RDB$RELATION_FIELDS
+            WHERE TRIM(RDB$RELATION_NAME) = @relation
+              AND TRIM(RDB$FIELD_NAME) = @column
+            """;
+        await using var cmd = new FbCommand(sql, connection);
+        cmd.Parameters.AddWithValue("@relation", relation.ToUpperInvariant());
+        cmd.Parameters.AddWithValue("@column", column.ToUpperInvariant());
+        return await cmd.ExecuteScalarAsync(cancellationToken) != null;
     }
 
     private static bool ReadBool(FbDataReader reader, string column)

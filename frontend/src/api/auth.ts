@@ -17,6 +17,14 @@ export const authApi = {
     const { data } = await apiClient.post<LoginResponse>('/auth/login/udf-email', { email });
     return data;
   },
+  getDevLogins: async (): Promise<{
+    admins: { name: string; email: string }[];
+    teachers: { name: string; email: string }[];
+    students: { name: string; email: string }[];
+  }> => {
+    const { data } = await apiClient.get('/auth/dev-logins');
+    return data;
+  },
   requestLoginOtp: async (email: string) => {
     const { data } = await apiClient.post<{
       message: string;

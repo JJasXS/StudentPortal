@@ -34,7 +34,7 @@ public class BillplzPaymentsController : ControllerBase
         });
 
     [HttpGet("fpx-banks")]
-    [Authorize(Roles = "Parent")]
+    [Authorize(Roles = "Student")]
     public async Task<IActionResult> FpxBanks()
     {
         if (!_billplz.IsConfigured)

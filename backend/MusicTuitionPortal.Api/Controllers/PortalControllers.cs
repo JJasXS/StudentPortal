@@ -26,7 +26,7 @@ public class HomeworkController : ControllerBase
         Ok((await _service.GetForTeacherAsync(teacher, cancellationToken)).Select(MapHw).ToList());
 
     [HttpGet("mine")]
-    [Authorize(Roles = "Parent")]
+    [Authorize(Roles = "Student")]
     public async Task<IActionResult> GetMine([FromQuery] string? branchName, CancellationToken cancellationToken)
     {
         var email = User.FindFirst(ClaimTypes.Email)?.Value;
@@ -35,7 +35,7 @@ public class HomeworkController : ControllerBase
     }
 
     [HttpPost]
-    [Authorize(Roles = "Parent")]
+    [Authorize(Roles = "Student")]
     [Consumes("multipart/form-data")]
     [RequestSizeLimit(HomeworkFileStorageService.MaxBytes)]
     public async Task<IActionResult> Submit(
@@ -83,7 +83,7 @@ public class HomeworkController : ControllerBase
     }
 
     [HttpGet("pending-count")]
-    [Authorize(Roles = "Parent")]
+    [Authorize(Roles = "Student")]
     public async Task<IActionResult> GetPendingCount(
         PortalAssignmentService assignments,
         CancellationToken cancellationToken)
@@ -170,7 +170,7 @@ public class AssignmentsController : ControllerBase
         Ok((await _service.GetForClassAsync(className, cancellationToken)).Select(MapAssignment).ToList());
 
     [HttpGet("mine")]
-    [Authorize(Roles = "Parent")]
+    [Authorize(Roles = "Student")]
     public async Task<IActionResult> GetMine(
         [FromQuery] string? branchName,
         CancellationToken cancellationToken)
@@ -241,7 +241,7 @@ public class LeaveController : ControllerBase
         Ok((await _service.GetAllAsync(cancellationToken)).Select(MapLeave).ToList());
 
     [HttpGet("mine")]
-    [Authorize(Roles = "Parent")]
+    [Authorize(Roles = "Student")]
     public async Task<IActionResult> GetMine(CancellationToken cancellationToken)
     {
         var email = User.FindFirst(ClaimTypes.Email)?.Value;
@@ -275,7 +275,7 @@ public class LeaveController : ControllerBase
     }
 
     [HttpPost]
-    [Authorize(Roles = "Parent")]
+    [Authorize(Roles = "Student")]
     public async Task<IActionResult> Submit([FromBody] CreatePortalLeaveRequest request, CancellationToken cancellationToken)
     {
         var email = User.FindFirst(ClaimTypes.Email)?.Value;
