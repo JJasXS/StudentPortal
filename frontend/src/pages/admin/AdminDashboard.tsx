@@ -77,10 +77,7 @@ export default function AdminDashboard() {
 
   return (
     <div className="space-y-4">
-      <PageHeader
-        title="Admin Dashboard"
-        description="Centre overview"
-      />
+      <PageHeader title="Admin Dashboard" />
 
       <DashboardNotifyFeed role="Admin" />
 

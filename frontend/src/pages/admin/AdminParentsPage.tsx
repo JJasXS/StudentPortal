@@ -166,12 +166,8 @@ export default function AdminParentsPage() {
     <div>
       <PageHeader
         title="User Management"
-        description="Students from SQL Account (one AR_CUSTOMER = one student). Use the menu to manage enrollments and schedules."
         actions={
           <div className="flex flex-wrap items-center gap-2">
-            <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600">
-              View only
-            </span>
             <Button variant="outline" onClick={() => void load()} disabled={loading}>
               <RefreshCw className={cn('mr-1.5 h-4 w-4', loading && 'animate-spin')} />
               Refresh
