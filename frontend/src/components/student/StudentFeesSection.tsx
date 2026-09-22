@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
-import { AlertCircle, CheckCircle2 } from 'lucide-react';
+import { CheckCircle2 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/Card';
 import { SlidingTabs } from '@/components/ui/SlidingTabs';
+import { OutstandingPaymentWhatsAppButton } from '@/components/fees/OutstandingPaymentWhatsAppButton';
 import { studentsApi } from '@/api/resources';
 import { formatRm } from '@/utils/invoiceBilling';
 import { formatDateDDMMYYYY } from '@/utils/dateFormat';
+import { feeDisplayLabel } from '@/utils/whatsappPayment';
 import type { SqlAccountOutstandingInvoice } from '@/types/sqlAccount';
 
 type FeesTab = 'due' | 'history';
@@ -16,36 +18,16 @@ function DueList({ invoices }: { invoices: SqlAccountOutstandingInvoice[] }) {
     );
   }
 
-  const total = invoices.reduce((sum, invoice) => sum + invoice.outstanding, 0);
-
   return (
-    <div className="space-y-3 p-4">
-      <div className="flex gap-3 rounded-lg border border-amber-200 bg-amber-50/80 px-3 py-3">
-        <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" />
-        <div className="min-w-0">
-          <p className="text-sm font-semibold text-amber-900">
-            Payment reminder — {invoices.length} fee{invoices.length === 1 ? '' : 's'} due ·{' '}
-            {formatRm(total)}
-          </p>
-          <p className="mt-0.5 text-xs text-amber-800">
-            Music class fees waiting to be paid. Pay at the centre or via your usual method.
-          </p>
-        </div>
-      </div>
-      <ul className="divide-y divide-slate-100 rounded-lg border border-slate-200">
+    <div className="p-2">
+      <ul className="divide-y divide-slate-100">
         {invoices.map((invoice) => (
           <li
             key={invoice.docKey}
-            className="flex flex-wrap items-baseline justify-between gap-2 px-3 py-2.5 text-sm"
+            className="flex flex-wrap items-baseline justify-between gap-2 px-2 py-2.5 text-sm"
           >
-            <span className="min-w-0 text-slate-800">
-              <span className="font-medium">{invoice.docNo}</span>
-              {invoice.dueDate ? (
-                <span className="ml-2 text-slate-500">due {formatDateDDMMYYYY(invoice.dueDate)}</span>
-              ) : null}
-              {invoice.description ? (
-                <span className="mt-0.5 block text-xs text-slate-500">{invoice.description}</span>
-              ) : null}
+            <span className="min-w-0 font-medium text-slate-800">
+              {feeDisplayLabel(invoice)}
             </span>
             <span className="tabular-nums font-medium text-amber-900">
               {formatRm(invoice.outstanding)}
@@ -53,6 +35,9 @@ function DueList({ invoices }: { invoices: SqlAccountOutstandingInvoice[] }) {
           </li>
         ))}
       </ul>
+      <div className="px-2 pb-2 pt-1">
+        <OutstandingPaymentWhatsAppButton invoices={invoices} />
+      </div>
     </div>
   );
 }
@@ -73,7 +58,7 @@ function HistoryList({ invoices }: { invoices: SqlAccountOutstandingInvoice[] })
         >
           <span className="min-w-0 text-slate-800">
             <span className="inline-flex flex-wrap items-center gap-2">
-              <span className="font-medium">{invoice.docNo}</span>
+              <span className="font-medium">{feeDisplayLabel(invoice)}</span>
               <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700">
                 <CheckCircle2 className="h-3 w-3" />
                 Paid
@@ -83,9 +68,6 @@ function HistoryList({ invoices }: { invoices: SqlAccountOutstandingInvoice[] })
               <span className="mt-0.5 block text-xs text-slate-500">
                 {formatDateDDMMYYYY(invoice.docDate)}
               </span>
-            ) : null}
-            {invoice.description ? (
-              <span className="mt-0.5 block text-xs text-slate-500">{invoice.description}</span>
             ) : null}
           </span>
           <span className="tabular-nums font-medium text-slate-800">

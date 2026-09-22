@@ -7,6 +7,7 @@ interface ImportMetaEnv {
   readonly VITE_USE_MOCK?: string;
   readonly VITE_APP_NAME?: string;
   readonly VITE_CENTRE_NAME?: string;
+  readonly VITE_WHATSAPP_PAYMENT_PHONE?: string;
 }
 
 interface ImportMeta {
