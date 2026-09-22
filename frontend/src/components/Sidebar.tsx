@@ -30,7 +30,7 @@ interface NavItem {
 
 const adminNav: NavItem[] = [
   { label: 'Dashboard', path: '/admin/dashboard', icon: LayoutDashboard },
-  { label: 'User Management', path: '/admin/parents', icon: Users },
+  { label: 'User Management', path: '/admin/students', icon: Users },
   { label: 'Calendar & Courses', path: '/admin/calendar', icon: CalendarDays },
   { label: 'Leave requests', path: '/admin/leave', icon: CalendarOff },
   { label: 'Announcements', path: '/admin/announcements', icon: Megaphone },
@@ -137,7 +137,7 @@ export default function Sidebar({ role, open, onClose }: SidebarProps) {
               const showDot =
                 (isDashboard && unreadNotifyCount > 0) ||
                 (isAssignment && pendingHomeworkCount > 0);
-              const isUserMgmt = item.path === '/admin/parents';
+              const isUserMgmt = item.path === '/admin/students';
 
               return (
                 <li key={item.path}>

@@ -13,7 +13,7 @@ interface NavbarProps {
 export default function Navbar({ onMenuClick }: NavbarProps) {
   const { user } = useAuth();
   const { pathname } = useLocation();
-  const adminTitle = pathname.startsWith('/admin/parents') || pathname.startsWith('/admin/teachers')
+  const adminTitle = pathname.startsWith('/admin/students') || pathname.startsWith('/admin/teachers')
     ? 'User management'
     : 'Admin Dashboard';
 

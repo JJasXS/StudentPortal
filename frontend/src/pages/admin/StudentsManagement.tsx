@@ -219,7 +219,7 @@ export default function StudentsManagement() {
       {parents.length === 0 && (
         <p className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800">
           No parent accounts yet.{' '}
-          <Link to="/admin/parents" className="font-medium text-amber-900 underline">
+          <Link to="/admin/students" className="font-medium text-amber-900 underline">
             Add a parent
           </Link>{' '}
           before creating students.

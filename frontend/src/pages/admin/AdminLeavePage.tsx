@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/Button';
 import { DataTable } from '@/components/ui/DataTable';
 import { Label, Textarea, Input } from '@/components/ui/Input';
 import { Modal } from '@/components/ui/Modal';
+import { PortalMenu } from '@/components/ui/PortalMenu';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { useToast } from '@/context/ToastContext';
 import { leaveApi } from '@/api/resources';
@@ -15,38 +16,45 @@ import { formatPortalSlotDate, portalLeaveStatusLabel } from '@/utils/portalLeav
 import { getApiErrorMessage } from '@/utils/apiError';
 import type { PortalLeaveRequest } from '@/types/portal';
 
+function leaveModalTitle(request: PortalLeaveRequest) {
+  const name = request.branchName?.trim() || '';
+  const email = request.requestedBy?.trim() || '';
+  if (name && email && email.includes('@') && name.toLowerCase() !== email.toLowerCase()) {
+    return `${name} (${email})`;
+  }
+  return name || email || 'Leave request';
+}
+
 function LeaveActionsMenu({ onManage }: { onManage: () => void }) {
   const [open, setOpen] = useState(false);
-  const menuRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    const handleClick = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setOpen(false);
-    };
-    document.addEventListener('mousedown', handleClick);
-    return () => document.removeEventListener('mousedown', handleClick);
-  }, [open]);
+  const anchorRef = useRef<HTMLDivElement>(null);
+  const close = useCallback(() => setOpen(false), []);
 
   return (
-    <div className="relative" ref={menuRef}>
-      <Button type="button" variant="ghost" size="sm" aria-label="Manage leave" onClick={() => setOpen((v) => !v)}>
+    <div ref={anchorRef} className="relative">
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        aria-label="Manage leave"
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+      >
         <MoreVertical className="h-4 w-4" />
       </Button>
-      {open && (
-        <div className="absolute right-0 top-full z-50 mt-1 min-w-[10rem] rounded-lg border border-slate-200 bg-white py-1 shadow-lg">
-          <button
-            type="button"
-            className="block w-full px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"
-            onClick={() => {
-              setOpen(false);
-              onManage();
-            }}
-          >
-            Manage
-          </button>
-        </div>
-      )}
+      <PortalMenu open={open} onClose={close} anchorRef={anchorRef} minWidth={160}>
+        <button
+          type="button"
+          role="menuitem"
+          className="block w-full px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"
+          onClick={() => {
+            close();
+            onManage();
+          }}
+        >
+          Manage
+        </button>
+      </PortalMenu>
     </div>
   );
 }
@@ -128,26 +136,37 @@ export default function AdminLeavePage() {
       <PageHeader
         title="Leave requests"
         description="Review parent and teacher leave requests; confirm replacements."
+        actions={
+          <div
+            role="group"
+            aria-label="Filter leave requests"
+            className="inline-flex rounded-lg border border-slate-200 bg-slate-100 p-0.5"
+          >
+            <button
+              type="button"
+              onClick={() => setFilter('action')}
+              className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+                filter === 'action'
+                  ? 'bg-white text-slate-900 shadow-sm'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              Needs action
+            </button>
+            <button
+              type="button"
+              onClick={() => setFilter('all')}
+              className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+                filter === 'all'
+                  ? 'bg-white text-slate-900 shadow-sm'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              All requests
+            </button>
+          </div>
+        }
       />
-
-      <div className="flex gap-2">
-        <Button
-          type="button"
-          variant={filter === 'action' ? 'default' : 'outline'}
-          size="sm"
-          onClick={() => setFilter('action')}
-        >
-          Needs action
-        </Button>
-        <Button
-          type="button"
-          variant={filter === 'all' ? 'default' : 'outline'}
-          size="sm"
-          onClick={() => setFilter('all')}
-        >
-          All requests
-        </Button>
-      </div>
 
       <Card>
         <CardContent className="p-0">
@@ -248,7 +267,7 @@ export default function AdminLeavePage() {
       <Modal
         open={Boolean(selected)}
         onClose={closeManage}
-        title={selected ? `${selected.requestedBy ?? selected.branchName} — leave` : 'Leave request'}
+        title={selected ? leaveModalTitle(selected) : 'Leave request'}
         className="max-w-2xl"
       >
         {selected && (

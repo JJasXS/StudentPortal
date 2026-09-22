@@ -1,4 +1,5 @@
 import type { PortalLeaveStatus } from '@/types/portal';
+import { formatDateDDMMYYYY } from '@/utils/dateFormat';
 
 export function portalLeaveStatusLabel(status: PortalLeaveStatus | string): string {
   switch (status) {
@@ -42,11 +43,24 @@ export function formatPortalSlotDate(
   end?: string | null
 ): string {
   if (!date) return '—';
-  const d = date.slice(0, 10);
-  const parts = [d];
-  if (start) parts.push(start);
-  if (end) parts.push(end);
+  const parts = [formatDateDDMMYYYY(date.slice(0, 10))];
+  if (start?.trim()) parts.push(start.trim());
+  if (end?.trim()) parts.push(end.trim());
   return parts.join(' · ');
+}
+
+/** Original leave session → confirmed replacement, e.g. "24-09-2026 · 10:00 → 25-09-2026 · 09:00". */
+export function formatLeaveReplacementFromTo(request: {
+  sessionDate?: string | null;
+  sessionStartTime?: string | null;
+  replDate?: string | null;
+  replStart?: string | null;
+  replEnd?: string | null;
+}): string | null {
+  if (!request.replDate) return null;
+  const from = formatPortalSlotDate(request.sessionDate, request.sessionStartTime);
+  const to = formatPortalSlotDate(request.replDate, request.replStart, request.replEnd);
+  return `${from} → ${to}`;
 }
 
 export function isLeaveSessionEligible(sessionDate: string, startTime?: string | null): boolean {

@@ -1,4 +1,4 @@
-import { Navigate, Route, Routes, useParams } from 'react-router-dom';
+import { Navigate, Route, Routes, useLocation, useParams } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
 import ProtectedRoute from '@/components/ProtectedRoute';
 import DashboardLayout from '@/layouts/DashboardLayout';
@@ -45,6 +45,18 @@ function LegacyTeacherClassRedirect() {
   return <Navigate to={`/teacher/classes/${classId}`} replace />;
 }
 
+function LegacyAdminParentsRedirect() {
+  const { customerCode } = useParams<{ customerCode: string }>();
+  const location = useLocation();
+  if (!customerCode) return <Navigate to="/admin/students" replace />;
+  return (
+    <Navigate
+      to={`/admin/students/${encodeURIComponent(customerCode)}${location.search}`}
+      replace
+    />
+  );
+}
+
 function RoleRedirect() {
   const { user } = useAuth();
   if (!user) return <Navigate to="/login" replace />;
@@ -66,9 +78,10 @@ export default function AppRoutes() {
 
           <Route element={<ProtectedRoute allowedRoles={['Admin']} />}>
             <Route path="/admin/dashboard" element={<AdminDashboard />} />
-            <Route path="/admin/students" element={<Navigate to="/admin/parents" replace />} />
-            <Route path="/admin/parents" element={<AdminParentsPage />} />
-            <Route path="/admin/parents/:customerCode" element={<AdminParentDetailPage />} />
+            <Route path="/admin/students" element={<AdminParentsPage />} />
+            <Route path="/admin/students/:customerCode" element={<AdminParentDetailPage />} />
+            <Route path="/admin/parents" element={<Navigate to="/admin/students" replace />} />
+            <Route path="/admin/parents/:customerCode" element={<LegacyAdminParentsRedirect />} />
             <Route path="/admin/teachers" element={<TeachersManagement />} />
             <Route path="/admin/courses" element={<Navigate to="/admin/calendar" replace />} />
             <Route path="/admin/courses/:courseId" element={<CourseDetailPage />} />

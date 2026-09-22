@@ -48,6 +48,7 @@ if (args.Contains("--create-assign-log")
     || args.Contains("--rename-teachers-as-music")
     || args.Contains("--set-teacher-mobiles")
     || args.Contains("--seed-student-fee-invoices")
+    || args.Contains("--rename-stock-as-music")
     || args.Contains("--probe-domain")
     || args.Contains("--probe-sodtl-values"))
 {
@@ -88,6 +89,11 @@ if (args.Contains("--create-assign-log")
     if (args.Contains("--seed-student-fee-invoices"))
     {
         return await SeedStudentFeeInvoicesAsync(assignConnection);
+    }
+
+    if (args.Contains("--rename-stock-as-music"))
+    {
+        return await RenameStockAsMusicAsync(assignConnection);
     }
 
     if (args.Contains("--normalize-customer-as-student"))

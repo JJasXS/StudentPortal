@@ -438,6 +438,7 @@ public record PortalLeaveRequestDto(
     string BranchName,
     string? ClassName,
     string SessionDate,
+    string? SessionStartTime,
     string Reason,
     string Status,
     string? AdminNote,

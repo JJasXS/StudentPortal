@@ -296,7 +296,8 @@ public class LeaveController : ControllerBase
     {
         id = r.Id, occurrenceId = r.OccurrenceId, docKey = r.DocKey, seq = r.Seq,
         customerCode = r.CustomerCode, branchName = r.BranchName, className = r.ClassName,
-        sessionDate = r.SessionDate, reason = r.Reason, status = r.Status, adminNote = r.AdminNote,
+        sessionDate = r.SessionDate, sessionStartTime = r.SessionStartTime,
+        reason = r.Reason, status = r.Status, adminNote = r.AdminNote,
         needsReplacement = r.NeedsReplacement,
         replOptions = r.ReplOptions.Select(o => new { date = o.Date, time = o.Time }).ToList(),
         replDate = r.ReplDate, replStart = r.ReplStart,

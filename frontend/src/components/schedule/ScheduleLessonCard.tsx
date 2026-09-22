@@ -52,6 +52,7 @@ export function ScheduleLessonCard({ item, className }: ScheduleLessonCardProps)
   const { weekday, day, month } = parseDateParts(item.sessionDate);
   const displayStatus =
     item.isMakeup && item.status !== 'Cancelled' ? 'Scheduled' : item.status;
+  const isCancelled = displayStatus === 'Cancelled';
   const classLabel = item.className ?? item.title;
   const timeLabel = formatTimeShort(item.startTime);
 
@@ -59,6 +60,7 @@ export function ScheduleLessonCard({ item, className }: ScheduleLessonCardProps)
     <article
       className={cn(
         'relative flex min-w-0 overflow-hidden rounded-2xl bg-white shadow-[0_2px_12px_rgba(15,23,42,0.08)]',
+        isCancelled && 'opacity-75',
         className
       )}
     >
@@ -77,11 +79,23 @@ export function ScheduleLessonCard({ item, className }: ScheduleLessonCardProps)
         >
           {STATUS_LABELS[displayStatus]}
         </span>
-        <h3 className="mt-2 line-clamp-2 text-sm font-bold leading-snug text-slate-900 sm:mt-2.5 sm:text-[15px]">
+        <h3
+          className={cn(
+            'mt-2 line-clamp-2 text-sm font-bold leading-snug text-slate-900 sm:mt-2.5 sm:text-[15px]',
+            isCancelled && 'text-slate-500 line-through decoration-slate-400'
+          )}
+        >
           {classLabel} | {timeLabel}
         </h3>
         {item.teacherName && (
-          <p className="mt-1 truncate text-xs text-slate-500 sm:text-sm">{item.teacherName}</p>
+          <p
+            className={cn(
+              'mt-1 truncate text-xs text-slate-500 sm:text-sm',
+              isCancelled && 'line-through decoration-slate-400'
+            )}
+          >
+            {item.teacherName}
+          </p>
         )}
       </div>
 

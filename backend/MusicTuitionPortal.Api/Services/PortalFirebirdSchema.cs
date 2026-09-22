@@ -16,6 +16,7 @@ public static class PortalFirebirdSchema
         await EnsurePortalLeaveRequestsTableAsync(connection, cancellationToken);
         await EnsurePortalLeaveReplOptionsColumnAsync(connection, cancellationToken);
         await EnsurePortalLeaveRequesterTypeColumnAsync(connection, cancellationToken);
+        await EnsurePortalLeaveSessionStartColumnAsync(connection, cancellationToken);
         await EnsurePortalAnnouncementsTableAsync(connection, cancellationToken);
         await EnsurePortalAnnouncementNotifyColumnsAsync(connection, cancellationToken);
         await EnsurePortalAnnouncementExpiryColumnAsync(connection, cancellationToken);
@@ -238,6 +239,27 @@ public static class PortalFirebirdSchema
         {
             await using var cmd = new FbCommand(
                 "ALTER TABLE PORTAL_LEAVE_REQUESTS ADD REQUESTERTYPE VARCHAR(20) DEFAULT 'Parent'",
+                connection);
+            await cmd.ExecuteNonQueryAsync(ct);
+        }
+        catch
+        {
+            // Column already exists
+        }
+    }
+
+    private static async Task EnsurePortalLeaveSessionStartColumnAsync(FbConnection connection, CancellationToken ct)
+    {
+        if (!await TableExistsAsync(connection, "PORTAL_LEAVE_REQUESTS", ct))
+            return;
+
+        if (await ColumnExistsAsync(connection, "PORTAL_LEAVE_REQUESTS", "SESSIONSTARTTIME", ct))
+            return;
+
+        try
+        {
+            await using var cmd = new FbCommand(
+                "ALTER TABLE PORTAL_LEAVE_REQUESTS ADD SESSIONSTARTTIME VARCHAR(10)",
                 connection);
             await cmd.ExecuteNonQueryAsync(ct);
         }

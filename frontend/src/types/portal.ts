@@ -56,6 +56,7 @@ export interface PortalLeaveRequest {
   branchName: string;
   className?: string | null;
   sessionDate: string;
+  sessionStartTime?: string | null;
   reason: string;
   status: PortalLeaveStatus;
   adminNote?: string | null;

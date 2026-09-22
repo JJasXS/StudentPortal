@@ -123,6 +123,8 @@ public class PortalClassSessionService
                     cancellationToken);
             }
         }
+
+        await RepairMovedRescheduledAsync(connection, cancellationToken);
     }
 
     public async Task<List<ErpCalendarEventDto>> GetCalendarEventsAsync(
@@ -246,8 +248,28 @@ public class PortalClassSessionService
         string id,
         CancellationToken cancellationToken = default)
     {
-        var list = await GetOccurrencesAsync(cancellationToken: cancellationToken);
-        return list.FirstOrDefault(o => string.Equals(o.Id, id, StringComparison.OrdinalIgnoreCase));
+        if (!_localDb.CanReadLocalDb || string.IsNullOrWhiteSpace(id))
+            return null;
+
+        await using var connection = _localDb.OpenConnection();
+        await connection.OpenAsync(cancellationToken);
+
+        if (!await PortalFirebirdSchema.TableExistsAsync(connection, "PORTAL_CLASS_SESSIONS", cancellationToken))
+            return null;
+
+        const string sql = """
+            SELECT ID, DOCKEY, SEQ, ITEMCODE, CUSTOMERCODE, BRANCHNAME, STUDENTNAME, CLASSNAME,
+                   CONDUCTEDBY, OCCURRENCEINDEX, SESSIONDATE, STARTTIME, ENDTIME, STATUS, REASON
+            FROM PORTAL_CLASS_SESSIONS
+            WHERE ID = @id
+            """;
+
+        await using var command = new FbCommand(sql, connection);
+        command.Parameters.AddWithValue("@id", id.Trim());
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+            return null;
+        return MapOccurrence(reader);
     }
 
     public async Task<bool> CancelOccurrenceAsync(
@@ -290,44 +312,221 @@ public class PortalClassSessionService
         string reason,
         CancellationToken cancellationToken = default)
     {
+        return await CancelAndCreateReplacementAsync(
+            id, sessionDate, startTime, endTime, reason, cancellationToken);
+    }
+
+    /// <summary>
+    /// Cancels the original session and inserts a new Rescheduled occurrence for the replacement slot.
+    /// </summary>
+    public async Task<PortalClassSessionDto> CancelAndCreateReplacementAsync(
+        string originalId,
+        string sessionDate,
+        string startTime,
+        string endTime,
+        string reason,
+        CancellationToken cancellationToken = default)
+    {
         if (!_localDb.CanWriteLocalDb)
             throw new InvalidOperationException("Firebird database is not available.");
 
-        var before = await GetOccurrenceByIdAsync(id, cancellationToken)
+        var before = await GetOccurrenceByIdAsync(originalId, cancellationToken)
             ?? throw new InvalidOperationException("Session occurrence not found.");
 
         if (!DateTime.TryParse($"{sessionDate.Trim()} {startTime.Trim()}", out var newDateTime))
             throw new InvalidOperationException("Invalid session date or start time.");
 
+        var cancelReason = string.IsNullOrWhiteSpace(reason)
+            ? "Leave approved — original session cancelled; replacement scheduled."
+            : reason.Trim();
+
+        await CancelOccurrenceAsync(originalId, cancelReason, cancellationToken);
+
         await using var connection = _localDb.OpenConnection();
         await connection.OpenAsync(cancellationToken);
 
-        const string sql = """
-            UPDATE PORTAL_CLASS_SESSIONS
-            SET SESSIONDATE = @sessionDate, STARTTIME = @startTime, ENDTIME = @endTime,
-                STATUS = 'Rescheduled', REASON = @reason, UPDATEDAT = @updatedAt
-            WHERE ID = @id
+        var nextIndex = await NextOccurrenceIndexAsync(connection, before.DocKey, before.Seq, cancellationToken);
+        var id = Guid.NewGuid().ToString();
+        var now = DateTime.UtcNow;
+        DateTime? originalDate = DateTime.TryParse(before.SessionDate, out var od) ? od : null;
+
+        const string insertSql = """
+            INSERT INTO PORTAL_CLASS_SESSIONS (
+                ID, DOCKEY, SEQ, ITEMCODE, CUSTOMERCODE, BRANCHNAME, STUDENTNAME, CLASSNAME,
+                CONDUCTEDBY, OCCURRENCEINDEX, SESSIONDATE, STARTTIME, ENDTIME, STATUS,
+                ORIGINALDATE, REASON, CREATEDAT, UPDATEDAT
+            ) VALUES (
+                @id, @docKey, @seq, @itemCode, @customerCode, @branchName, @studentName, @className,
+                @conductedBy, @index, @sessionDate, @startTime, @endTime, 'Rescheduled',
+                @originalDate, @reason, @createdAt, @updatedAt
+            )
             """;
 
-        await using var command = new FbCommand(sql, connection);
-        command.Parameters.AddWithValue("@id", id);
-        command.Parameters.AddWithValue("@sessionDate", newDateTime);
-        command.Parameters.AddWithValue("@startTime", startTime.Trim());
-        command.Parameters.AddWithValue("@endTime", endTime.Trim());
-        command.Parameters.AddWithValue("@reason", reason.Trim());
-        command.Parameters.AddWithValue("@updatedAt", DateTime.UtcNow);
-        await command.ExecuteNonQueryAsync(cancellationToken);
+        await using (var insertCmd = new FbCommand(insertSql, connection))
+        {
+            insertCmd.Parameters.AddWithValue("@id", id);
+            insertCmd.Parameters.AddWithValue("@docKey", before.DocKey);
+            insertCmd.Parameters.AddWithValue("@seq", before.Seq);
+            insertCmd.Parameters.AddWithValue("@itemCode", (object?)before.ItemCode ?? DBNull.Value);
+            insertCmd.Parameters.AddWithValue("@customerCode", before.CustomerCode);
+            insertCmd.Parameters.AddWithValue("@branchName", before.BranchName);
+            insertCmd.Parameters.AddWithValue("@studentName", (object?)before.StudentName ?? DBNull.Value);
+            insertCmd.Parameters.AddWithValue("@className", before.ClassName);
+            insertCmd.Parameters.AddWithValue("@conductedBy", (object?)before.ConductedBy ?? DBNull.Value);
+            insertCmd.Parameters.AddWithValue("@index", nextIndex);
+            insertCmd.Parameters.AddWithValue("@sessionDate", newDateTime);
+            insertCmd.Parameters.AddWithValue("@startTime", startTime.Trim());
+            insertCmd.Parameters.AddWithValue("@endTime", endTime.Trim());
+            insertCmd.Parameters.AddWithValue("@originalDate", (object?)originalDate ?? DBNull.Value);
+            insertCmd.Parameters.AddWithValue("@reason", "Replacement session from approved leave");
+            insertCmd.Parameters.AddWithValue("@createdAt", now);
+            insertCmd.Parameters.AddWithValue("@updatedAt", now);
+            await insertCmd.ExecuteNonQueryAsync(cancellationToken);
+        }
 
         await LogOccurrenceChangeAsync(
             before,
             "Rescheduled",
-            reason,
+            "Replacement session from approved leave",
             newDateTime,
             ParseTimeSpan(startTime),
             ParseTimeSpan(endTime),
             cancellationToken);
 
-        return await GetOccurrenceByIdAsync(id, cancellationToken);
+        return await GetOccurrenceByIdAsync(id, cancellationToken)
+            ?? throw new InvalidOperationException("Replacement session was created but could not be reloaded.");
+    }
+
+    /// <summary>
+    /// Older leave/admin replace moved SESSIONDATE in place. Restore a Cancelled row on ORIGINALDATE.
+    /// </summary>
+    private static async Task RepairMovedRescheduledAsync(
+        FbConnection connection,
+        CancellationToken cancellationToken)
+    {
+        const string findSql = """
+            SELECT ID, DOCKEY, SEQ, ITEMCODE, CUSTOMERCODE, BRANCHNAME, STUDENTNAME, CLASSNAME,
+                   CONDUCTEDBY, SESSIONDATE, ORIGINALDATE, REASON
+            FROM PORTAL_CLASS_SESSIONS
+            WHERE STATUS = 'Rescheduled'
+              AND ORIGINALDATE IS NOT NULL
+            """;
+
+        var pending = new List<(
+            int DocKey, int Seq, string? ItemCode, string CustomerCode, string BranchName,
+            string? StudentName, string ClassName, string? ConductedBy,
+            DateTime OriginalDate, string? Reason)>();
+
+        await using (var findCmd = new FbCommand(findSql, connection))
+        await using (var reader = await findCmd.ExecuteReaderAsync(cancellationToken))
+        {
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                var sessionDate = Convert.ToDateTime(reader["SESSIONDATE"]).Date;
+                var originalDate = Convert.ToDateTime(reader["ORIGINALDATE"]);
+                if (sessionDate == originalDate.Date)
+                    continue;
+
+                pending.Add((
+                    Convert.ToInt32(reader["DOCKEY"]),
+                    Convert.ToInt32(reader["SEQ"]),
+                    reader["ITEMCODE"]?.ToString(),
+                    reader["CUSTOMERCODE"]?.ToString() ?? string.Empty,
+                    reader["BRANCHNAME"]?.ToString() ?? string.Empty,
+                    reader["STUDENTNAME"]?.ToString(),
+                    reader["CLASSNAME"]?.ToString() ?? "Class",
+                    reader["CONDUCTEDBY"]?.ToString(),
+                    originalDate,
+                    reader["REASON"]?.ToString()));
+            }
+        }
+
+        foreach (var row in pending)
+        {
+            if (await CancelledExistsOnDateAsync(
+                    connection, row.DocKey, row.Seq, row.OriginalDate.Date, cancellationToken))
+                continue;
+
+            var start = row.OriginalDate.TimeOfDay;
+            if (start == TimeSpan.Zero)
+                start = new TimeSpan(10, 0, 0);
+            var end = start.Add(TimeSpan.FromHours(1));
+            var nextIndex = await NextOccurrenceIndexAsync(connection, row.DocKey, row.Seq, cancellationToken);
+            var now = DateTime.UtcNow;
+            var reason = string.IsNullOrWhiteSpace(row.Reason)
+                ? "Original session cancelled — replaced by reschedule."
+                : $"Original session cancelled — {row.Reason.Trim()}";
+
+            const string insertSql = """
+                INSERT INTO PORTAL_CLASS_SESSIONS (
+                    ID, DOCKEY, SEQ, ITEMCODE, CUSTOMERCODE, BRANCHNAME, STUDENTNAME, CLASSNAME,
+                    CONDUCTEDBY, OCCURRENCEINDEX, SESSIONDATE, STARTTIME, ENDTIME, STATUS,
+                    ORIGINALDATE, REASON, CREATEDAT, UPDATEDAT
+                ) VALUES (
+                    @id, @docKey, @seq, @itemCode, @customerCode, @branchName, @studentName, @className,
+                    @conductedBy, @index, @sessionDate, @startTime, @endTime, 'Cancelled',
+                    @originalDate, @reason, @createdAt, @updatedAt
+                )
+                """;
+
+            await using var insertCmd = new FbCommand(insertSql, connection);
+            insertCmd.Parameters.AddWithValue("@id", Guid.NewGuid().ToString());
+            insertCmd.Parameters.AddWithValue("@docKey", row.DocKey);
+            insertCmd.Parameters.AddWithValue("@seq", row.Seq);
+            insertCmd.Parameters.AddWithValue("@itemCode", (object?)row.ItemCode ?? DBNull.Value);
+            insertCmd.Parameters.AddWithValue("@customerCode", row.CustomerCode);
+            insertCmd.Parameters.AddWithValue("@branchName", row.BranchName);
+            insertCmd.Parameters.AddWithValue("@studentName", (object?)row.StudentName ?? DBNull.Value);
+            insertCmd.Parameters.AddWithValue("@className", row.ClassName);
+            insertCmd.Parameters.AddWithValue("@conductedBy", (object?)row.ConductedBy ?? DBNull.Value);
+            insertCmd.Parameters.AddWithValue("@index", nextIndex);
+            insertCmd.Parameters.AddWithValue("@sessionDate", row.OriginalDate.Date.Add(start));
+            insertCmd.Parameters.AddWithValue("@startTime", TimeHelper.FormatTime(start));
+            insertCmd.Parameters.AddWithValue("@endTime", TimeHelper.FormatTime(end));
+            insertCmd.Parameters.AddWithValue("@originalDate", row.OriginalDate);
+            insertCmd.Parameters.AddWithValue("@reason", reason);
+            insertCmd.Parameters.AddWithValue("@createdAt", now);
+            insertCmd.Parameters.AddWithValue("@updatedAt", now);
+            await insertCmd.ExecuteNonQueryAsync(cancellationToken);
+        }
+    }
+
+    private static async Task<bool> CancelledExistsOnDateAsync(
+        FbConnection connection,
+        int docKey,
+        int seq,
+        DateTime sessionDate,
+        CancellationToken cancellationToken)
+    {
+        const string sql = """
+            SELECT COUNT(*) FROM PORTAL_CLASS_SESSIONS
+            WHERE DOCKEY = @docKey AND SEQ = @seq AND STATUS = 'Cancelled'
+              AND SESSIONDATE >= @dayStart AND SESSIONDATE < @dayEnd
+            """;
+        await using var cmd = new FbCommand(sql, connection);
+        cmd.Parameters.AddWithValue("@docKey", docKey);
+        cmd.Parameters.AddWithValue("@seq", seq);
+        cmd.Parameters.AddWithValue("@dayStart", sessionDate.Date);
+        cmd.Parameters.AddWithValue("@dayEnd", sessionDate.Date.AddDays(1));
+        var count = Convert.ToInt32(await cmd.ExecuteScalarAsync(cancellationToken));
+        return count > 0;
+    }
+
+    private static async Task<int> NextOccurrenceIndexAsync(
+        FbConnection connection,
+        int docKey,
+        int seq,
+        CancellationToken cancellationToken)
+    {
+        const string sql = """
+            SELECT COALESCE(MAX(OCCURRENCEINDEX), 0) FROM PORTAL_CLASS_SESSIONS
+            WHERE DOCKEY = @docKey AND SEQ = @seq
+            """;
+        await using var command = new FbCommand(sql, connection);
+        command.Parameters.AddWithValue("@docKey", docKey);
+        command.Parameters.AddWithValue("@seq", seq);
+        var max = await command.ExecuteScalarAsync(cancellationToken);
+        return Convert.ToInt32(max) + 1;
     }
 
     private async Task LogOccurrenceChangeAsync(

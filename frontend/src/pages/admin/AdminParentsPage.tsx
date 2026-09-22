@@ -6,6 +6,7 @@ import { SearchBox } from '@/components/SearchBox';
 import { UserManagementSwitcher } from '@/components/admin/UserManagementSwitcher';
 import { Card, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
+import { PortalMenu } from '@/components/ui/PortalMenu';
 import { sqlAccountApi } from '@/api/resources';
 import type { SqlAccountChild, SqlAccountParent } from '@/types/sqlAccount';
 import { cn } from '@/utils/cn';
@@ -65,46 +66,36 @@ function StudentActionsMenu({
 }) {
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
-  const menuRef = useRef<HTMLDivElement>(null);
+  const anchorRef = useRef<HTMLDivElement>(null);
+  const close = useCallback(() => setOpen(false), []);
 
-  useEffect(() => {
-    if (!open) return;
-    const handleClick = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        setOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClick);
-    return () => document.removeEventListener('mousedown', handleClick);
-  }, [open]);
-
-  const manageHref = `/admin/parents/${encodeURIComponent(customerCode)}?branch=${encodeURIComponent(branchName)}&tab=assign`;
+  const manageHref = `/admin/students/${encodeURIComponent(customerCode)}?branch=${encodeURIComponent(branchName)}&tab=assign`;
 
   return (
-    <div className="relative" ref={menuRef}>
+    <div ref={anchorRef} className="relative">
       <Button
         type="button"
         variant="ghost"
         size="sm"
         aria-label="Student actions"
+        aria-expanded={open}
         onClick={() => setOpen((v) => !v)}
       >
         <MoreVertical className="h-4 w-4" />
       </Button>
-      {open && (
-        <div className="absolute right-0 top-full z-20 mt-1 min-w-[11rem] rounded-lg border border-slate-200 bg-white py-1 shadow-lg">
-          <button
-            type="button"
-            className="block w-full px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"
-            onClick={() => {
-              setOpen(false);
-              void navigate(manageHref);
-            }}
-          >
-            Manage student
-          </button>
-        </div>
-      )}
+      <PortalMenu open={open} onClose={close} anchorRef={anchorRef} minWidth={176}>
+        <button
+          type="button"
+          role="menuitem"
+          className="block w-full px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"
+          onClick={() => {
+            close();
+            void navigate(manageHref);
+          }}
+        >
+          Manage student
+        </button>
+      </PortalMenu>
     </div>
   );
 }

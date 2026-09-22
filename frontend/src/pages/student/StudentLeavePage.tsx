@@ -13,7 +13,7 @@ import { useAuth } from '@/context/AuthContext';
 import { useToast } from '@/context/ToastContext';
 import { leaveApi, studentsApi } from '@/api/resources';
 import { formatDateDDMMYYYY } from '@/utils/dateFormat';
-import { formatPortalSlotDate, isLeaveSessionEligible, portalLeaveStatusLabel } from '@/utils/portalLeave';
+import { formatPortalSlotDate, formatLeaveReplacementFromTo, isLeaveSessionEligible, portalLeaveStatusLabel } from '@/utils/portalLeave';
 import { getApiErrorMessage } from '@/utils/apiError';
 import { cn } from '@/utils/cn';
 import type { SqlAccountChild, ErpCalendarEvent } from '@/types/sqlAccount';
@@ -31,39 +31,70 @@ function sessionLabel(event: ErpCalendarEvent) {
   return `${event.className ?? 'Class'} — ${date}${time}`;
 }
 
+function toIsoDate(value?: string | null) {
+  const iso = value?.trim().slice(0, 10) ?? '';
+  return /^\d{4}-\d{2}-\d{2}$/.test(iso) ? iso : '';
+}
+
+/** Half-hour clock values from 6:00 AM through midnight (00:00). */
+const HALF_HOUR_TIMES = [
+  ...Array.from({ length: 36 }, (_, i) => {
+    const totalHalf = 12 + i; // 06:00 … 23:30
+    const hours = Math.floor(totalHalf / 2);
+    const minutes = totalHalf % 2 === 0 ? '00' : '30';
+    return `${String(hours).padStart(2, '0')}:${minutes}`;
+  }),
+  '00:00',
+];
+
+function formatHalfHourLabel(value: string) {
+  const [hStr, mStr] = value.split(':');
+  const hours = Number(hStr);
+  const minutes = mStr ?? '00';
+  if (Number.isNaN(hours)) return value;
+  const period = hours >= 12 ? 'PM' : 'AM';
+  const hour12 = hours % 12 === 0 ? 12 : hours % 12;
+  return `${hour12}:${minutes} ${period}`;
+}
+
 function currentMonthLabel() {
   return new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
 }
 
 function ReplacementDetails({ request }: { request: PortalLeaveRequest }) {
-  if (!request.needsReplacement) return null;
-
-  if (request.status !== 'Confirmed') {
+  if (request.status === 'Confirmed' && request.replDate) {
+    const fromTo = formatLeaveReplacementFromTo(request);
     return (
-      <div className="mt-3 rounded-lg border border-amber-100 bg-amber-50/60 px-3 py-2 text-sm text-amber-900">
-        Replacement pending — admin will review your preferred slots.
-        {request.replOptions && request.replOptions.length > 0 && (
-          <ul className="mt-2 space-y-1">
-            {request.replOptions.map((slot) => (
-              <li key={`${slot.date}-${slot.time}`}>
-                {formatDateDDMMYYYY(slot.date)} · {slot.time}
-              </li>
-            ))}
-          </ul>
+      <div className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50/70 px-3 py-3">
+        <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">
+          Replacement scheduled
+        </p>
+        <p className="mt-1 font-medium text-emerald-950">{request.className ?? 'Class'}</p>
+        {fromTo && (
+          <p className="mt-1 text-sm text-emerald-800">
+            <span className="font-medium">From</span> {formatPortalSlotDate(request.sessionDate, request.sessionStartTime)}
+            <br />
+            <span className="font-medium">To</span> {formatPortalSlotDate(request.replDate, request.replStart, request.replEnd)}
+          </p>
         )}
       </div>
     );
   }
 
+  if (!request.needsReplacement) return null;
+
   return (
-    <div className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50/70 px-3 py-3">
-      <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">
-        Replacement class
-      </p>
-      <p className="mt-1 font-medium text-emerald-950">{request.className}</p>
-      <p className="text-sm text-emerald-800">
-        {formatPortalSlotDate(request.replDate, request.replStart, request.replEnd)}
-      </p>
+    <div className="mt-3 rounded-lg border border-amber-100 bg-amber-50/60 px-3 py-2 text-sm text-amber-900">
+      Replacement pending — admin will review your preferred slots.
+      {request.replOptions && request.replOptions.length > 0 && (
+        <ul className="mt-2 space-y-1">
+          {request.replOptions.map((slot) => (
+            <li key={`${slot.date}-${slot.time}`}>
+              {formatDateDDMMYYYY(slot.date)} · {slot.time}
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }
@@ -127,6 +158,18 @@ export default function StudentLeavePage() {
       .sort((a, b) => new Date(a.sessionDate).getTime() - new Date(b.sessionDate).getTime());
   }, [events]);
 
+  const replacementMinDate = toIsoDate(selectedEvent?.sessionDate);
+
+  const pickSession = (picked: ErpCalendarEvent | null) => {
+    const minDate = toIsoDate(picked?.sessionDate);
+    setSelectedEvent(picked);
+    setReplacementSlots((rows) =>
+      rows.map((row) =>
+        row.date && minDate && row.date < minDate ? { ...row, date: '' } : row
+      )
+    );
+  };
+
   const loadSessions = async (child: SqlAccountChild) => {
     try {
       const data = await studentsApi.getMyCalendarEvents(child.branchName);
@@ -136,12 +179,34 @@ export default function StudentLeavePage() {
     }
   };
 
+  const isSelfStudent = user?.role === 'Student';
+
+  const startNewRequest = (childList: SqlAccountChild[] = children) => {
+    if (isSelfStudent || childList.length === 1) {
+      const child = childList[0];
+      if (!child) return;
+      setSelectedChild(child);
+      setSelectedEvent(null);
+      void loadSessions(child);
+      setStep('session');
+      return;
+    }
+    setStep('student');
+  };
+
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     if (!selectedChild || !selectedEvent || !reason.trim()) return;
     setSubmitting(true);
     try {
-      const replacementOptions = replacementSlots.filter((s) => s.date.trim() && s.time.trim());
+      const minDate = toIsoDate(selectedEvent.sessionDate);
+      const replacementOptions = replacementSlots.filter((s) => {
+        const date = s.date.trim();
+        const time = s.time.trim();
+        if (!date || !time) return false;
+        if (minDate && date < minDate) return false;
+        return true;
+      });
       await leaveApi.submit({
         occurrenceId: selectedEvent.id.startsWith('occ-') ? selectedEvent.id.slice(4) : selectedEvent.id,
         docKey: selectedEvent.docKey,
@@ -189,7 +254,7 @@ export default function StudentLeavePage() {
         description="Request leave for an upcoming class session. Admin will review and arrange a replacement if needed."
         actions={
           step === 'list' ? (
-            <Button type="button" size="sm" onClick={() => setStep('student')}>
+            <Button type="button" size="sm" onClick={() => startNewRequest()} disabled={loading || children.length === 0}>
               <Plus className="mr-1.5 h-4 w-4" />
               New request
             </Button>
@@ -201,22 +266,25 @@ export default function StudentLeavePage() {
         <button
           type="button"
           onClick={() => {
-            if (step === 'session') {
+            if (step === 'session' && !isSelfStudent && children.length > 1) {
               setStep('student');
               setSelectedEvent(null);
-            } else {
-              setStep('list');
-              setSelectedChild(null);
+              return;
             }
+            setStep('list');
+            setSelectedChild(null);
+            setSelectedEvent(null);
           }}
           className="inline-flex items-center gap-1 text-sm font-medium text-primary-600 hover:underline"
         >
           <ChevronLeft className="h-4 w-4" />
-          {step === 'session' ? 'Select student' : 'Back to requests'}
+          {step === 'session' && !isSelfStudent && children.length > 1
+            ? 'Select student'
+            : 'Back to requests'}
         </button>
       )}
 
-      {step === 'student' && (
+      {step === 'student' && !isSelfStudent && (
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="text-base">Select student</CardTitle>
@@ -266,7 +334,7 @@ export default function StudentLeavePage() {
                     value={selectedEvent?.id ?? ''}
                     onChange={(ev) => {
                       const picked = upcomingSessions.find((s) => s.id === ev.target.value);
-                      setSelectedEvent(picked ?? null);
+                      pickSession(picked ?? null);
                     }}
                     required
                   >
@@ -306,13 +374,19 @@ export default function StudentLeavePage() {
                     </Button>
                   </div>
                   <p className="text-xs text-slate-500">
-                    Add one row per date and time you could attend a make-up class. Admin will pick one option.
+                    Add one row per date and time you could attend a make-up class. Admin will pick
+                    one option.
+                    {replacementMinDate
+                      ? ` Replacement dates must be on or after ${formatDateDDMMYYYY(replacementMinDate)}.`
+                      : ' Select a session first to choose replacement dates.'}
                   </p>
                   {replacementSlots.map((slot, index) => (
                     <div key={index} className="grid gap-2 sm:grid-cols-[1fr_1fr_auto]">
                       <Input
                         type="date"
                         value={slot.date}
+                        min={replacementMinDate || undefined}
+                        disabled={!replacementMinDate}
                         onChange={(e) =>
                           setReplacementSlots((rows) =>
                             rows.map((row, i) =>
@@ -321,9 +395,10 @@ export default function StudentLeavePage() {
                           )
                         }
                       />
-                      <Input
-                        type="time"
-                        value={slot.time}
+                      <select
+                        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50"
+                        value={HALF_HOUR_TIMES.includes(slot.time) ? slot.time : ''}
+                        disabled={!replacementMinDate}
                         onChange={(e) =>
                           setReplacementSlots((rows) =>
                             rows.map((row, i) =>
@@ -331,7 +406,14 @@ export default function StudentLeavePage() {
                             )
                           )
                         }
-                      />
+                      >
+                        <option value="">Time…</option>
+                        {HALF_HOUR_TIMES.map((t) => (
+                          <option key={t} value={t}>
+                            {formatHalfHourLabel(t)}
+                          </option>
+                        ))}
+                      </select>
                       {replacementSlots.length > 1 && (
                         <Button
                           type="button"
@@ -400,7 +482,31 @@ export default function StudentLeavePage() {
                       key: 'sessionDate',
                       header: 'Leave date',
                       colWidth: '7rem',
-                      render: (r) => formatDateDDMMYYYY(r.sessionDate),
+                      render: (r) => formatPortalSlotDate(r.sessionDate, r.sessionStartTime),
+                    },
+                    {
+                      key: 'replacement',
+                      header: 'Replacement',
+                      wrap: true,
+                      colWidth: '14rem',
+                      className: 'min-w-0',
+                      render: (r) => {
+                        if (r.status === 'Confirmed' && r.replDate) {
+                          return (
+                            <span className="text-sm text-slate-700">
+                              <span className="text-slate-500">From </span>
+                              {formatPortalSlotDate(r.sessionDate, r.sessionStartTime)}
+                              <br />
+                              <span className="text-slate-500">To </span>
+                              {formatPortalSlotDate(r.replDate, r.replStart, r.replEnd)}
+                            </span>
+                          );
+                        }
+                        if (r.needsReplacement) {
+                          return <span className="text-sm text-amber-700">Pending</span>;
+                        }
+                        return <span className="text-slate-400">—</span>;
+                      },
                     },
                     {
                       key: 'status',
@@ -444,7 +550,8 @@ export default function StudentLeavePage() {
         {selectedRequest && (
           <div className="space-y-4">
             <p className="text-sm text-slate-600">
-              {selectedRequest.branchName} · {formatDateDDMMYYYY(selectedRequest.sessionDate)}
+              {selectedRequest.branchName} ·{' '}
+              {formatPortalSlotDate(selectedRequest.sessionDate, selectedRequest.sessionStartTime)}
             </p>
             <p className="text-sm text-slate-800">{selectedRequest.reason}</p>
             {selectedRequest.adminNote && (
@@ -453,7 +560,7 @@ export default function StudentLeavePage() {
                 {selectedRequest.adminNote}
               </p>
             )}
-            {selectedRequest.needsReplacement && <ReplacementDetails request={selectedRequest} />}
+            <ReplacementDetails request={selectedRequest} />
             <LeaveWorkflowSteps status={selectedRequest.status} />
           </div>
         )}

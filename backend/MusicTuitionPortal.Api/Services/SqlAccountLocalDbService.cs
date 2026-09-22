@@ -230,6 +230,8 @@ public class SqlAccountLocalDbService
                 if (classEnd.HasValue)
                     deliveryDate = classEnd.Value.ToString("yyyy-MM-dd");
 
+                var classStart = ReadClassDateTime(reader, "CLASSSTARTDATETIME");
+
                 results.Add(new SqlAccountChildEnrollmentDto(
                     Convert.ToInt32(reader["DOCKEY"]),
                     Convert.ToInt32(reader["SEQ"]),
@@ -245,8 +247,7 @@ public class SqlAccountLocalDbService
                     TimeHelper.FormatUdfClassTime(ReadValue(reader, "UDF_CLASSTIME")),
                     ReadString(reader, "UDF_STUDENTNAME"),
                     ReadString(reader, "UDF_CONDUCTEDBY"),
-                    ClassDate: SqlAccountUdfClassDateHelper.FormatStoredValue(
-                        ReadValue(reader, "CLASSSTARTDATETIME"))));
+                    ClassDate: classStart?.ToString("yyyy-MM-dd HH:mm")));
             }
 
             return results;

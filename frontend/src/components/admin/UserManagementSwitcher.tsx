@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/Button';
 import { cn } from '@/utils/cn';
 
 const CHOICES = [
-  { label: 'Students', path: '/admin/parents' },
+  { label: 'Students', path: '/admin/students' },
   { label: 'Staff', path: '/admin/teachers' },
 ] as const;
 

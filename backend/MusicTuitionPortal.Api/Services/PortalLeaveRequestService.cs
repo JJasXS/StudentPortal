@@ -83,6 +83,7 @@ public class PortalLeaveRequestService
             branch,
             className,
             sessionDate,
+            request.StartTime,
             request.Reason.Trim(),
             needsReplacement,
             replOptionsJson,
@@ -120,6 +121,7 @@ public class PortalLeaveRequestService
             occurrence.BranchName,
             className,
             sessionDate,
+            request.StartTime ?? occurrence.StartTime,
             request.Reason.Trim(),
             false,
             null,
@@ -214,6 +216,7 @@ public class PortalLeaveRequestService
         string branchName,
         string? className,
         DateTime sessionDate,
+        string? sessionStartTime,
         string reason,
         bool needsReplacement,
         string? replOptionsJson,
@@ -229,11 +232,11 @@ public class PortalLeaveRequestService
         const string sql = """
             INSERT INTO PORTAL_LEAVE_REQUESTS (
                 ID, OCCURRENCEID, DOCKEY, SEQ, CUSTOMERCODE, BRANCHNAME, CLASSNAME,
-                SESSIONDATE, REASON, STATUS, NEEDSREPLACEMENT, REPL_OPTIONS,
+                SESSIONDATE, SESSIONSTARTTIME, REASON, STATUS, NEEDSREPLACEMENT, REPL_OPTIONS,
                 REQUESTERTYPE, REQUESTEDBY, CREATEDAT, UPDATEDAT
             ) VALUES (
                 @id, @occurrenceId, @docKey, @seq, @customerCode, @branchName, @className,
-                @sessionDate, @reason, 'Pending', @needsReplacement, @replOptions,
+                @sessionDate, @sessionStart, @reason, 'Pending', @needsReplacement, @replOptions,
                 @requesterType, @requestedBy, @createdAt, @updatedAt
             )
             """;
@@ -247,6 +250,7 @@ public class PortalLeaveRequestService
         command.Parameters.AddWithValue("@branchName", branchName);
         command.Parameters.AddWithValue("@className", (object?)className ?? DBNull.Value);
         command.Parameters.AddWithValue("@sessionDate", sessionDate);
+        command.Parameters.AddWithValue("@sessionStart", (object?)NormalizeTime(sessionStartTime) ?? DBNull.Value);
         command.Parameters.AddWithValue("@reason", reason);
         command.Parameters.AddWithValue("@needsReplacement", needsReplacement ? 1 : 0);
         command.Parameters.AddWithValue("@replOptions", (object?)replOptionsJson ?? DBNull.Value);
@@ -333,14 +337,16 @@ public class PortalLeaveRequestService
         string replEnd,
         CancellationToken cancellationToken)
     {
+        var reason = "Leave approved — original session cancelled; replacement scheduled.";
+
         if (!string.IsNullOrWhiteSpace(existing.OccurrenceId))
         {
-            await _sessions.RescheduleOccurrenceAsync(
+            await _sessions.CancelAndCreateReplacementAsync(
                 existing.OccurrenceId,
                 replDate,
                 replStart,
                 replEnd,
-                "Replacement confirmed by admin",
+                reason,
                 cancellationToken);
             return;
         }
@@ -351,12 +357,12 @@ public class PortalLeaveRequestService
             && o.SessionDate == existing.SessionDate);
         if (match != null)
         {
-            await _sessions.RescheduleOccurrenceAsync(
+            await _sessions.CancelAndCreateReplacementAsync(
                 match.Id,
                 replDate,
                 replStart,
                 replEnd,
-                "Replacement confirmed by admin",
+                reason,
                 cancellationToken);
         }
     }
@@ -442,7 +448,33 @@ public class PortalLeaveRequestService
             results.Add(MapLeave(reader));
         }
 
-        return results;
+        return await EnrichMissingSessionStartTimesAsync(results, cancellationToken);
+    }
+
+    private async Task<List<PortalLeaveRequestDto>> EnrichMissingSessionStartTimesAsync(
+        List<PortalLeaveRequestDto> results,
+        CancellationToken cancellationToken)
+    {
+        if (results.Count == 0)
+            return results;
+
+        var enriched = new List<PortalLeaveRequestDto>(results.Count);
+        foreach (var leave in results)
+        {
+            if (!string.IsNullOrWhiteSpace(leave.SessionStartTime) || string.IsNullOrWhiteSpace(leave.OccurrenceId))
+            {
+                enriched.Add(leave);
+                continue;
+            }
+
+            var occurrence = await _sessions.GetOccurrenceByIdAsync(leave.OccurrenceId, cancellationToken);
+            enriched.Add(
+                string.IsNullOrWhiteSpace(occurrence?.StartTime)
+                    ? leave
+                    : leave with { SessionStartTime = occurrence.StartTime });
+        }
+
+        return enriched;
     }
 
     private async Task EnsureTableAsync(CancellationToken cancellationToken)
@@ -531,6 +563,7 @@ public class PortalLeaveRequestService
             reader["BRANCHNAME"]?.ToString() ?? string.Empty,
             reader["CLASSNAME"]?.ToString(),
             FormatDate(reader["SESSIONDATE"]),
+            ReadOptionalString(reader, "SESSIONSTARTTIME"),
             reader["REASON"]?.ToString() ?? string.Empty,
             reader["STATUS"]?.ToString() ?? "Pending",
             reader["ADMINNOTE"]?.ToString(),
@@ -591,6 +624,13 @@ public class PortalLeaveRequestService
         if (string.IsNullOrWhiteSpace(value))
             return false;
         return TimeSpan.TryParse(value.Trim(), out time);
+    }
+
+    private static string? NormalizeTime(string? value)
+    {
+        if (!TryParseTime(value, out var time))
+            return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+        return time.ToString(@"hh\:mm");
     }
 
     private static string AddHourToTime(string start)

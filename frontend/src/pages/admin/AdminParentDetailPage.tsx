@@ -6,6 +6,7 @@ import { Breadcrumbs } from '@/components/ui/Breadcrumbs';
 import { Card, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { DataTable } from '@/components/ui/DataTable';
+import { ClassPickerField } from '@/components/ClassPickerField';
 import { Input, Label, Select } from '@/components/ui/Input';
 import { SlidingTabs } from '@/components/ui/SlidingTabs';
 import { useToast } from '@/context/ToastContext';
@@ -102,7 +103,6 @@ export default function AdminParentDetailPage() {
 
   const [assignBranch, setAssignBranch] = useState('');
   const [assignLines, setAssignLines] = useState<AssignLineRow[]>([newAssignLineRow()]);
-  const [classFilter, setClassFilter] = useState('');
   const [assignSaving, setAssignSaving] = useState(false);
   const [courseOptions, setCourseOptions] = useState<SqlAccountCourseOption[]>([]);
   const [courseOptionsLoading, setCourseOptionsLoading] = useState(false);
@@ -112,15 +112,6 @@ export default function AdminParentDetailPage() {
   const [enrollments, setEnrollments] = useState<SqlAccountChildEnrollment[]>([]);
   const [enrollmentsLoading, setEnrollmentsLoading] = useState(false);
   const [enrollmentBranch, setEnrollmentBranch] = useState('');
-
-  const filteredCourseOptions = useMemo(() => {
-    const q = classFilter.trim().toLowerCase();
-    if (!q) return courseOptions;
-    return courseOptions.filter(
-      (c) =>
-        c.itemCode.toLowerCase().includes(q) || c.description.toLowerCase().includes(q)
-    );
-  }, [courseOptions, classFilter]);
 
   const validAssignLines = useMemo(
     () =>
@@ -241,7 +232,7 @@ export default function AdminParentDetailPage() {
 
   const breadcrumbs = useMemo(
     () => [
-      { label: 'Students', to: '/admin/parents' },
+      { label: 'Students', to: '/admin/students' },
       { label: parent?.parentName ?? decodedCode },
     ],
     [parent, decodedCode]
@@ -251,7 +242,7 @@ export default function AdminParentDetailPage() {
     if (!parent || !assignBranch || validAssignLines.length === 0) return;
     setAssignSaving(true);
     try {
-      const result = await sqlAccountApi.assignChildEnrollment({
+      await sqlAccountApi.assignChildEnrollment({
         customerCode: parent.customerCode,
         branchName: assignBranch,
         lines: validAssignLines.map((line) => ({
@@ -262,10 +253,7 @@ export default function AdminParentDetailPage() {
           classDays: line.classDays,
         })),
       });
-      const lineCount = result.lineCount ?? validAssignLines.length;
-      showSuccess(
-        `Sales order ${result.docNo} created with ${lineCount} line${lineCount === 1 ? '' : 's'}.`
-      );
+      showSuccess('Course created successfully.');
       setEnrollmentBranch(assignBranch);
       await loadEnrollments(assignBranch);
       setAssignLines([newAssignLineRow()]);
@@ -284,7 +272,7 @@ export default function AdminParentDetailPage() {
     return (
       <div className="space-y-4">
         <p className="text-sm text-red-600">{error || 'Student not found.'}</p>
-        <Link to="/admin/parents" className="text-primary-600 hover:underline">
+        <Link to="/admin/students" className="text-primary-600 hover:underline">
           Back to students
         </Link>
       </div>
@@ -299,7 +287,7 @@ export default function AdminParentDetailPage() {
         title={parent.parentName}
         actions={
           <div className="flex flex-wrap items-center gap-2">
-            <Link to="/admin/parents">
+            <Link to="/admin/students">
               <Button type="button" variant="outline" size="sm">
                 <ArrowLeft className="mr-1.5 h-4 w-4" />
                 All students
@@ -322,18 +310,6 @@ export default function AdminParentDetailPage() {
             assign: 'Assign course',
             enrollments: 'Enrollments',
           }}
-          trailing={
-            tab === 'assign' ? (
-              <Input
-                type="search"
-                placeholder="Filter classes…"
-                value={classFilter}
-                onChange={(e) => setClassFilter(e.target.value)}
-                disabled={courseOptionsLoading}
-                className="h-8 w-48"
-              />
-            ) : undefined
-          }
         />
 
         <CardContent className="p-4 pt-4 sm:p-6 sm:pt-6">
@@ -361,31 +337,26 @@ export default function AdminParentDetailPage() {
                 <table className="min-w-full text-sm">
                   <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
                     <tr>
-                      <th className="px-3 py-3 font-medium">Class</th>
+                      <th className="min-w-[18rem] px-3 py-3 font-medium">Class</th>
                       <th className="px-3 py-3 font-medium">Teacher</th>
                       <th className="px-3 py-3 font-medium">From</th>
                       <th className="px-3 py-3 font-medium">To</th>
-                      <th className="px-3 py-3 font-medium">Days</th>
+                      <th className="px-3 py-3 pl-6 text-right font-medium">Days</th>
                       <th className="w-10 px-2 py-3" />
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
                     {assignLines.map((line) => (
                       <tr key={line.id} className="align-top">
-                        <td className="px-3 py-3">
-                          <Select
+                        <td className="min-w-[18rem] px-3 py-3">
+                          <ClassPickerField
+                            options={courseOptions}
                             value={line.itemCode}
-                            onChange={(e) => updateAssignLine(line.id, { itemCode: e.target.value })}
+                            onChange={(itemCode) => updateAssignLine(line.id, { itemCode })}
                             disabled={courseOptionsLoading}
-                            className="min-w-[10rem] text-sm"
-                          >
-                            <option value="">Class…</option>
-                            {filteredCourseOptions.map((c) => (
-                              <option key={c.itemCode} value={c.itemCode}>
-                                {c.description} ({c.itemCode})
-                              </option>
-                            ))}
-                          </Select>
+                            placeholder="Search class…"
+                            className="w-full min-w-[18rem]"
+                          />
                         </td>
                         <td className="px-3 py-3">
                           <Select
@@ -424,8 +395,8 @@ export default function AdminParentDetailPage() {
                             className="min-w-[8.5rem] text-sm"
                           />
                         </td>
-                        <td className="px-3 py-3">
-                          <div className="flex flex-wrap gap-0.5">
+                        <td className="px-3 py-3 pl-6">
+                          <div className="ml-auto grid w-max grid-cols-4 gap-0.5">
                             {WEEKDAYS.map((day) => {
                               const active = line.classDays.includes(day.value);
                               return (
