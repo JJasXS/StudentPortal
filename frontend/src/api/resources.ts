@@ -47,6 +47,10 @@ export const studentsApi = {
         '/students/me/outstanding-invoices'
       )
       .then((r) => r.data.invoices),
+  getMyInvoices: () =>
+    apiClient
+      .get<import('@/types/sqlAccount').SqlAccountStudentInvoices>('/students/me/invoices')
+      .then((r) => r.data),
   updateMe: (data: {
     dateOfBirth?: string;
     gender?: string;

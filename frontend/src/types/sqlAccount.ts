@@ -104,6 +104,12 @@ export interface SqlAccountOutstandingInvoice {
   paymentAmt: number;
   outstanding: number;
   description?: string | null;
+  status?: number | null;
+}
+
+export interface SqlAccountStudentInvoices {
+  due: SqlAccountOutstandingInvoice[];
+  history: SqlAccountOutstandingInvoice[];
 }
 
 export interface ItemCodeClassLink {

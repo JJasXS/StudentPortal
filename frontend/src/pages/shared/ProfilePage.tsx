@@ -83,14 +83,10 @@ export default function ProfilePage() {
   }
 
   return (
-    <div className="max-w-lg">
+    <div className="w-full space-y-6">
       <PageHeader title="My Profile" description="View and update your account information" />
 
-      {user && (
-        <div className="mb-4">
-          <ProfileIdentityCard user={user} />
-        </div>
-      )}
+      {user && <ProfileIdentityCard user={user} />}
 
       <Card>
         <CardHeader className="flex flex-row items-center justify-between space-y-0">
@@ -100,7 +96,7 @@ export default function ProfilePage() {
             Edit
           </Button>
         </CardHeader>
-        <CardContent className="space-y-4">
+        <CardContent className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <div>
             <p className="text-sm text-slate-500">Full Name</p>
             <p className="font-medium">{user?.fullName}</p>
@@ -120,7 +116,7 @@ export default function ProfilePage() {
         </CardContent>
       </Card>
 
-      <div className="mt-8 rounded-xl border border-slate-200 bg-slate-50/50 p-5">
+      <div className="rounded-xl border border-slate-200 bg-slate-50/50 p-5">
         <p className="mb-4 text-xs font-semibold uppercase tracking-wide text-slate-500">
           Switch account
         </p>

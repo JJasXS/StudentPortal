@@ -47,6 +47,7 @@ if (args.Contains("--create-assign-log")
     || args.Contains("--rename-customers-as-students")
     || args.Contains("--rename-teachers-as-music")
     || args.Contains("--set-teacher-mobiles")
+    || args.Contains("--seed-student-fee-invoices")
     || args.Contains("--probe-domain")
     || args.Contains("--probe-sodtl-values"))
 {
@@ -82,6 +83,11 @@ if (args.Contains("--create-assign-log")
     if (args.Contains("--set-teacher-mobiles"))
     {
         return await SetMusicTeacherMobilesAsync(assignConnection);
+    }
+
+    if (args.Contains("--seed-student-fee-invoices"))
+    {
+        return await SeedStudentFeeInvoicesAsync(assignConnection);
     }
 
     if (args.Contains("--normalize-customer-as-student"))
@@ -1156,6 +1162,192 @@ static async Task MigrateClassEndDateColumnAsync(FbConnection connection)
     await using var add = new FbCommand("ALTER TABLE SL_SODTL ADD UDF_CLASSENDDATE TIMESTAMP", connection);
     await add.ExecuteNonQueryAsync();
     Console.WriteLine("Added UDF_CLASSENDDATE to SL_SODTL.");
+}
+
+/// <summary>
+/// Seed music-class fee invoices for Aiden Lim (300-A0001):
+/// rewrite IV-00004 as unpaid piano fees, add one more unpaid reminder,
+/// and one paid control invoice (STATUS=0 on all — outstanding is amount-based).
+/// </summary>
+static async Task<int> SeedStudentFeeInvoicesAsync(FbConnection connection)
+{
+    const string customerCode = "300-A0001";
+    const string account = "500-500";
+
+    await using var existsCmd = new FbCommand(
+        "SELECT COUNT(*) FROM AR_CUSTOMER WHERE TRIM(CODE) = @code",
+        connection);
+    existsCmd.Parameters.AddWithValue("@code", customerCode);
+    var exists = Convert.ToInt32(await existsCmd.ExecuteScalarAsync());
+    if (exists == 0)
+    {
+        Console.WriteLine($"Customer {customerCode} not found.");
+        return 1;
+    }
+
+    // Rewrite existing unpaid IV-00004 as music fees.
+    await using var updHeader = new FbCommand(
+        """
+        UPDATE AR_IV
+        SET DESCRIPTION = @description,
+            DOCDATE = @docDate,
+            POSTDATE = @docDate,
+            TAXDATE = @docDate,
+            DUEDATE = @dueDate,
+            DOCAMT = @docAmt,
+            LOCALDOCAMT = @docAmt,
+            PAYMENTAMT = 0,
+            STATUS = 0,
+            CANCELLED = FALSE,
+            LASTMODIFIED = @lastModified
+        WHERE DOCKEY = 15 AND TRIM(CODE) = @code
+        """,
+        connection);
+    var overdueDoc = new DateTime(2026, 8, 1);
+    var overdueDue = new DateTime(2026, 8, 31);
+    updHeader.Parameters.AddWithValue("@description", "Music tuition fees — Aug 2026");
+    updHeader.Parameters.AddWithValue("@docDate", overdueDoc);
+    updHeader.Parameters.AddWithValue("@dueDate", overdueDue);
+    updHeader.Parameters.AddWithValue("@docAmt", 480m);
+    updHeader.Parameters.AddWithValue("@lastModified", DateTimeOffset.UtcNow.ToUnixTimeSeconds());
+    updHeader.Parameters.AddWithValue("@code", customerCode);
+    var updated = await updHeader.ExecuteNonQueryAsync();
+    Console.WriteLine(updated > 0
+        ? "Updated IV-00004 → unpaid music fees RM 480 (due 2026-08-31)."
+        : "WARN: IV-00004 / dockey 15 not found for 300-A0001.");
+
+    await using var delDtl = new FbCommand("DELETE FROM AR_IVDTL WHERE DOCKEY = 15", connection);
+    await delDtl.ExecuteNonQueryAsync();
+
+    await using var maxDtlCmd = new FbCommand("SELECT COALESCE(MAX(DTLKEY), 0) FROM AR_IVDTL", connection);
+    var nextDtl = Convert.ToInt32(await maxDtlCmd.ExecuteScalarAsync()) + 1;
+
+    await InsertIvDetailAsync(connection, nextDtl++, 15, 1000, account, "Piano lessons — Aug 2026 (4 weeks)", 280m);
+    await InsertIvDetailAsync(connection, nextDtl++, 15, 2000, account, "Theory class — Aug 2026", 200m);
+    Console.WriteLine("Replaced IV-00004 detail lines with music fees.");
+
+    await using var maxDocCmd = new FbCommand("SELECT COALESCE(MAX(DOCKEY), 0) FROM AR_IV", connection);
+    var nextDoc = Convert.ToInt32(await maxDocCmd.ExecuteScalarAsync()) + 1;
+
+    // Unpaid current-month reminder.
+    var unpaidDocNo = await NextIvDocNoAsync(connection);
+    var unpaidDocDate = new DateTime(2026, 9, 1);
+    var unpaidDue = new DateTime(2026, 9, 30);
+    const decimal unpaidAmt = 520m;
+    await InsertIvHeaderAsync(
+        connection,
+        nextDoc,
+        unpaidDocNo,
+        customerCode,
+        unpaidDocDate,
+        unpaidDue,
+        unpaidAmt,
+        paymentAmt: 0m,
+        "Music tuition fees — Sep 2026 (payment reminder)");
+    await InsertIvDetailAsync(connection, nextDtl++, nextDoc, 1000, account, "Piano lessons — Sep 2026", 320m);
+    await InsertIvDetailAsync(connection, nextDtl++, nextDoc, 2000, account, "Practice room fee — Sep 2026", 200m);
+    Console.WriteLine($"Inserted unpaid {unpaidDocNo} dockey={nextDoc} RM {unpaidAmt:0.00} (due {unpaidDue:yyyy-MM-dd}).");
+    nextDoc++;
+
+    // Paid control (STATUS still 0 — should NOT show as reminder).
+    var paidDocNo = await NextIvDocNoAsync(connection);
+    var paidDocDate = new DateTime(2026, 7, 1);
+    var paidDue = new DateTime(2026, 7, 31);
+    const decimal paidAmt = 450m;
+    await InsertIvHeaderAsync(
+        connection,
+        nextDoc,
+        paidDocNo,
+        customerCode,
+        paidDocDate,
+        paidDue,
+        paidAmt,
+        paymentAmt: paidAmt,
+        "Music tuition fees — Jul 2026 (paid)");
+    await InsertIvDetailAsync(connection, nextDtl++, nextDoc, 1000, account, "Piano lessons — Jul 2026", 450m);
+    Console.WriteLine($"Inserted paid {paidDocNo} dockey={nextDoc} RM {paidAmt:0.00} (PAYMENTAMT=DOCAMT, STATUS=0).");
+
+    Console.WriteLine("Student fee invoice seed complete for 300-A0001.");
+    return 0;
+}
+
+static async Task<string> NextIvDocNoAsync(FbConnection connection)
+{
+    await using var cmd = new FbCommand(
+        """
+        SELECT MAX(CAST(SUBSTRING(DOCNO FROM 4) AS INTEGER))
+        FROM AR_IV
+        WHERE DOCNO STARTING WITH 'IV-'
+        """,
+        connection);
+    var maxObj = await cmd.ExecuteScalarAsync();
+    var next = maxObj is null or DBNull ? 1 : Convert.ToInt32(maxObj) + 1;
+    return $"IV-{next:D5}";
+}
+
+static async Task InsertIvHeaderAsync(
+    FbConnection connection,
+    int docKey,
+    string docNo,
+    string customerCode,
+    DateTime docDate,
+    DateTime dueDate,
+    decimal docAmt,
+    decimal paymentAmt,
+    string description)
+{
+    await using var cmd = new FbCommand(
+        """
+        INSERT INTO AR_IV (
+            DOCKEY, DOCNO, CODE, JOURNAL, DOCDATE, POSTDATE, TAXDATE, TERMS, DUEDATE,
+            DESCRIPTION, AREA, AGENT, PROJECT, CURRENCYCODE, CURRENCYRATE,
+            DOCAMT, LOCALDOCAMT, PAYMENTAMT, FROMDOCTYPE, CANCELLED, STATUS, UPDATECOUNT, LASTMODIFIED
+        ) VALUES (
+            @docKey, @docNo, @code, 'SALES', @docDate, @docDate, @docDate, '30 Days', @dueDate,
+            @description, 'KL', 'Yuki', '----', '----', 1,
+            @docAmt, @docAmt, @paymentAmt, 'IV', FALSE, 0, 1, @lastModified
+        )
+        """,
+        connection);
+    cmd.Parameters.AddWithValue("@docKey", docKey);
+    cmd.Parameters.AddWithValue("@docNo", docNo);
+    cmd.Parameters.AddWithValue("@code", customerCode);
+    cmd.Parameters.AddWithValue("@docDate", docDate);
+    cmd.Parameters.AddWithValue("@dueDate", dueDate);
+    cmd.Parameters.AddWithValue("@description", description);
+    cmd.Parameters.AddWithValue("@docAmt", docAmt);
+    cmd.Parameters.AddWithValue("@paymentAmt", paymentAmt);
+    cmd.Parameters.AddWithValue("@lastModified", DateTimeOffset.UtcNow.ToUnixTimeSeconds());
+    await cmd.ExecuteNonQueryAsync();
+}
+
+static async Task InsertIvDetailAsync(
+    FbConnection connection,
+    int dtlKey,
+    int docKey,
+    int seq,
+    string account,
+    string description,
+    decimal amount)
+{
+    await using var cmd = new FbCommand(
+        """
+        INSERT INTO AR_IVDTL (
+            DTLKEY, DOCKEY, SEQ, PROJECT, ACCOUNT, DESCRIPTION,
+            AMOUNT, LOCALAMOUNT, TAXABLEAMT, TAXINCLUSIVE
+        ) VALUES (
+            @dtlKey, @docKey, @seq, '----', @account, @description,
+            @amount, @amount, @amount, FALSE
+        )
+        """,
+        connection);
+    cmd.Parameters.AddWithValue("@dtlKey", dtlKey);
+    cmd.Parameters.AddWithValue("@docKey", docKey);
+    cmd.Parameters.AddWithValue("@seq", seq);
+    cmd.Parameters.AddWithValue("@account", account);
+    cmd.Parameters.AddWithValue("@description", description);
+    cmd.Parameters.AddWithValue("@amount", amount);
+    await cmd.ExecuteNonQueryAsync();
 }
 
 /// <summary>

@@ -18,10 +18,11 @@ export function ParentOutstandingFeesCard({ invoices }: ParentOutstandingFeesCar
         <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" />
         <div className="min-w-0 flex-1">
           <p className="font-semibold text-amber-900">
-            {invoices.length} invoice{invoices.length === 1 ? '' : 's'} outstanding — {formatRm(total)}
+            Payment reminder — {invoices.length} fee
+            {invoices.length === 1 ? '' : 's'} due · {formatRm(total)}
           </p>
           <p className="mt-1 text-sm text-amber-800">
-            Please pay at the centre or via your usual payment method.
+            Music class fees waiting to be paid. Pay at the centre or via your usual payment method.
           </p>
           <ul className="mt-3 space-y-2 border-t border-amber-200/80 pt-3">
             {invoices.map((invoice) => (

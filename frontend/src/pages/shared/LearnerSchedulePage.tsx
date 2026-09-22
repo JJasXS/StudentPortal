@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Check, ChevronLeft, ChevronRight, MoreVertical } from 'lucide-react';
 import { ScheduleLessonCard } from '@/components/schedule/ScheduleLessonCard';
 import type { ScheduleLessonItem } from '@/components/schedule/ScheduleLessonCard';
 import { Button } from '@/components/ui/Button';
@@ -13,6 +13,9 @@ import { generateMockSessions, loadAllSessions } from '@/utils/mockSessionStore'
 import { erpEventToScheduleItem, sessionToScheduleItem } from '@/utils/learnerSchedule';
 import type { ClassItem, ClassSession } from '@/types';
 import type { ErpCalendarEvent } from '@/types/sqlAccount';
+
+type ScheduleViewMode = 'week' | 'month';
+
 interface MonthWeek {
   weekNum: number;
   from: string;
@@ -79,34 +82,6 @@ function weekContainingDate(weeks: MonthWeek[], isoDate: string) {
   return weeks.find((w) => isoDate >= w.from && isoDate <= w.to)?.weekNum ?? weeks[0]?.weekNum ?? 1;
 }
 
-/** Monday-based week start (ISO date). */
-function startOfWeekMonday(date: Date): string {
-  const day = date.getDay();
-  const diff = day === 0 ? -6 : 1 - day;
-  const monday = new Date(date);
-  monday.setDate(date.getDate() + diff);
-  return monday.toISOString().slice(0, 10);
-}
-
-function addDaysToIso(iso: string, days: number): string {
-  const [y, m, d] = iso.split('-').map(Number);
-  const next = new Date(y, m - 1, d);
-  next.setDate(next.getDate() + days);
-  return next.toISOString().slice(0, 10);
-}
-
-function weekRangeFromMonday(mondayIso: string): MonthWeek {
-  return {
-    weekNum: 1,
-    from: mondayIso,
-    to: addDaysToIso(mondayIso, 6),
-  };
-}
-
-function isCurrentWeek(mondayIso: string): boolean {
-  return mondayIso === startOfWeekMonday(new Date());
-}
-
 function ensureMockSessionsForMonth(
   classes: ClassItem[],
   classIds: Set<string>,
@@ -136,14 +111,26 @@ export default function LearnerSchedulePage() {
     const n = new Date();
     return { year: n.getFullYear(), month: n.getMonth() };
   });
-  const [weekStart, setWeekStart] = useState(() => startOfWeekMonday(new Date()));
   const [sessions, setSessions] = useState<ClassSession[]>([]);
   const [erpEvents, setErpEvents] = useState<ErpCalendarEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [activeWeek, setActiveWeek] = useState<number | null>(null);
   const [childFilter, setChildFilter] = useState('');
-  const [parentView, setParentView] = useState<'week' | 'month'>('week');
+  const [parentView, setParentView] = useState<ScheduleViewMode>('week');
+  const [viewMenuOpen, setViewMenuOpen] = useState(false);
+  const viewMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!viewMenuOpen) return;
+    const handleClick = (e: MouseEvent) => {
+      if (viewMenuRef.current && !viewMenuRef.current.contains(e.target as Node)) {
+        setViewMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [viewMenuOpen]);
 
   const loadStudentSchedule = useCallback(() => {
     setLoading(true);
@@ -200,10 +187,19 @@ export default function LearnerSchedulePage() {
     [studentClasses]
   );
 
-  const parentWeekRange = useMemo(() => weekRangeFromMonday(weekStart), [weekStart]);
+  const weeks = useMemo(
+    () => monthWeeks(anchor.year, anchor.month),
+    [anchor.year, anchor.month]
+  );
+
+  const activeWeekData = useMemo(
+    () => weeks.find((w) => w.weekNum === activeWeek) ?? weeks[0],
+    [weeks, activeWeek]
+  );
 
   const parentWeekItems = useMemo(() => {
-    const { from, to } = parentWeekRange;
+    if (!activeWeekData) return [];
+    const { from, to } = activeWeekData;
     return erpEvents
       .filter((e) => {
         const d = e.sessionDate.slice(0, 10);
@@ -214,7 +210,7 @@ export default function LearnerSchedulePage() {
         const cmp = a.sessionDate.localeCompare(b.sessionDate);
         return cmp !== 0 ? cmp : a.startTime.localeCompare(b.startTime);
       });
-  }, [erpEvents, parentWeekRange, childFilter]);
+  }, [erpEvents, activeWeekData, childFilter]);
 
   const parentMonthItems = useMemo(() => {
     const { from, to } = monthRange(anchor.year, anchor.month);
@@ -248,17 +244,15 @@ export default function LearnerSchedulePage() {
       });
   }, [sessions, classIds, classById, anchor]);
 
-  const weeks = useMemo(
-    () => monthWeeks(anchor.year, anchor.month),
-    [anchor.year, anchor.month]
-  );
-
   useEffect(() => {
-    const today = new Date().toISOString().slice(0, 10);
-    const inMonth =
-      Number(today.slice(0, 4)) === anchor.year &&
-      Number(today.slice(5, 7)) === anchor.month + 1;
-    setActiveWeek(inMonth ? weekContainingDate(weeks, today) : weeks[0]?.weekNum ?? 1);
+    setActiveWeek((current) => {
+      if (current != null && weeks.some((w) => w.weekNum === current)) return current;
+      const today = new Date().toISOString().slice(0, 10);
+      const inMonth =
+        Number(today.slice(0, 4)) === anchor.year &&
+        Number(today.slice(5, 7)) === anchor.month + 1;
+      return inMonth ? weekContainingDate(weeks, today) : weeks[0]?.weekNum ?? 1;
+    });
   }, [anchor.year, anchor.month, weeks]);
 
   const isCurrentMonth = useMemo(() => {
@@ -280,16 +274,37 @@ export default function LearnerSchedulePage() {
     });
   };
 
-  const prevWeek = () => setWeekStart((w) => addDaysToIso(w, -7));
-  const nextWeek = () => setWeekStart((w) => addDaysToIso(w, 7));
-  const showingCurrentWeek = isCurrentWeek(weekStart);
+  const prevWeek = () => {
+    const cur = activeWeek ?? 1;
+    if (cur > 1) {
+      setActiveWeek(cur - 1);
+      return;
+    }
+    const prev =
+      anchor.month === 0
+        ? { year: anchor.year - 1, month: 11 }
+        : { year: anchor.year, month: anchor.month - 1 };
+    const prevWeeks = monthWeeks(prev.year, prev.month);
+    setAnchor(prev);
+    setActiveWeek(prevWeeks[prevWeeks.length - 1]?.weekNum ?? 1);
+  };
+
+  const nextWeek = () => {
+    const cur = activeWeek ?? 1;
+    const last = weeks[weeks.length - 1]?.weekNum ?? 1;
+    if (cur < last) {
+      setActiveWeek(cur + 1);
+      return;
+    }
+    const next =
+      anchor.month === 11
+        ? { year: anchor.year + 1, month: 0 }
+        : { year: anchor.year, month: anchor.month + 1 };
+    setAnchor(next);
+    setActiveWeek(1);
+  };
 
   const pageLoading = loading || (isErpLearner && studentLoading);
-
-  const activeWeekData = useMemo(
-    () => weeks.find((w) => w.weekNum === activeWeek) ?? weeks[0],
-    [weeks, activeWeek]
-  );
 
   const activeWeekItems = useMemo(
     () => (activeWeekData ? itemsInWeek(monthItems, activeWeekData) : []),
@@ -298,12 +313,56 @@ export default function LearnerSchedulePage() {
 
   return (
     <div className="mx-auto w-full max-w-lg">
-      <div className="mb-4 sm:mb-5">
+      <div className="relative mb-4 flex items-center justify-center sm:mb-5">
         <h1 className="text-xl font-bold text-[#5C4033] sm:text-2xl">Schedule</h1>
-        {isErpLearner && student && (
-          <p className="mt-1 text-sm text-slate-500">
-            {student.studentName || student.branchName}
-          </p>
+        {isErpLearner && (
+          <div className="absolute right-0 top-1/2 -translate-y-1/2" ref={viewMenuRef}>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              aria-label="Schedule view"
+              aria-haspopup="menu"
+              aria-expanded={viewMenuOpen}
+              onClick={() => setViewMenuOpen((v) => !v)}
+              className="h-9 w-9 p-0"
+            >
+              <MoreVertical className="h-4 w-4" />
+            </Button>
+            {viewMenuOpen && (
+              <div
+                role="menu"
+                className="absolute right-0 top-full z-30 mt-1 min-w-[10rem] rounded-lg border border-slate-200 bg-white py-1 shadow-lg"
+              >
+                {(
+                  [
+                    { value: 'week', label: 'Weekly' },
+                    { value: 'month', label: 'Monthly' },
+                  ] as const
+                ).map((choice) => {
+                  const selected = parentView === choice.value;
+                  return (
+                    <button
+                      key={choice.value}
+                      type="button"
+                      role="menuitem"
+                      className={cn(
+                        'flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-sm hover:bg-slate-50',
+                        selected ? 'font-medium text-primary-700' : 'text-slate-700'
+                      )}
+                      onClick={() => {
+                        setParentView(choice.value);
+                        setViewMenuOpen(false);
+                      }}
+                    >
+                      {choice.label}
+                      {selected && <Check className="h-4 w-4 shrink-0" />}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
         )}
       </div>
 
@@ -315,25 +374,6 @@ export default function LearnerSchedulePage() {
 
       {isErpLearner ? (
         <>
-          <div className="mb-4 flex gap-2">
-            <Button
-              type="button"
-              size="sm"
-              variant={parentView === 'week' ? 'default' : 'outline'}
-              onClick={() => setParentView('week')}
-            >
-              Week
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant={parentView === 'month' ? 'default' : 'outline'}
-              onClick={() => setParentView('month')}
-            >
-              Month
-            </Button>
-          </div>
-
           <div className="mb-4 flex items-center justify-between gap-1 sm:mb-5 sm:gap-2">
             <Button
               type="button"
@@ -345,22 +385,18 @@ export default function LearnerSchedulePage() {
             >
               <ChevronLeft className="h-5 w-5" />
             </Button>
-            <div className="flex min-w-0 flex-1 flex-col items-center gap-1 px-1">
-              <span className="max-w-full truncate rounded-full bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-700 sm:px-4 sm:text-sm">
-                {parentView === 'week'
-                  ? showingCurrentWeek
-                    ? 'This week'
-                    : formatWeekRange(parentWeekRange.from, parentWeekRange.to)
-                  : isCurrentMonth
-                    ? 'This month'
-                    : monthLabel(anchor.year, anchor.month)}
+
+            <div className="flex min-w-0 flex-1 items-center justify-center gap-2 px-1">
+              <span className="max-w-[40%] truncate rounded-full bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-700 sm:px-4 sm:text-sm">
+                {monthLabel(anchor.year, anchor.month).replace(/\s+\d{4}$/, '')}
               </span>
-              {parentView === 'week' && showingCurrentWeek && (
-                <span className="text-xs text-slate-500">
-                  {formatWeekRange(parentWeekRange.from, parentWeekRange.to)}
+              {parentView === 'week' && activeWeekData && (
+                <span className="truncate text-xs text-slate-500 sm:text-sm">
+                  {formatWeekRange(activeWeekData.from, activeWeekData.to)}
                 </span>
               )}
             </div>
+
             <Button
               type="button"
               variant="ghost"

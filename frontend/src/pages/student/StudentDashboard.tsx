@@ -13,8 +13,8 @@ import { useAuth } from '@/context/AuthContext';
 import { PageHeader } from '@/components/PageHeader';
 import { DashboardNotifyFeed } from '@/components/dashboard/DashboardNotifyFeed';
 import { DashboardCentreFooter } from '@/components/dashboard/DashboardCentreFooter';
-import { ParentOutstandingFeesCard } from '@/components/parent/ParentOutstandingFeesCard';
 import { ParentEnrolledClassesSection } from '@/components/parent/ParentEnrolledClassesSection';
+import { StudentFeesSection } from '@/components/student/StudentFeesSection';
 import { Card, CardContent } from '@/components/ui/Card';
 import { SkeletonCard } from '@/components/ui/Skeleton';
 import { useSqlAccountStudent } from '@/hooks/useSqlAccountStudent';
@@ -22,7 +22,7 @@ import { useParentLeaveNotifyToasts } from '@/hooks/useParentLeaveNotifyToasts';
 import { studentsApi } from '@/api/resources';
 import { formatDateDDMMYYYY } from '@/utils/dateFormat';
 import type { Announcement } from '@/types';
-import type { ErpCalendarEvent, SqlAccountChild, SqlAccountOutstandingInvoice } from '@/types/sqlAccount';
+import type { ErpCalendarEvent, SqlAccountChild } from '@/types/sqlAccount';
 
 function formatTimeRange(start?: string, end?: string) {
   if (!start) return '';
@@ -50,20 +50,12 @@ export default function StudentDashboard() {
   const [events, setEvents] = useState<ErpCalendarEvent[]>([]);
   const [eventsLoading, setEventsLoading] = useState(false);
   const [notifyItems, setNotifyItems] = useState<Announcement[]>([]);
-  const [outstandingInvoices, setOutstandingInvoices] = useState<SqlAccountOutstandingInvoice[]>([]);
 
   const handleFeedLoaded = useCallback((items: Announcement[]) => {
     setNotifyItems(items);
   }, []);
 
   useParentLeaveNotifyToasts(notifyItems, user?.role === 'Student' || user?.role === 'Parent');
-
-  useEffect(() => {
-    studentsApi
-      .getOutstandingInvoices()
-      .then(setOutstandingInvoices)
-      .catch(() => setOutstandingInvoices([]));
-  }, []);
 
   useEffect(() => {
     if (!student?.branchName) {
@@ -120,7 +112,7 @@ export default function StudentDashboard() {
         autoMarkReadOnView
       />
 
-      <ParentOutstandingFeesCard invoices={outstandingInvoices} />
+      <StudentFeesSection />
 
       {!loading && asChildList.length > 0 && (
         <ParentEnrolledClassesSection students={asChildList} />

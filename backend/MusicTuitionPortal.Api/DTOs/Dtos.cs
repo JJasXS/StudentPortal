@@ -277,7 +277,12 @@ public record SqlAccountOutstandingInvoiceDto(
     decimal DocAmt,
     decimal PaymentAmt,
     decimal Outstanding,
-    string? Description);
+    string? Description,
+    int? Status = null);
+
+public record SqlAccountStudentInvoicesDto(
+    IReadOnlyList<SqlAccountOutstandingInvoiceDto> Due,
+    IReadOnlyList<SqlAccountOutstandingInvoiceDto> History);
 
 public record ItemCodeClassLinkDto(
     Guid Id,

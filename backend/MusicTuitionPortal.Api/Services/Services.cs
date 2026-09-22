@@ -942,14 +942,19 @@ public class ParentService
         string email,
         CancellationToken cancellationToken = default)
     {
-        if (!_sqlAccount.IsConfigured)
-            return Array.Empty<SqlAccountOutstandingInvoiceDto>();
+        var bundle = await GetStudentInvoicesForEmailAsync(email, cancellationToken);
+        return bundle.Due;
+    }
 
+    public async Task<SqlAccountStudentInvoicesDto> GetStudentInvoicesForEmailAsync(
+        string email,
+        CancellationToken cancellationToken = default)
+    {
         var customerCode = await ResolveCustomerCodeForEmailAsync(email, cancellationToken);
         if (string.IsNullOrWhiteSpace(customerCode))
-            return Array.Empty<SqlAccountOutstandingInvoiceDto>();
+            return new SqlAccountStudentInvoicesDto([], []);
 
-        return await _sqlAccount.GetCustomerInvoicesForCodeAsync(customerCode, cancellationToken);
+        return await _sqlAccount.GetCustomerInvoiceBundleForCodeAsync(customerCode, cancellationToken);
     }
 
     public async Task<List<ErpCalendarEventDto>> GetCalendarEventsForEmailAsync(

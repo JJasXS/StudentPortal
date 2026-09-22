@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { Pencil } from 'lucide-react';
+import { CheckCircle2, Pencil } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { authApi } from '@/api/auth';
 import { studentsApi } from '@/api/resources';
@@ -14,12 +14,13 @@ import { GENDER_OPTIONS, formatGender } from '@/utils/gender';
 import { loadStudentSelfProfile } from '@/utils/loadStudentSelfProfile';
 import { mockParents, mockStudents, mockUsers } from '@/utils/mockData';
 import {
-  accountCompletenessMessage,
+  getMissingAccountDetailLabels,
   getStudentAccountCompleteness,
 } from '@/utils/studentProfileCompleteness';
 import { parseStudentNotes } from '@/utils/studentNotes';
 import { AccountSwitcherPanel } from '@/components/profile/AccountSwitcherModal';
 import { ProfileIdentityCard } from '@/components/profile/ProfileIdentityCard';
+import { cn } from '@/utils/cn';
 import type { StudentSelfProfile } from '@/types';
 
 const useApi = import.meta.env.VITE_USE_MOCK !== 'true';
@@ -47,7 +48,70 @@ function Field({ label, value }: { label: string; value?: string }) {
   return (
     <div>
       <p className="text-sm text-slate-500">{label}</p>
-      <p className="font-medium">{value?.trim() ? value : '—'}</p>
+      <p className="font-medium text-slate-900">{value?.trim() ? value : '—'}</p>
+    </div>
+  );
+}
+
+function CompletenessBanner({
+  percent,
+  missing,
+  onEdit,
+}: {
+  percent: number;
+  missing: string[];
+  onEdit: () => void;
+}) {
+  const done = percent >= 100;
+
+  return (
+    <div
+      className={cn(
+        'flex flex-col gap-4 rounded-xl border px-5 py-4 sm:flex-row sm:items-center sm:justify-between',
+        done
+          ? 'border-emerald-200 bg-emerald-50/60'
+          : 'border-slate-200 bg-gradient-to-r from-slate-50 to-white'
+      )}
+    >
+      <div className="flex min-w-0 items-center gap-4">
+        <div
+          className={cn(
+            'relative flex h-14 w-14 shrink-0 items-center justify-center rounded-full',
+            done ? 'bg-emerald-100 text-emerald-700' : 'bg-primary-50 text-primary-700'
+          )}
+          style={
+            done
+              ? undefined
+              : {
+                  background: `conic-gradient(#2563eb ${percent}%, #e2e8f0 0)`,
+                }
+          }
+        >
+          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-white text-sm font-semibold tabular-nums text-slate-800">
+            {done ? <CheckCircle2 className="h-5 w-5 text-emerald-600" /> : `${percent}%`}
+          </div>
+        </div>
+        <div className="min-w-0">
+          <p className="text-sm font-semibold text-slate-900">
+            {done ? 'Account details complete' : 'Account details'}
+          </p>
+          {done ? (
+            <p className="mt-0.5 text-sm text-emerald-700">Everything looks good.</p>
+          ) : (
+            <p className="mt-0.5 truncate text-sm text-slate-500">
+              {missing.length > 0
+                ? `Still need: ${missing.slice(0, 3).join(', ')}${missing.length > 3 ? '…' : ''}`
+                : 'Add a few details to finish your profile.'}
+            </p>
+          )}
+        </div>
+      </div>
+      {!done && (
+        <Button type="button" size="sm" onClick={onEdit} className="shrink-0 self-start sm:self-auto">
+          <Pencil className="mr-1.5 h-3.5 w-3.5" />
+          Complete profile
+        </Button>
+      )}
     </div>
   );
 }
@@ -179,97 +243,76 @@ export function StudentProfileView() {
 
   const parsedNotes = parseStudentNotes(profile?.notes);
   const completeness = profile ? getStudentAccountCompleteness(profile) : 0;
+  const missing = profile ? getMissingAccountDetailLabels(profile) : [];
 
   return (
-    <div>
+    <div className="w-full space-y-6">
       <PageHeader
         title="My Profile"
         description="Important details are set by the centre. Complete your account details below."
       />
 
-      {user && (
-        <div className="mb-4 max-w-3xl">
-          <ProfileIdentityCard user={user} />
-        </div>
-      )}
+      {user && <ProfileIdentityCard user={user} />}
 
       {loading ? (
         <p className="text-sm text-slate-500">Loading profile…</p>
       ) : !profile ? (
         <p className="text-sm text-red-600">Could not load your student profile.</p>
       ) : (
-        <div className="grid max-w-3xl gap-4">
-          <Card>
-            <CardContent className="py-4">
-              <div className="flex items-center justify-between gap-3 text-sm">
-                <span className="font-medium text-slate-700">Account details completeness</span>
-                <span
-                  className={
-                    completeness >= 100
-                      ? 'font-semibold text-emerald-700'
-                      : completeness > 0
-                        ? 'font-semibold text-primary-700'
-                        : 'font-semibold text-slate-500'
+        <>
+          <CompletenessBanner
+            percent={completeness}
+            missing={missing}
+            onEdit={() => setEditOpen(true)}
+          />
+
+          <div className="grid gap-4 lg:grid-cols-2">
+            <Card className="h-full">
+              <CardHeader>
+                <CardTitle>Important information</CardTitle>
+              </CardHeader>
+              <CardContent className="grid gap-4 sm:grid-cols-2">
+                <Field label="Full name" value={profile.fullName} />
+                <Field label="Phone" value={profile.phoneNumber} />
+                <Field label="Parent / guardian" value={profile.parent?.fullName} />
+                <Field label="Parent email" value={profile.parent?.email} />
+                <Field label="Parent phone" value={profile.parent?.phoneNumber} />
+                <Field label="Relationship" value={profile.parent?.relationship} />
+              </CardContent>
+              <p className="border-t border-slate-100 px-6 pb-4 text-xs text-slate-500">
+                Contact the centre if any of the above needs to be changed.
+              </p>
+            </Card>
+
+            <Card className="h-full">
+              <CardHeader className="flex flex-row items-center justify-between space-y-0">
+                <CardTitle>Account details</CardTitle>
+                <Button type="button" variant="outline" size="sm" onClick={() => setEditOpen(true)}>
+                  <Pencil className="mr-1.5 h-3.5 w-3.5" />
+                  Edit
+                </Button>
+              </CardHeader>
+              <CardContent className="grid gap-4 sm:grid-cols-2">
+                <Field label="Email" value={profile.email} />
+                <Field label="Date of birth" value={profile.dateOfBirth} />
+                <Field label="Gender" value={formatGender(profile.gender)} />
+                <Field label="School" value={profile.schoolName} />
+                <Field
+                  label="Instruments"
+                  value={
+                    parsedNotes.instruments.length > 0
+                      ? parsedNotes.instruments.join(', ')
+                      : undefined
                   }
-                >
-                  {completeness}%
-                </span>
-              </div>
-              <div className="mt-2 h-2.5 overflow-hidden rounded-full bg-slate-200">
-                <div
-                  className={`h-full rounded-full transition-all duration-500 ease-out ${
-                    completeness >= 100 ? 'bg-emerald-500' : 'bg-primary-600'
-                  }`}
-                  style={{ width: `${completeness}%` }}
                 />
-              </div>
-              <p className="mt-2 text-xs text-slate-500">{accountCompletenessMessage(completeness)}</p>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Important information</CardTitle>
-            </CardHeader>
-            <CardContent className="grid gap-4 sm:grid-cols-2">
-              <Field label="Full name" value={profile.fullName} />
-              <Field label="Phone" value={profile.phoneNumber} />
-              <Field label="Parent / guardian" value={profile.parent?.fullName} />
-              <Field label="Parent email" value={profile.parent?.email} />
-              <Field label="Parent phone" value={profile.parent?.phoneNumber} />
-              <Field label="Relationship" value={profile.parent?.relationship} />
-            </CardContent>
-            <p className="border-t border-slate-100 px-6 pb-4 text-xs text-slate-500">
-              Contact the centre if any of the above needs to be changed.
-            </p>
-          </Card>
-
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0">
-              <CardTitle>Account details</CardTitle>
-              <Button type="button" variant="outline" size="sm" onClick={() => setEditOpen(true)}>
-                <Pencil className="mr-1.5 h-3.5 w-3.5" />
-                Edit
-              </Button>
-            </CardHeader>
-            <CardContent className="grid gap-4 sm:grid-cols-2">
-              <Field label="Email" value={profile.email} />
-              <Field label="Date of birth" value={profile.dateOfBirth} />
-              <Field label="Gender" value={formatGender(profile.gender)} />
-              <Field label="School" value={profile.schoolName} />
-              <Field
-                label="Instruments"
-                value={
-                  parsedNotes.instruments.length > 0 ? parsedNotes.instruments.join(', ') : undefined
-                }
-              />
-              <Field label="Level" value={parsedNotes.experience} />
-            </CardContent>
-          </Card>
-        </div>
+                <Field label="Level" value={parsedNotes.experience} />
+              </CardContent>
+            </Card>
+          </div>
+        </>
       )}
 
-      <div className="mt-8 max-w-3xl rounded-xl border border-slate-200 bg-slate-50/50 p-5">
+      <div className="rounded-xl border border-slate-200 bg-slate-50/50 p-5">
         <p className="mb-4 text-xs font-semibold uppercase tracking-wide text-slate-500">
           Switch account
         </p>

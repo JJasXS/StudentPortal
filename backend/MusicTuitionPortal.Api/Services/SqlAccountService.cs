@@ -254,33 +254,58 @@ public class SqlAccountService
         string customerCode,
         CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(customerCode) || !IsConfigured)
-            return [];
+        var bundle = await GetCustomerInvoiceBundleForCodeAsync(customerCode, cancellationToken);
+        return bundle.Due;
+    }
+
+    public async Task<SqlAccountStudentInvoicesDto> GetCustomerInvoiceBundleForCodeAsync(
+        string customerCode,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(customerCode))
+            return new SqlAccountStudentInvoicesDto([], []);
 
         var normalizedCode = customerCode.Trim();
+
+        var local = await _localDb.GetCustomerInvoiceBundleForCodeAsync(normalizedCode, cancellationToken);
+        if (local.Due.Count > 0 || local.History.Count > 0)
+            return local;
+
+        if (!IsConfigured)
+            return new SqlAccountStudentInvoicesDto([], []);
 
         try
         {
             var documents = await GetDocumentsAsync(CustomerInvoiceResource, cancellationToken);
-            return documents
+            var mapped = documents
                 .Where(row =>
                 {
                     var code = GetString(row, "code");
                     return !string.IsNullOrWhiteSpace(code)
                         && string.Equals(code.Trim(), normalizedCode, StringComparison.OrdinalIgnoreCase);
                 })
-                .Select(MapCustomerInvoice)
+                .Select(MapCustomerInvoiceRow)
                 .Where(invoice => invoice != null)
                 .Select(invoice => invoice!)
-                .Where(invoice => invoice.Outstanding > 0)
-                .OrderByDescending(invoice => invoice.DocDate, StringComparer.OrdinalIgnoreCase)
-                .ThenByDescending(invoice => invoice.DocNo, StringComparer.OrdinalIgnoreCase)
                 .ToList();
+
+            var due = mapped
+                .Where(i => i.Outstanding > 0)
+                .OrderByDescending(i => i.DocDate, StringComparer.OrdinalIgnoreCase)
+                .ThenByDescending(i => i.DocNo, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            var history = mapped
+                .Where(i => i.Outstanding <= 0 && i.PaymentAmt > 0)
+                .OrderByDescending(i => i.DocDate, StringComparer.OrdinalIgnoreCase)
+                .ThenByDescending(i => i.DocNo, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            return new SqlAccountStudentInvoicesDto(due, history);
         }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "SQL Account customer invoice lookup failed for {Code}", normalizedCode);
-            return [];
+            return new SqlAccountStudentInvoicesDto([], []);
         }
     }
 
@@ -478,28 +503,44 @@ public class SqlAccountService
         return [];
     }
 
-    private static SqlAccountOutstandingInvoiceDto? MapCustomerInvoice(JsonElement invoice)
+    private static SqlAccountOutstandingInvoiceDto? MapCustomerInvoiceRow(JsonElement invoice)
     {
         if (ParseBool(invoice, "cancelled"))
             return null;
 
+        var docAmt = ParseDecimal(GetString(invoice, "docamt"));
+        var paymentAmt = ParseDecimal(GetString(invoice, "paymentamt"));
         var outstanding = ParseDecimal(GetString(invoice, "outstanding"));
-        if (outstanding <= 0)
-            return null;
+        if (GetString(invoice, "outstanding") is null)
+            outstanding = docAmt - paymentAmt;
+        if (outstanding < 0)
+            outstanding = 0;
 
         var docKeyText = GetString(invoice, "dockey");
         if (!int.TryParse(docKeyText, out var docKey))
             return null;
+
+        int? status = null;
+        var statusText = GetString(invoice, "status");
+        if (int.TryParse(statusText, out var parsedStatus))
+            status = parsedStatus;
 
         return new SqlAccountOutstandingInvoiceDto(
             docKey,
             GetString(invoice, "docno") ?? string.Empty,
             GetString(invoice, "docdate"),
             GetString(invoice, "duedate"),
-            ParseDecimal(GetString(invoice, "docamt")),
-            ParseDecimal(GetString(invoice, "paymentamt")),
+            docAmt,
+            paymentAmt,
             outstanding,
-            GetString(invoice, "description"));
+            GetString(invoice, "description"),
+            status);
+    }
+
+    private static SqlAccountOutstandingInvoiceDto? MapCustomerInvoice(JsonElement invoice)
+    {
+        var mapped = MapCustomerInvoiceRow(invoice);
+        return mapped is { Outstanding: > 0 } ? mapped : null;
     }
 
     private static decimal ParseDecimal(string? value)

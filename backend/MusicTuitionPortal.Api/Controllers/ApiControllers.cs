@@ -330,19 +330,38 @@ public class StudentsController : ControllerBase
         var invoices = await _parentService.GetOutstandingInvoicesForEmailAsync(email, cancellationToken);
         return Ok(new
         {
-            invoices = invoices.Select(i => new
-            {
-                docKey = i.DocKey,
-                docNo = i.DocNo,
-                docDate = i.DocDate,
-                dueDate = i.DueDate,
-                docAmt = i.DocAmt,
-                paymentAmt = i.PaymentAmt,
-                outstanding = i.Outstanding,
-                description = i.Description,
-            }),
+            invoices = invoices.Select(MapStudentInvoice).ToList(),
         });
     }
+
+    [HttpGet("me/invoices")]
+    [Authorize(Roles = "Student")]
+    public async Task<IActionResult> GetMyInvoices(CancellationToken cancellationToken)
+    {
+        var email = User.FindFirst(ClaimTypes.Email)?.Value;
+        if (string.IsNullOrWhiteSpace(email))
+            return Unauthorized(new { message = "Email not found in token." });
+
+        var bundle = await _parentService.GetStudentInvoicesForEmailAsync(email, cancellationToken);
+        return Ok(new
+        {
+            due = bundle.Due.Select(MapStudentInvoice).ToList(),
+            history = bundle.History.Select(MapStudentInvoice).ToList(),
+        });
+    }
+
+    private static object MapStudentInvoice(SqlAccountOutstandingInvoiceDto i) => new
+    {
+        docKey = i.DocKey,
+        docNo = i.DocNo,
+        docDate = i.DocDate,
+        dueDate = i.DueDate,
+        docAmt = i.DocAmt,
+        paymentAmt = i.PaymentAmt,
+        outstanding = i.Outstanding,
+        description = i.Description,
+        status = i.Status,
+    };
 
     [HttpGet("me/calendar-events")]
     [Authorize(Roles = "Student")]
@@ -573,6 +592,7 @@ public class ParentsController : ControllerBase
                 paymentAmt = i.PaymentAmt,
                 outstanding = i.Outstanding,
                 description = i.Description,
+                status = i.Status,
             }),
         });
     }

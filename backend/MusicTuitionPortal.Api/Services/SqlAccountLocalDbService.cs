@@ -94,6 +94,70 @@ public class SqlAccountLocalDbService
         }
     }
 
+    public async Task<IReadOnlyList<SqlAccountOutstandingInvoiceDto>> GetCustomerInvoicesForCodeAsync(
+        string customerCode,
+        CancellationToken cancellationToken = default)
+    {
+        var bundle = await GetCustomerInvoiceBundleForCodeAsync(customerCode, cancellationToken);
+        return bundle.Due;
+    }
+
+    public async Task<SqlAccountStudentInvoicesDto> GetCustomerInvoiceBundleForCodeAsync(
+        string customerCode,
+        CancellationToken cancellationToken = default)
+    {
+        if (!CanReadLocalDb || string.IsNullOrWhiteSpace(customerCode))
+            return new SqlAccountStudentInvoicesDto([], []);
+
+        try
+        {
+            await using var connection = OpenConnection();
+            await connection.OpenAsync(cancellationToken);
+
+            const string sql = """
+                SELECT DOCKEY, DOCNO, DOCDATE, DUEDATE, DOCAMT, PAYMENTAMT, DESCRIPTION, STATUS, CANCELLED
+                FROM AR_IV
+                WHERE TRIM(CODE) = @code
+                  AND (CANCELLED IS NULL OR CANCELLED = FALSE)
+                ORDER BY DOCDATE DESC, DOCNO DESC
+                """;
+
+            var due = new List<SqlAccountOutstandingInvoiceDto>();
+            var history = new List<SqlAccountOutstandingInvoiceDto>();
+            await using var command = new FbCommand(sql, connection);
+            command.Parameters.AddWithValue("@code", customerCode.Trim());
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                var docAmt = ReadDecimal(reader, "DOCAMT");
+                var paymentAmt = ReadDecimal(reader, "PAYMENTAMT");
+                var outstanding = docAmt - paymentAmt;
+                var dto = new SqlAccountOutstandingInvoiceDto(
+                    Convert.ToInt32(reader["DOCKEY"]),
+                    ReadString(reader, "DOCNO") ?? string.Empty,
+                    FormatDate(ReadValue(reader, "DOCDATE")),
+                    FormatDate(ReadValue(reader, "DUEDATE")),
+                    docAmt,
+                    paymentAmt,
+                    outstanding < 0 ? 0 : outstanding,
+                    ReadString(reader, "DESCRIPTION"),
+                    ReadNullableInt(reader, "STATUS"));
+
+                if (outstanding > 0)
+                    due.Add(dto);
+                else if (paymentAmt > 0)
+                    history.Add(dto);
+            }
+
+            return new SqlAccountStudentInvoicesDto(due, history);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Local SQL Account AR_IV read failed for {Code}", customerCode);
+            return new SqlAccountStudentInvoicesDto([], []);
+        }
+    }
+
     public async Task<IReadOnlyList<SqlAccountParentDto>> GetParentChildrenAsync(
         CancellationToken cancellationToken = default)
     {
@@ -1085,6 +1149,58 @@ public class SqlAccountLocalDbService
         {
             var ordinal = reader.GetOrdinal(column);
             return reader.IsDBNull(ordinal) ? null : reader.GetString(ordinal).Trim();
+        }
+        catch (IndexOutOfRangeException)
+        {
+            return null;
+        }
+    }
+
+    private static decimal ReadDecimal(FbDataReader reader, string column)
+    {
+        try
+        {
+            var ordinal = reader.GetOrdinal(column);
+            if (reader.IsDBNull(ordinal))
+                return 0m;
+
+            return reader.GetValue(ordinal) switch
+            {
+                decimal value => value,
+                double value => (decimal)value,
+                float value => (decimal)value,
+                int value => value,
+                long value => value,
+                string value when decimal.TryParse(
+                    value,
+                    System.Globalization.NumberStyles.Number,
+                    System.Globalization.CultureInfo.InvariantCulture,
+                    out var parsed) => parsed,
+                _ => 0m
+            };
+        }
+        catch (IndexOutOfRangeException)
+        {
+            return 0m;
+        }
+    }
+
+    private static int? ReadNullableInt(FbDataReader reader, string column)
+    {
+        try
+        {
+            var ordinal = reader.GetOrdinal(column);
+            if (reader.IsDBNull(ordinal))
+                return null;
+
+            return reader.GetValue(ordinal) switch
+            {
+                int value => value,
+                short value => value,
+                long value => (int)value,
+                string value when int.TryParse(value, out var parsed) => parsed,
+                _ => null
+            };
         }
         catch (IndexOutOfRangeException)
         {

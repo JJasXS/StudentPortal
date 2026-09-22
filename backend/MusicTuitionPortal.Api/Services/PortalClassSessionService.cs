@@ -434,7 +434,9 @@ public class PortalClassSessionService
             .ThenInclude(c => c.TeacherUser)
             .ToListAsync(cancellationToken);
 
-        var linkByItem = links.ToDictionary(l => l.ItemCode, l => l, StringComparer.OrdinalIgnoreCase);
+        var linkByItem = links
+            .GroupBy(l => l.ItemCode, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
         var classes = await _context.Classes
             .AsNoTracking()
             .Include(c => c.Course)
@@ -442,16 +444,25 @@ public class PortalClassSessionService
             .Where(c => c.IsActive)
             .ToListAsync(cancellationToken);
 
-        var teacherUserIdByName = await _context.Users
+        var portalTeachers = await _context.Users
             .AsNoTracking()
             .Where(u => u.Role == Roles.Teacher && u.IsActive)
-            .ToDictionaryAsync(u => u.FullName.Trim(), u => u.Id, StringComparer.OrdinalIgnoreCase, cancellationToken);
+            .ToListAsync(cancellationToken);
+
+        var teacherUserIdByName = new Dictionary<string, Guid>(StringComparer.OrdinalIgnoreCase);
+        var portalByEmail = new Dictionary<string, Guid>(StringComparer.OrdinalIgnoreCase);
+        foreach (var u in portalTeachers)
+        {
+            var name = u.FullName?.Trim();
+            if (!string.IsNullOrWhiteSpace(name) && !teacherUserIdByName.ContainsKey(name))
+                teacherUserIdByName[name] = u.Id;
+
+            var email = u.Email?.Trim().ToLowerInvariant();
+            if (!string.IsNullOrWhiteSpace(email) && !portalByEmail.ContainsKey(email))
+                portalByEmail[email] = u.Id;
+        }
 
         var erpTeachers = await _localDb.GetStaffTeachersAsync(cancellationToken);
-        var portalByEmail = await _context.Users
-            .AsNoTracking()
-            .Where(u => u.Role == Roles.Teacher && u.IsActive)
-            .ToDictionaryAsync(u => u.Email.Trim().ToLowerInvariant(), u => u.Id, cancellationToken);
 
         foreach (var erp in erpTeachers)
         {
