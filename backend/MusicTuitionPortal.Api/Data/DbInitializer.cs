@@ -734,6 +734,7 @@ public static class DbInitializer
         }
 
         await EnsureDemoAuditLogsAsync(context);
+        await RemapLegacyDemoClassIdsAsync(context, scope.ServiceProvider);
         await SyncSyUserTeachersAsync(context, scope.ServiceProvider);
         await EnsureTestTeacherDemoDataAsync(context, scope.ServiceProvider);
     }
@@ -1304,6 +1305,106 @@ public static class DbInitializer
     }
 
     /// <summary>
+    /// Replace repeating demo class GUIDs (55555555-…) with unique stable ids used by seed/sync.
+    /// </summary>
+    private static async Task RemapLegacyDemoClassIdsAsync(AppDbContext context, IServiceProvider serviceProvider)
+    {
+        var pairs = new (Guid OldId, Guid NewId)[]
+        {
+            (Guid.Parse("55555555-5555-5555-5555-555555000001"), Guid.Parse("c1a55e01-7ead-4c1a-9f01-d001a0000001")),
+            (Guid.Parse("55555555-5555-5555-5555-555555000002"), Guid.Parse("c1a55e01-7ead-4c1a-9f01-d001a0000002")),
+            (Guid.Parse("55555555-5555-5555-5555-555555000003"), Guid.Parse("c1a55e01-7ead-4c1a-9f01-d001a0000003")),
+            (Guid.Parse("55555555-5555-5555-5555-555555000004"), Guid.Parse("c1a55e01-7ead-4c1a-9f01-d001a0000004")),
+            (Guid.Parse("55555555-5555-5555-5555-555555000005"), Guid.Parse("c1a55e01-7ead-4c1a-9f01-d001a0000005")),
+        };
+
+        var remapped = false;
+        foreach (var (oldId, newId) in pairs)
+        {
+            var legacy = await context.Classes.AsNoTracking().FirstOrDefaultAsync(c => c.Id == oldId);
+            if (legacy == null)
+                continue;
+            if (await context.Classes.AnyAsync(c => c.Id == newId))
+                continue;
+
+            context.Classes.Add(new MusicClass
+            {
+                Id = newId,
+                CourseId = legacy.CourseId,
+                TeacherUserId = legacy.TeacherUserId,
+                ClassName = legacy.ClassName,
+                DayOfWeek = legacy.DayOfWeek,
+                StartTime = legacy.StartTime,
+                EndTime = legacy.EndTime,
+                MaxStudents = legacy.MaxStudents,
+                Location = legacy.Location,
+                IsActive = legacy.IsActive,
+                StartDate = legacy.StartDate,
+                EndDate = legacy.EndDate,
+                CreatedAt = legacy.CreatedAt,
+                UpdatedAt = DateTime.UtcNow,
+            });
+            await context.SaveChangesAsync();
+
+            await context.Enrollments
+                .Where(e => e.ClassId == oldId)
+                .ExecuteUpdateAsync(setters => setters.SetProperty(e => e.ClassId, newId));
+            await context.ClassSessions
+                .Where(session => session.ClassId == oldId)
+                .ExecuteUpdateAsync(setters => setters.SetProperty(session => session.ClassId, newId));
+            await context.ClassSessionChangeHistories
+                .Where(h => h.ClassId == oldId)
+                .ExecuteUpdateAsync(setters => setters.SetProperty(h => h.ClassId, newId));
+            await context.ItemCodeClassLinks
+                .Where(l => l.PortalClassId == oldId)
+                .ExecuteUpdateAsync(setters => setters.SetProperty(l => l.PortalClassId, newId));
+
+            var oldEntity = await context.Classes.FindAsync(oldId);
+            if (oldEntity != null)
+                context.Classes.Remove(oldEntity);
+            await context.SaveChangesAsync();
+            remapped = true;
+        }
+
+        if (!remapped)
+            return;
+
+        try
+        {
+            var localDb = serviceProvider.GetRequiredService<SqlAccountLocalDbService>();
+            if (!localDb.CanWriteLocalDb)
+                return;
+            await using var connection = localDb.OpenConnection();
+            await connection.OpenAsync();
+            foreach (var (oldId, newId) in pairs)
+            {
+                await using var cmd = connection.CreateCommand();
+                cmd.CommandText = "UPDATE ClassAssignmentChangeLogs SET CLASSID = @newId WHERE CLASSID = @oldId";
+                var pNew = cmd.CreateParameter();
+                pNew.ParameterName = "@newId";
+                pNew.Value = newId.ToString();
+                cmd.Parameters.Add(pNew);
+                var pOld = cmd.CreateParameter();
+                pOld.ParameterName = "@oldId";
+                pOld.Value = oldId.ToString();
+                cmd.Parameters.Add(pOld);
+                try
+                {
+                    await cmd.ExecuteNonQueryAsync();
+                }
+                catch
+                {
+                    // Table may not exist yet on fresh DBs.
+                }
+            }
+        }
+        catch
+        {
+            // Best-effort; portal EF remap is enough for teacher class URLs.
+        }
+    }
+
+    /// <summary>
     /// Align portal teacher users/classes with SY_USER (name + email) so calendar filter and UDF_CONDUCTEDBY match ERP.
     /// </summary>
     private static async Task SyncSyUserTeachersAsync(AppDbContext context, IServiceProvider serviceProvider)
@@ -1370,7 +1471,10 @@ public static class DbInitializer
                 user.IsActive = true;
             }
 
-            var cls = await context.Classes.FindAsync(demoClassIds[i]);
+            var link = await context.ItemCodeClassLinks.FirstOrDefaultAsync(l => l.ItemCode == itemCodes[i]);
+            var cls = link != null
+                ? await context.Classes.FindAsync(link.PortalClassId)
+                : await context.Classes.FindAsync(demoClassIds[i]);
             if (cls != null)
             {
                 cls.TeacherUserId = user.Id;
@@ -1378,9 +1482,8 @@ public static class DbInitializer
                 cls.DayOfWeek = days[i];
             }
 
-            var link = await context.ItemCodeClassLinks.FirstOrDefaultAsync(l => l.ItemCode == itemCodes[i]);
             if (link != null)
-                link.PortalClassId = demoClassIds[i];
+                link.PortalClassId = cls?.Id ?? demoClassIds[i];
         }
 
         await context.SaveChangesAsync();

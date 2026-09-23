@@ -195,14 +195,12 @@ export default function StudentDashboard() {
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         {summary.map((card) => (
-          <Card key={card.label}>
-            <CardContent className="p-4">
-              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                {card.label}
-              </p>
-              <p className="mt-2 text-2xl font-semibold text-slate-900">{card.value}</p>
-              <p className="mt-0.5 text-xs text-slate-500">{card.hint}</p>
-            </CardContent>
+          <Card key={card.label} className="p-4 sm:p-5">
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+              {card.label}
+            </p>
+            <p className="mt-2 text-2xl font-semibold text-slate-900">{card.value}</p>
+            <p className="mt-0.5 text-xs text-slate-500">{card.hint}</p>
           </Card>
         ))}
       </div>
@@ -222,7 +220,7 @@ export default function StudentDashboard() {
           />
         ) : next ? (
           <Card>
-            <CardContent className="p-4 sm:p-5">
+            <CardContent className="p-4 pt-4 sm:p-5 sm:pt-5">
               <p className="text-lg font-semibold text-slate-900">{next.className ?? 'Class'}</p>
               <div className="mt-2.5 flex flex-wrap gap-x-4 gap-y-1.5 text-sm text-slate-600">
                 {next.teacherName && (

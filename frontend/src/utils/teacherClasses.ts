@@ -54,15 +54,34 @@ export function mergeTeacherClasses(
 
 /** Stable id for ERP teaching groups that are not linked to a portal class row. */
 export function erpTeacherClassId(className: string): string {
-  return `name:${encodeURIComponent(className.trim())}`;
+  return `name:${className.trim()}`;
 }
 
 export function parseErpTeacherClassName(classId: string): string | null {
   if (!classId.startsWith('name:')) return null;
+  const raw = classId.slice(5);
   try {
-    return decodeURIComponent(classId.slice(5));
+    // Tolerate once- or twice-encoded legacy links.
+    let decoded = raw;
+    for (let i = 0; i < 2; i++) {
+      const next = decodeURIComponent(decoded);
+      if (next === decoded) break;
+      decoded = next;
+    }
+    return decoded.trim() || null;
   } catch {
-    return null;
+    return raw.trim() || null;
+  }
+}
+
+/** Normalize route param / stored id so name:… ids compare equal. */
+export function normalizeTeacherClassId(classId: string): string {
+  const name = parseErpTeacherClassName(classId);
+  if (name) return erpTeacherClassId(name);
+  try {
+    return decodeURIComponent(classId);
+  } catch {
+    return classId;
   }
 }
 
@@ -193,4 +212,36 @@ export function findTeacherClass(
 ): ClassItem | null {
   const merged = mergeTeacherClasses(classes, user);
   return merged.find((c) => c.id === classId) ?? null;
+}
+
+/** Distinct student names from ERP calendar for a teacher class (portal or name: id). */
+export function erpStudentsForClass(
+  erpEvents: ErpCalendarEvent[],
+  classItem: Pick<ClassItem, 'id' | 'className'>,
+  user: TeacherUserRef
+): { id: string; name: string }[] {
+  const wantedName = classItem.className.trim().toLowerCase();
+  const wantedId = normalizeTeacherClassId(classItem.id);
+  const names = new Map<string, string>();
+
+  for (const event of erpEvents) {
+    if (!isErpEventForTeacher(event, user)) continue;
+    if (event.status === 'Cancelled') continue;
+    const eventName = event.className?.trim().toLowerCase() ?? '';
+    const eventClassId = event.classId?.trim()
+      ? normalizeTeacherClassId(event.classId)
+      : null;
+    const matches =
+      (eventName && eventName === wantedName) ||
+      (eventClassId != null && eventClassId === wantedId);
+    if (!matches) continue;
+    const name = event.studentName?.trim();
+    if (!name) continue;
+    const key = name.toLowerCase();
+    if (!names.has(key)) names.set(key, name);
+  }
+
+  return [...names.entries()]
+    .sort((a, b) => a[1].localeCompare(b[1], undefined, { sensitivity: 'base' }))
+    .map(([key, name]) => ({ id: `erp:${key}`, name }));
 }

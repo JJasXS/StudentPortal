@@ -9,6 +9,8 @@ interface SlidingTabsProps {
   /** Display text per tab value (defaults to tab string) */
   labels?: Record<string, string>;
   className?: string;
+  /** Shown on the left of the tab list (e.g. back link) */
+  leading?: ReactNode;
   /** Shown on the right (e.g. "5 of 10") */
   trailing?: ReactNode;
 }
@@ -21,6 +23,7 @@ export function SlidingTabs({
   counts,
   labels,
   className,
+  leading,
   trailing,
 }: SlidingTabsProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -45,6 +48,11 @@ export function SlidingTabs({
   return (
     <div className={cn('w-full border-b border-slate-200 bg-white', className)}>
       <div className="flex items-stretch">
+        {leading != null && (
+          <div className="flex shrink-0 items-center border-r border-slate-100 px-2 sm:px-3">
+            {leading}
+          </div>
+        )}
         <div
           ref={containerRef}
           className="relative flex min-w-0 flex-1 overflow-x-auto"

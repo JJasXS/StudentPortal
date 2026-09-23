@@ -35,6 +35,8 @@ import { lessonNotesForHomework } from '@/utils/homeworkLessonNotes';
 import { getApiErrorMessage } from '@/utils/apiError';
 import {
   buildTeacherClassList,
+  erpStudentsForClass,
+  normalizeTeacherClassId,
   parseErpTeacherClassName,
 } from '@/utils/teacherClasses';
 import type { ClassItem, Enrollment, LessonNote } from '@/types';
@@ -52,6 +54,9 @@ export default function TeacherClassDetailPage() {
   const [homework, setHomework] = useState<PortalHomework[]>([]);
   const [assignments, setAssignments] = useState<PortalAssignment[]>([]);
   const [enrollments, setEnrollments] = useState<Enrollment[]>([]);
+  const [scheduleStudents, setScheduleStudents] = useState<
+    { id: string; name: string; subtitle?: string; status?: string }[]
+  >([]);
   const [loading, setLoading] = useState(true);
   const [createOpen, setCreateOpen] = useState(false);
   const [assignOpen, setAssignOpen] = useState(false);
@@ -75,7 +80,7 @@ export default function TeacherClassDetailPage() {
     if (!user?.id || !classId) return;
     setLoading(true);
     try {
-      const decodedId = decodeURIComponent(classId);
+      const decodedId = normalizeTeacherClassId(decodeURIComponent(classId));
       const isMock = import.meta.env.VITE_USE_MOCK === 'true';
       const [classes, allNotes, allHomework, erpEvents, allEnrollments] = await Promise.all([
         classesApi.getAll().catch(() => []),
@@ -87,8 +92,12 @@ export default function TeacherClassDetailPage() {
         enrollmentsApi.getAll().catch(() => [] as Enrollment[]),
       ]);
       const fromList = buildTeacherClassList(classes, erpEvents, user);
+      const wantedName = parseErpTeacherClassName(decodedId)?.toLowerCase() ?? null;
       const cls =
-        fromList.find((c) => c.id === decodedId) ??
+        fromList.find((c) => normalizeTeacherClassId(c.id) === decodedId) ??
+        (wantedName
+          ? fromList.find((c) => c.className.trim().toLowerCase() === wantedName)
+          : null) ??
         classes.find((c) => c.id === decodedId) ??
         null;
       setClassItem(cls);
@@ -99,8 +108,18 @@ export default function TeacherClassDetailPage() {
         )
       );
       setHomework(allHomework.filter((h) => h.className === className || !className));
-      setEnrollments(
-        cls ? allEnrollments.filter((e) => e.classId === cls.id || e.className === className) : []
+      const portalEnrollments = cls
+        ? allEnrollments.filter((e) => e.classId === cls.id || e.className === className)
+        : [];
+      setEnrollments(portalEnrollments);
+      setScheduleStudents(
+        cls && portalEnrollments.length === 0
+          ? erpStudentsForClass(erpEvents, cls, user).map((s) => ({
+              ...s,
+              subtitle: 'From schedule',
+              status: 'Scheduled',
+            }))
+          : []
       );
       if (className) {
         const classAssignments = await assignmentsApi.getForClass(className).catch(() => []);
@@ -265,7 +284,11 @@ export default function TeacherClassDetailPage() {
   const tabCounts: Partial<Record<ClassWorkspaceTab, number>> = {
     notes: notes.length,
     homework: assignments.length + homework.length,
-    students: enrollments.length || classItem.enrolledCount || 0,
+    students: Math.max(
+      enrollments.length,
+      scheduleStudents.length,
+      classItem.enrolledCount || 0
+    ),
   };
 
   return (
@@ -274,6 +297,11 @@ export default function TeacherClassDetailPage() {
         classItem={classItem}
         onNewNote={() => setCreateOpen(true)}
         onAddHomework={() => setAssignOpen(true)}
+        onViewStudents={() => setTab('students')}
+        onUploadMaterial={() => {
+          setTab('materials');
+          showSuccess('Materials upload will be available soon.');
+        }}
       />
 
       <div className="grid gap-4 xl:grid-cols-[1fr_16rem] xl:items-start">
@@ -318,7 +346,12 @@ export default function TeacherClassDetailPage() {
             {tab === 'students' && (
               <StudentsTab
                 enrollments={enrollments}
-                enrolledCount={classItem.enrolledCount ?? enrollments.length}
+                scheduleStudents={scheduleStudents}
+                enrolledCount={Math.max(
+                  enrollments.length,
+                  scheduleStudents.length,
+                  classItem.enrolledCount ?? 0
+                )}
                 maxStudents={classItem.maxStudents}
               />
             )}
