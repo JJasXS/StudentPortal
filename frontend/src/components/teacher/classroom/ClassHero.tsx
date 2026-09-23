@@ -21,7 +21,6 @@ export function ClassHero({
   onUploadMaterial,
 }: ClassHeroProps) {
   const enrolled = classItem.enrolledCount ?? 0;
-  const max = classItem.maxStudents || 0;
   const location =
     classItem.location && classItem.location !== '—' ? classItem.location : null;
   const [menuOpen, setMenuOpen] = useState(false);
@@ -52,7 +51,7 @@ export function ClassHero({
           <p className="text-sm text-white/80">
             {[
               location,
-              max > 0 ? `${enrolled} / ${max} Students` : enrolled > 0 ? `${enrolled} Students` : null,
+              enrolled > 0 ? `${enrolled} Students` : null,
               classItem.teacherName ? `Teacher: ${classItem.teacherName}` : null,
             ]
               .filter(Boolean)

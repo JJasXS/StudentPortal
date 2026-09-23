@@ -364,7 +364,6 @@ export default function TeacherClassDetailPage() {
                   scheduleStudents.length,
                   classItem.enrolledCount ?? 0
                 )}
-                maxStudents={classItem.maxStudents}
               />
             )}
           </div>

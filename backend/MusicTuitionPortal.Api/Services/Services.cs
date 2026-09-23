@@ -2155,11 +2155,16 @@ public class LessonNoteService
 {
     private readonly AppDbContext _context;
     private readonly PortalHomeworkService _homework;
+    private readonly ParentService _parents;
 
-    public LessonNoteService(AppDbContext context, PortalHomeworkService homework)
+    public LessonNoteService(
+        AppDbContext context,
+        PortalHomeworkService homework,
+        ParentService parents)
     {
         _context = context;
         _homework = homework;
+        _parents = parents;
     }
 
     public async Task<List<LessonNoteDto>> GetAllAsync() =>
@@ -2184,14 +2189,23 @@ public class LessonNoteService
     {
         var homework = await _homework.GetForParentAsync(email, branchName, cancellationToken);
         var homeworkIds = homework.Select(h => h.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var classNames = homework
-            .Select(h => h.ClassName)
-            .Where(c => !string.IsNullOrWhiteSpace(c))
-            .Select(c => c!)
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var classKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var name in homework.Select(h => h.ClassName))
+            AddNormalizedClassKey(classKeys, name);
+
+        var enrollments = await _parents.GetSqlAccountChildEnrollmentsForEmailAsync(
+            email, branchName, cancellationToken);
+        if (enrollments != null)
+        {
+            foreach (var en in enrollments.Enrollments)
+            {
+                AddNormalizedClassKey(classKeys, en.ClassName);
+                AddNormalizedClassKey(classKeys, en.LinkedClassName);
+            }
+        }
+
         var emailNorm = email.Trim();
         var branchNorm = branchName.Trim();
-
         var notes = await _context.LessonNotes
             .Include(n => n.StudentUser)
             .Include(n => n.TeacherUser)
@@ -2199,7 +2213,7 @@ public class LessonNoteService
             .ToListAsync(cancellationToken);
 
         return notes
-            .Where(n => MatchesParentBranch(n, homeworkIds, classNames, emailNorm, branchNorm))
+            .Where(n => MatchesParentBranch(n, homeworkIds, classKeys, emailNorm, branchNorm))
             .Select(Map)
             .OrderByDescending(n => n.CreatedAt)
             .ToList();
@@ -2264,19 +2278,42 @@ public class LessonNoteService
     private static bool MatchesParentBranch(
         LessonNote note,
         HashSet<string> homeworkIds,
-        HashSet<string> classNames,
+        HashSet<string> classKeys,
         string emailNorm,
         string branchNorm)
     {
         if (!string.IsNullOrWhiteSpace(note.HomeworkId) && homeworkIds.Contains(note.HomeworkId))
             return true;
 
-        if (string.IsNullOrWhiteSpace(note.ClassName) || !classNames.Contains(note.ClassName))
+        var noteClassKey = NormalizeClassNameKey(note.ClassName);
+        if (string.IsNullOrEmpty(noteClassKey) || !classKeys.Contains(noteClassKey))
             return false;
 
+        // Class-wide notes (no student target) are visible to everyone enrolled in the class.
         var studentName = note.StudentName?.Trim() ?? string.Empty;
+        if (string.IsNullOrEmpty(studentName))
+            return true;
+
         return string.Equals(studentName, emailNorm, StringComparison.OrdinalIgnoreCase)
             || string.Equals(studentName, branchNorm, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static void AddNormalizedClassKey(HashSet<string> keys, string? className)
+    {
+        var key = NormalizeClassNameKey(className);
+        if (!string.IsNullOrEmpty(key))
+            keys.Add(key);
+    }
+
+    private static string NormalizeClassNameKey(string? className)
+    {
+        if (string.IsNullOrWhiteSpace(className))
+            return string.Empty;
+        var s = className.Trim().ToLowerInvariant();
+        s = s.Replace('\u2013', '-').Replace('\u2014', '-').Replace('\u2212', '-');
+        while (s.Contains("  ", StringComparison.Ordinal))
+            s = s.Replace("  ", " ", StringComparison.Ordinal);
+        return s;
     }
 }
 

@@ -96,18 +96,40 @@ export function isAssignmentAssigned(assignment: PortalAssignment, submission?: 
   return !isAssignmentCompleted(assignment, submission) && !isAssignmentMissing(assignment);
 }
 
+/** Normalize dashes/spaces so "Guitar Ensemble — Grade 5" matches hyphen variants. */
+export function normalizeClassNameKey(name: string): string {
+  return name
+    .trim()
+    .toLowerCase()
+    .replace(/[\u2013\u2014\u2212]/g, '-')
+    .replace(/\s+/g, ' ');
+}
+
+export function enrollmentClassNameKeys(enrollment: SqlAccountChildEnrollment): string[] {
+  return [enrollment.className, enrollment.linkedClassName]
+    .filter((n): n is string => Boolean(n?.trim()))
+    .map(normalizeClassNameKey);
+}
+
+export function classNameMatchesEnrollment(
+  className: string | null | undefined,
+  enrollment: SqlAccountChildEnrollment
+): boolean {
+  if (!className?.trim()) return false;
+  const key = normalizeClassNameKey(className);
+  return enrollmentClassNameKeys(enrollment).includes(key);
+}
+
 export function filterAssignmentsForEnrollment(
   assignments: PortalAssignment[],
   enrollment: SqlAccountChildEnrollment
 ): PortalAssignment[] {
   return assignments.filter(
     (a) =>
-      a.className.toLowerCase() === enrollment.className.toLowerCase() ||
+      classNameMatchesEnrollment(a.className, enrollment) ||
       (a.itemCode &&
         enrollment.itemCode &&
-        a.itemCode.toLowerCase() === enrollment.itemCode.toLowerCase()) ||
-      (enrollment.linkedClassName &&
-        a.className.toLowerCase() === enrollment.linkedClassName.toLowerCase())
+        a.itemCode.toLowerCase() === enrollment.itemCode.toLowerCase())
   );
 }
 

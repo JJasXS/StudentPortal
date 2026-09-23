@@ -16,7 +16,6 @@ export function QuickInfoPanel({
   onViewStudents,
 }: QuickInfoPanelProps) {
   const enrolled = classItem.enrolledCount ?? 0;
-  const max = classItem.maxStudents || 0;
   const location =
     classItem.location && classItem.location !== '—' ? classItem.location : '—';
 
@@ -41,7 +40,7 @@ export function QuickInfoPanel({
           </li>
           <li className="flex items-center gap-2">
             <Users className="h-3.5 w-3.5 text-slate-400" />
-            {max > 0 ? `${enrolled} / ${max} students` : `${enrolled} students`}
+            {enrolled} student{enrolled === 1 ? '' : 's'}
           </li>
         </ul>
       </div>

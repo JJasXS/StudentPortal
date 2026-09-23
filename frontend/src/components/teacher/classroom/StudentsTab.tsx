@@ -14,7 +14,6 @@ interface StudentsTabProps {
   /** ERP / schedule roster when portal enrollments are empty */
   scheduleStudents?: ClassStudentRow[];
   enrolledCount: number;
-  maxStudents: number;
 }
 
 function initials(name: string) {
@@ -37,7 +36,6 @@ export function StudentsTab({
   enrollments,
   scheduleStudents = [],
   enrolledCount,
-  maxStudents,
 }: StudentsTabProps) {
   const rows =
     enrollments.length > 0 ? rowsFromEnrollments(enrollments) : scheduleStudents;
@@ -46,8 +44,7 @@ export function StudentsTab({
   return (
     <div className="space-y-4">
       <p className="text-sm font-medium text-slate-700">
-        Students{' '}
-        {maxStudents > 0 ? `${displayCount} / ${maxStudents}` : `${displayCount}`}
+        {displayCount} student{displayCount === 1 ? '' : 's'}
       </p>
 
       {rows.length === 0 ? (

@@ -10,10 +10,6 @@ interface TeacherClassCardProps {
 
 export function TeacherClassCard({ classItem, className }: TeacherClassCardProps) {
   const enrolled = classItem.enrolledCount ?? 0;
-  const max = classItem.maxStudents || 0;
-  const isFull = max > 0 && enrolled >= max;
-  const nearFull = max > 0 && !isFull && max - enrolled === 1;
-  const pct = max > 0 ? Math.min(100, Math.round((enrolled / max) * 100)) : 0;
   const showCourse =
     Boolean(classItem.courseName) &&
     classItem.courseName!.trim().toLowerCase() !== classItem.className.trim().toLowerCase();
@@ -42,33 +38,10 @@ export function TeacherClassCard({ classItem, className }: TeacherClassCardProps
       </div>
 
       <div className="flex flex-1 flex-col gap-3 px-4 py-3">
-        <div>
-          <div className="flex flex-wrap items-center gap-1.5">
-            <span className="inline-flex items-center gap-1 text-xs font-medium text-slate-700">
-              <Users className="h-3.5 w-3.5 text-slate-400" />
-              {enrolled}
-              {max > 0 ? ` / ${max}` : ''}
-            </span>
-            {isFull && (
-              <span className="rounded bg-slate-800 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white">
-                Full
-              </span>
-            )}
-            {nearFull && (
-              <span className="rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-800 ring-1 ring-amber-200">
-                1 left
-              </span>
-            )}
-          </div>
-          {max > 0 && (
-            <div className="mt-2 h-1 overflow-hidden rounded-full bg-slate-100">
-              <div
-                className={cn('h-full rounded-full', isFull ? 'bg-slate-600' : 'bg-primary-500')}
-                style={{ width: `${pct}%` }}
-              />
-            </div>
-          )}
-        </div>
+        <p className="inline-flex items-center gap-1 text-xs font-medium text-slate-700">
+          <Users className="h-3.5 w-3.5 text-slate-400" />
+          {enrolled} student{enrolled === 1 ? '' : 's'}
+        </p>
 
         <ul className="space-y-1.5 text-xs text-slate-600">
           <li className="flex items-center gap-1.5">

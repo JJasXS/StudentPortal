@@ -115,7 +115,6 @@ export function StreamTab({
   onViewStudents,
 }: StreamTabProps) {
   const enrolled = classItem.enrolledCount ?? 0;
-  const max = classItem.maxStudents || 0;
   const location =
     classItem.location && classItem.location !== '—' ? classItem.location : '—';
 
@@ -136,7 +135,7 @@ export function StreamTab({
               .join(' · ')}
           </p>
           <p className="mt-2 text-sm text-slate-600">
-            {max > 0 ? `${enrolled} / ${max} students` : `${enrolled} students`}
+            {enrolled} student{enrolled === 1 ? '' : 's'}
           </p>
         </InfoCard>
 
