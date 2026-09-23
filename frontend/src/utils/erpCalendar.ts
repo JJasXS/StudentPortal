@@ -37,3 +37,14 @@ export function erpEventToCalendarEvent(
 export function erpEventsInRange(events: ErpCalendarEvent[], start: string, end: string) {
   return events.filter((e) => e.sessionDate >= start && e.sessionDate <= end);
 }
+
+/** Teacher calendar: only sessions conducted by this teacher (not every class they share). */
+export function isErpEventForTeacher(
+  event: ErpCalendarEvent,
+  user: { id: string; fullName?: string }
+): boolean {
+  if (event.teacherUserId && event.teacherUserId === user.id) return true;
+  const name = user.fullName?.trim().toLowerCase();
+  if (!name) return false;
+  return event.teacherName?.trim().toLowerCase() === name;
+}

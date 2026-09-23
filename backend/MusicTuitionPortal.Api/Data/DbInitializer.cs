@@ -1323,11 +1323,11 @@ public static class DbInitializer
         };
         var demoClassIds = new[]
         {
-            Guid.Parse("55555555-5555-5555-5555-555555000001"),
-            Guid.Parse("55555555-5555-5555-5555-555555000002"),
-            Guid.Parse("55555555-5555-5555-5555-555555000003"),
-            Guid.Parse("55555555-5555-5555-5555-555555000004"),
-            Guid.Parse("55555555-5555-5555-5555-555555000005"),
+            Guid.Parse("c1a55e01-7ead-4c1a-9f01-d001a0000001"),
+            Guid.Parse("c1a55e01-7ead-4c1a-9f01-d001a0000002"),
+            Guid.Parse("c1a55e01-7ead-4c1a-9f01-d001a0000003"),
+            Guid.Parse("c1a55e01-7ead-4c1a-9f01-d001a0000004"),
+            Guid.Parse("c1a55e01-7ead-4c1a-9f01-d001a0000005"),
         };
         var days = new[] { "Monday", "Tuesday", "Wednesday", "Thursday", "Friday" };
         var itemCodes = new[] { "TEST-T1", "TEST-T2", "TEST-T3", "TEST-T4", "TEST-T5" };
@@ -1443,19 +1443,18 @@ public static class DbInitializer
         };
         var demoClassIds = new[]
         {
-            Guid.Parse("55555555-5555-5555-5555-555555000001"),
-            Guid.Parse("55555555-5555-5555-5555-555555000002"),
-            Guid.Parse("55555555-5555-5555-5555-555555000003"),
-            Guid.Parse("55555555-5555-5555-5555-555555000004"),
-            Guid.Parse("55555555-5555-5555-5555-555555000005"),
+            Guid.Parse("c1a55e01-7ead-4c1a-9f01-d001a0000001"),
+            Guid.Parse("c1a55e01-7ead-4c1a-9f01-d001a0000002"),
+            Guid.Parse("c1a55e01-7ead-4c1a-9f01-d001a0000003"),
+            Guid.Parse("c1a55e01-7ead-4c1a-9f01-d001a0000004"),
+            Guid.Parse("c1a55e01-7ead-4c1a-9f01-d001a0000005"),
         };
         var days = new[] { "Monday", "Tuesday", "Wednesday", "Thursday", "Friday" };
         var itemCodes = new[] { "TEST-T1", "TEST-T2", "TEST-T3", "TEST-T4", "TEST-T5" };
         var startHours = new[] { (10, 0, 11, 0), (11, 0, 12, 0), (12, 0, 13, 0), (14, 0, 15, 0), (15, 0, 16, 0) };
 
-        var testClassIds = demoClassIds.ToList();
-        if (await context.ItemCodeClassLinks.AnyAsync(l => l.ItemCode == "TEST-T1")
-            && await context.ClassSessions.AnyAsync(s => testClassIds.Contains(s.ClassId)))
+        // Already seeded (legacy 5555… ids or current) — do not duplicate.
+        if (await context.ItemCodeClassLinks.AnyAsync(l => l.ItemCode == "TEST-T1"))
             return;
 
         var count = Math.Min(erpTeachers.Count, demoUserIds.Length);

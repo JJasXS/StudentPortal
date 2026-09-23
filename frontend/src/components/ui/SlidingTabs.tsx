@@ -92,7 +92,7 @@ export function SlidingTabs({
           })}
         </div>
         {trailing != null && (
-          <div className="flex shrink-0 items-center border-l border-slate-100 px-4 text-xs text-slate-500">
+          <div className="flex shrink-0 items-center border-l border-slate-100 px-2 sm:px-3">
             {trailing}
           </div>
         )}

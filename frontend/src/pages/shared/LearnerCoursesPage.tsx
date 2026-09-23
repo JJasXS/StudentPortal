@@ -1,13 +1,13 @@
-import { useMemo } from 'react';
-import { Users } from 'lucide-react';
+import { GraduationCap } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
 import { PageHeader } from '@/components/PageHeader';
+import { StudentClassCard } from '@/components/student/StudentClassCard';
 import { CourseClassLessonNotesExplorer } from '@/components/student/CourseClassLessonNotesExplorer';
-import { ParentChildHomeworkPanel } from '@/components/parent/ParentChildHomeworkPanel';
-import { Card, CardContent } from '@/components/ui/Card';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { SkeletonCard } from '@/components/ui/Skeleton';
 import { useSqlAccountStudent } from '@/hooks/useSqlAccountStudent';
+import { useSqlAccountChildEnrollments } from '@/hooks/useSqlAccountChildEnrollments';
 import { useStudentPortalData } from '@/hooks/useStudentPortalData';
 import { learnerCoursesPath } from '@/utils/learnerPortal';
 
@@ -17,6 +17,10 @@ export default function LearnerCoursesPage() {
   const coursesBasePath = learnerCoursesPath(user?.role);
 
   const { student, loading, hasFetched, error, reload } = useSqlAccountStudent(isLearner);
+  const { enrollments, loading: enrollmentsLoading } = useSqlAccountChildEnrollments(
+    student?.branchName ?? null,
+    isLearner && Boolean(student?.branchName)
+  );
 
   const {
     studentUserId,
@@ -25,42 +29,55 @@ export default function LearnerCoursesPage() {
     error: studentPortalError,
   } = useStudentPortalData(!isLearner);
 
-  const studentLabel = useMemo(
-    () => student?.studentName?.trim() || user?.fullName || 'Student',
-    [student?.studentName, user?.fullName]
-  );
-
   if (isLearner) {
-    const waiting = authLoading || loading || !hasFetched;
+    const waiting = authLoading || loading || !hasFetched || enrollmentsLoading;
 
     return (
-      <div className="mx-auto max-w-3xl space-y-4">
+      <div className="space-y-5">
         <PageHeader
-          title="Assignment"
-          description={`Assignment for ${studentLabel}`}
+          title="My Classes"
+          description="View your classes, learning materials and assignments."
+          actions={
+            <Link
+              to="/student/todo"
+              className="text-sm font-medium text-primary-600 hover:text-primary-700"
+            >
+              Open To Do
+            </Link>
+          }
         />
 
         {waiting ? (
-          <SkeletonCard />
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <SkeletonCard />
+            <SkeletonCard />
+            <SkeletonCard />
+          </div>
         ) : error ? (
           <EmptyState
-            icon={Users}
+            icon={GraduationCap}
             title="Could not load student"
             description={error}
             actions={[{ label: 'Try again', onClick: reload }]}
           />
         ) : !student?.branchName ? (
           <EmptyState
-            icon={Users}
-            title="No student found"
-            description="Sign in with a customer email linked in SQL Account."
+            icon={GraduationCap}
+            title="No classes yet"
+            description="Your enrolled classes will appear here once your account is linked."
+          />
+        ) : enrollments.length === 0 ? (
+          <EmptyState
+            icon={GraduationCap}
+            title="No classes yet"
+            description="Your enrolled classes will appear here."
           />
         ) : (
-          <Card>
-            <CardContent className="p-4">
-              <ParentChildHomeworkPanel branchName={student.branchName} />
-            </CardContent>
-          </Card>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {enrollments.map((en) => (
+              <StudentClassCard key={`${en.docKey}-${en.seq}`} enrollment={en} />
+            ))}
+          </div>
         )}
       </div>
     );

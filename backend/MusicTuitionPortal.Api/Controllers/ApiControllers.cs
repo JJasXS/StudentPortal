@@ -1542,7 +1542,23 @@ public class CalendarController : ControllerBase
     public async Task<IActionResult> GetEvents(CancellationToken cancellationToken)
     {
         var events = await _calendarService.GetEventsAsync(cancellationToken);
+        if (User.IsInRole("Teacher") && !User.IsInRole("Admin"))
+            events = FilterEventsForTeacher(events);
         return Ok(events.Select(Map).ToList());
+    }
+
+    private List<ErpCalendarEventDto> FilterEventsForTeacher(List<ErpCalendarEventDto> events)
+    {
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        var name = User.FindFirstValue(ClaimTypes.Name)?.Trim();
+        Guid? teacherId = Guid.TryParse(userId, out var id) ? id : null;
+
+        return events
+            .Where(e =>
+                (teacherId.HasValue && e.TeacherUserId == teacherId)
+                || (!string.IsNullOrWhiteSpace(name)
+                    && string.Equals(e.TeacherName?.Trim(), name, StringComparison.OrdinalIgnoreCase)))
+            .ToList();
     }
 
     [HttpPost("events/{id}/cancel")]

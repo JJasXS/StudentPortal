@@ -2,7 +2,7 @@ import { cn } from '@/utils/cn';
 import { portalWorkflowStep } from '@/utils/portalLeave';
 import type { PortalLeaveStatus } from '@/types/portal';
 
-const STEPS = [
+const DEFAULT_STEPS = [
   'Parent submits',
   'Admin reviews',
   'Approve / reject',
@@ -13,11 +13,14 @@ const STEPS = [
 interface LeaveWorkflowStepsProps {
   status: PortalLeaveStatus;
   compact?: boolean;
+  /** Override first step label (e.g. "You submit" for students). */
+  submitterLabel?: string;
 }
 
-export function LeaveWorkflowSteps({ status, compact }: LeaveWorkflowStepsProps) {
+export function LeaveWorkflowSteps({ status, compact, submitterLabel }: LeaveWorkflowStepsProps) {
   const current = portalWorkflowStep(status);
   const terminal = status === 'Rejected' || status === 'Approved';
+  const STEPS = [submitterLabel ?? DEFAULT_STEPS[0], ...DEFAULT_STEPS.slice(1)];
 
   return (
     <div className={cn(compact ? 'pb-1' : 'pb-2')}>

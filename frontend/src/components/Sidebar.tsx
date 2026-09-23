@@ -12,6 +12,7 @@ import {
   History,
   CalendarOff,
   GraduationCap,
+  ClipboardList,
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { CentreMarkInline } from '@/components/branding/CentreMark';
@@ -48,10 +49,11 @@ const teacherNav: NavItem[] = [
 
 const learnerNav: NavItem[] = [
   { label: 'Dashboard', path: '/student/dashboard', icon: LayoutDashboard },
+  { label: 'My Classes', path: '/student/courses', icon: GraduationCap },
+  { label: 'To Do', path: '/student/todo', icon: ClipboardList },
   { label: 'Schedule', path: '/student/schedule', icon: CalendarDays },
-  { label: 'Assignment', path: '/student/courses', icon: GraduationCap },
-  { label: 'Leave', path: '/student/leave', icon: CalendarOff },
   { label: 'Announcements', path: '/student/announcements', icon: Megaphone },
+  { label: 'Leave', path: '/student/leave', icon: CalendarOff },
 ];
 
 export const navByRole: Record<Exclude<UserRole, 'Parent'>, NavItem[]> = {
@@ -132,11 +134,10 @@ export default function Sidebar({ role, open, onClose }: SidebarProps) {
             {items.map((item) => {
               const isDashboard =
                 isStudentPortalRole(role) && item.path.endsWith('/dashboard');
-              const isAssignment =
-                isStudentPortalRole(role) && item.path === '/student/courses';
+              const isTodo = isStudentPortalRole(role) && item.path === '/student/todo';
               const showDot =
                 (isDashboard && unreadNotifyCount > 0) ||
-                (isAssignment && pendingHomeworkCount > 0);
+                (isTodo && pendingHomeworkCount > 0);
               const isUserMgmt = item.path === '/admin/students';
 
               return (
@@ -149,20 +150,20 @@ export default function Sidebar({ role, open, onClose }: SidebarProps) {
                         ? isUserManagementPath(location.pathname)
                         : isActive;
                       return cn(
-                        'relative flex min-h-11 items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors',
+                        'relative flex min-h-12 items-center gap-3 rounded-lg px-3 py-3 text-sm font-medium transition-colors',
                         active
                           ? 'bg-primary-50 text-primary-700'
                           : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
                       );
                     }}
                   >
-                    <item.icon className="h-5 w-5 shrink-0" />
+                    <item.icon className="h-[1.125rem] w-[1.125rem] shrink-0" />
                     <span className="min-w-0 truncate">{item.label}</span>
                     {showDot && (
                       <span
                         className="ml-auto h-2 w-2 shrink-0 rounded-full bg-red-500"
                         aria-label={
-                          isAssignment
+                          isTodo
                             ? `${pendingHomeworkCount} pending homework`
                             : `${unreadNotifyCount} unread notifications`
                         }
@@ -178,9 +179,9 @@ export default function Sidebar({ role, open, onClose }: SidebarProps) {
           <button
             type="button"
             onClick={handleLogout}
-            className="flex min-h-11 w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-red-600 transition-colors hover:bg-red-50 hover:text-red-700"
+            className="flex min-h-12 w-full items-center gap-3 rounded-lg px-3 py-3 text-sm font-medium text-red-600 transition-colors hover:bg-red-50 hover:text-red-700"
           >
-            <LogOut className="h-5 w-5 shrink-0" />
+            <LogOut className="h-[1.125rem] w-[1.125rem] shrink-0" />
             Log out
           </button>
         </div>

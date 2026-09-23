@@ -28,8 +28,9 @@ import TeacherAnnouncementsPage from '@/pages/teacher/TeacherAnnouncementsPage';
 import TeacherCalendarPage from '@/pages/teacher/TeacherCalendarPage';
 import TeacherLeavePage from '@/pages/teacher/TeacherLeavePage';
 import StudentDashboard from '@/pages/student/StudentDashboard';
-import StudentHomeworkPage from '@/pages/student/StudentHomeworkPage';
-import StudentHomeworkClassPage from '@/pages/student/StudentHomeworkClassPage';
+import StudentTodoPage from '@/pages/student/StudentTodoPage';
+import StudentAssignmentDetailPage from '@/pages/student/StudentAssignmentDetailPage';
+import StudentClassWorkspacePage from '@/pages/student/StudentClassWorkspacePage';
 import StudentLeavePage from '@/pages/student/StudentLeavePage';
 import LearnerSchedulePage from '@/pages/shared/LearnerSchedulePage';
 import LearnerCoursesPage from '@/pages/shared/LearnerCoursesPage';
@@ -136,12 +137,24 @@ export default function AppRoutes() {
             <Route element={<ParentStudentPathRedirect />}>
               <Route path="/student/dashboard" element={<StudentDashboard />} />
               <Route path="/student/schedule" element={<LearnerSchedulePage />} />
+              <Route path="/student/todo" element={<StudentTodoPage />} />
+              <Route
+                path="/student/assignments/:assignmentId"
+                element={<StudentAssignmentDetailPage />}
+              />
+              <Route
+                path="/student/classes/:classKey"
+                element={<StudentClassWorkspacePage />}
+              />
               <Route path="/student/courses/:courseId/:classId" element={<LearnerCoursesPage />} />
               <Route path="/student/courses/:courseId" element={<LearnerCoursesPage />} />
               <Route path="/student/courses" element={<LearnerCoursesPage />} />
               <Route path="/student/lesson-notes" element={<LearnerLessonNotesPage />} />
-              <Route path="/student/homework" element={<StudentHomeworkPage />} />
-              <Route path="/student/homework/:classId" element={<StudentHomeworkClassPage />} />
+              <Route path="/student/homework" element={<Navigate to="/student/todo" replace />} />
+              <Route
+                path="/student/homework/:classId"
+                element={<Navigate to="/student/todo" replace />}
+              />
               <Route path="/student/leave" element={<StudentLeavePage />} />
               <Route path="/student/announcements" element={<StudentAnnouncementsPage />} />
               <Route

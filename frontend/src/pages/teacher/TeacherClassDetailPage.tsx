@@ -1,19 +1,31 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, Check, Download, Plus } from 'lucide-react';
+import { Download } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { useToast } from '@/context/ToastContext';
-import { PageHeader } from '@/components/PageHeader';
-import { DataTable } from '@/components/ui/DataTable';
-import { SlidingTabs } from '@/components/ui/SlidingTabs';
-import { Card, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input, Label, Textarea } from '@/components/ui/Input';
 import { Modal } from '@/components/ui/Modal';
-import { StatusBadge } from '@/components/ui/StatusBadge';
+import { ClassHero } from '@/components/teacher/classroom/ClassHero';
+import {
+  ClassTabBar,
+  parseClassTab,
+  type ClassWorkspaceTab,
+} from '@/components/teacher/classroom/ClassTabBar';
+import {
+  StreamTab,
+  buildStreamActivities,
+} from '@/components/teacher/classroom/StreamTab';
+import { LessonNotesTab } from '@/components/teacher/classroom/LessonNotesTab';
+import { HomeworkTab } from '@/components/teacher/classroom/HomeworkTab';
+import { MaterialsTab } from '@/components/teacher/classroom/MaterialsTab';
+import { StudentsTab } from '@/components/teacher/classroom/StudentsTab';
+import { QuickInfoPanel } from '@/components/teacher/classroom/QuickInfoPanel';
 import {
   assignmentsApi,
+  calendarApi,
   classesApi,
+  enrollmentsApi,
   homeworkApi,
   lessonNotesApi,
 } from '@/api/resources';
@@ -21,20 +33,17 @@ import { mockLessonNotes } from '@/utils/mockData';
 import { formatDateDDMMYYYY } from '@/utils/dateFormat';
 import { lessonNotesForHomework } from '@/utils/homeworkLessonNotes';
 import { getApiErrorMessage } from '@/utils/apiError';
-import type { ClassItem, LessonNote } from '@/types';
+import {
+  buildTeacherClassList,
+  parseErpTeacherClassName,
+} from '@/utils/teacherClasses';
+import type { ClassItem, Enrollment, LessonNote } from '@/types';
 import type { PortalAssignment, PortalHomework } from '@/types/portal';
-
-type ClassTab = 'notes' | 'homework';
-
-function feedbackLabel(entry: PortalHomework, notes: LessonNote[]): string {
-  const linked = lessonNotesForHomework(entry, notes);
-  return linked.length > 0 ? 'Feedback complete' : 'Pending feedback';
-}
 
 export default function TeacherClassDetailPage() {
   const { classId = '' } = useParams<{ classId: string }>();
   const [searchParams, setSearchParams] = useSearchParams();
-  const tab = (searchParams.get('tab') === 'homework' ? 'homework' : 'notes') as ClassTab;
+  const tab = parseClassTab(searchParams.get('tab'));
   const { user } = useAuth();
   const { success: showSuccess, error: showError } = useToast();
 
@@ -42,6 +51,7 @@ export default function TeacherClassDetailPage() {
   const [notes, setNotes] = useState<LessonNote[]>([]);
   const [homework, setHomework] = useState<PortalHomework[]>([]);
   const [assignments, setAssignments] = useState<PortalAssignment[]>([]);
+  const [enrollments, setEnrollments] = useState<Enrollment[]>([]);
   const [loading, setLoading] = useState(true);
   const [createOpen, setCreateOpen] = useState(false);
   const [assignOpen, setAssignOpen] = useState(false);
@@ -57,29 +67,40 @@ export default function TeacherClassDetailPage() {
   const [saving, setSaving] = useState(false);
   const [statusSaving, setStatusSaving] = useState(false);
 
-  const setTab = (next: ClassTab) => {
-    setSearchParams(next === 'notes' ? {} : { tab: next });
+  const setTab = (next: ClassWorkspaceTab) => {
+    setSearchParams(next === 'stream' ? {} : { tab: next });
   };
 
   const loadData = useCallback(async () => {
     if (!user?.id || !classId) return;
     setLoading(true);
     try {
-      const [classes, allNotes, allHomework] = await Promise.all([
+      const decodedId = decodeURIComponent(classId);
+      const isMock = import.meta.env.VITE_USE_MOCK === 'true';
+      const [classes, allNotes, allHomework, erpEvents, allEnrollments] = await Promise.all([
         classesApi.getAll().catch(() => []),
         lessonNotesApi.getAll().catch(() => mockLessonNotes),
         user.fullName ? homeworkApi.getAll(user.fullName).catch(() => []) : Promise.resolve([]),
+        isMock
+          ? Promise.resolve([] as import('@/types/sqlAccount').ErpCalendarEvent[])
+          : calendarApi.getEvents().catch(() => []),
+        enrollmentsApi.getAll().catch(() => [] as Enrollment[]),
       ]);
-      const cls = classes.find((c) => c.id === classId) ?? null;
+      const fromList = buildTeacherClassList(classes, erpEvents, user);
+      const cls =
+        fromList.find((c) => c.id === decodedId) ??
+        classes.find((c) => c.id === decodedId) ??
+        null;
       setClassItem(cls);
-      const className = cls?.className ?? '';
+      const className = cls?.className ?? parseErpTeacherClassName(decodedId) ?? '';
       setNotes(
         allNotes.filter(
-          (n) => n.teacherUserId === user.id && n.className === className
+          (n) => n.teacherUserId === user.id && (!className || n.className === className)
         )
       );
-      setHomework(
-        allHomework.filter((h) => h.className === className || !className)
+      setHomework(allHomework.filter((h) => h.className === className || !className));
+      setEnrollments(
+        cls ? allEnrollments.filter((e) => e.classId === cls.id || e.className === className) : []
       );
       if (className) {
         const classAssignments = await assignmentsApi.getForClass(className).catch(() => []);
@@ -90,16 +111,11 @@ export default function TeacherClassDetailPage() {
     } finally {
       setLoading(false);
     }
-  }, [classId, user?.id, user?.fullName]);
+  }, [classId, user]);
 
   useEffect(() => {
     void loadData();
   }, [loadData]);
-
-  const sortedNotes = useMemo(
-    () => [...notes].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()),
-    [notes]
-  );
 
   const assignmentTitleById = useMemo(() => {
     const map = new Map<string, string>();
@@ -107,14 +123,15 @@ export default function TeacherClassDetailPage() {
     return map;
   }, [assignments]);
 
+  const streamActivities = useMemo(
+    () => buildStreamActivities(notes, assignments, homework, assignmentTitleById),
+    [notes, assignments, homework, assignmentTitleById]
+  );
+
   const linkedNoteForReview = useMemo(() => {
     if (!reviewEntry) return null;
-    const linked = lessonNotesForHomework(reviewEntry, notes);
-    return linked[0] ?? null;
+    return lessonNotesForHomework(reviewEntry, notes)[0] ?? null;
   }, [reviewEntry, notes]);
-
-  const linkedHomeworkForNote = (note: LessonNote) =>
-    note.homeworkId ? homework.find((h) => h.id === note.homeworkId) ?? null : null;
 
   useEffect(() => {
     if (!reviewEntry) return;
@@ -142,9 +159,8 @@ export default function TeacherClassDetailPage() {
     try {
       const existing = homeworkIdForNote
         ? lessonNotesForHomework(
-            homework.find((h) => h.id === homeworkIdForNote) ?? {
-              id: homeworkIdForNote,
-            } as PortalHomework,
+            homework.find((h) => h.id === homeworkIdForNote) ??
+              ({ id: homeworkIdForNote } as PortalHomework),
             notes
           )[0]
         : null;
@@ -246,200 +262,76 @@ export default function TeacherClassDetailPage() {
     );
   }
 
-  return (
-    <div className="space-y-4">
-      <Link
-        to="/teacher/classes"
-        className="inline-flex items-center gap-1 text-sm font-medium text-primary-600 hover:underline"
-      >
-        <ArrowLeft className="h-4 w-4" />
-        My classes
-      </Link>
+  const tabCounts: Partial<Record<ClassWorkspaceTab, number>> = {
+    notes: notes.length,
+    homework: assignments.length + homework.length,
+    students: enrollments.length || classItem.enrolledCount || 0,
+  };
 
-      <PageHeader
-        title={classItem.className}
-        description={`${classItem.courseName ?? 'Class'} · ${classItem.dayOfWeek} ${classItem.startTime}–${classItem.endTime}`}
-        actions={
-          tab === 'notes' ? (
-            <Button type="button" size="sm" onClick={() => setCreateOpen(true)}>
-              <Plus className="mr-1 h-4 w-4" />
-              New note
-            </Button>
-          ) : (
-            <Button type="button" size="sm" onClick={() => setAssignOpen(true)}>
-              <Plus className="mr-1 h-4 w-4" />
-              Assign homework
-            </Button>
-          )
-        }
+  return (
+    <div className="space-y-5">
+      <ClassHero
+        classItem={classItem}
+        onNewNote={() => setCreateOpen(true)}
+        onAddHomework={() => setAssignOpen(true)}
       />
 
-      <Card>
-        <SlidingTabs
-          tabs={['notes', 'homework'] as const}
-          value={tab}
-          onChange={(v) => setTab(v as ClassTab)}
-          labels={{ notes: 'Lesson notes', homework: 'Homework' }}
-        />
-        <CardContent className="p-0">
-          {tab === 'notes' && (
-            <DataTable
-              embedded
-              data={sortedNotes}
-              emptyMessage="No lesson notes for this class yet."
-              columns={[
-                {
-                  key: 'createdAt',
-                  header: 'Date',
-                  render: (n) => formatDateDDMMYYYY(n.createdAt),
-                },
-                {
-                  key: 'studentName',
-                  header: 'Student',
-                  render: (n) => n.studentName || '—',
-                },
-                {
-                  key: 'noteTitle',
-                  header: 'Title',
-                  render: (n) => {
-                    const linked = linkedHomeworkForNote(n);
-                    return (
-                      <div>
-                        <p>{n.noteTitle}</p>
-                        {linked?.note && (
-                          <p className="mt-1 text-xs text-slate-500">
-                            Student submission: {linked.note}
-                          </p>
-                        )}
-                      </div>
-                    );
-                  },
-                },
-              ]}
-            />
-          )}
-
-          {tab === 'homework' && (
-            <div className="space-y-4 p-4">
-              {assignments.length > 0 && (
-                <div className="space-y-2">
-                  <h3 className="text-sm font-semibold text-slate-900">Assignments</h3>
-                  <ul className="divide-y divide-slate-200 rounded-lg border border-slate-200">
-                    {assignments.map((assignment) => (
-                      <li
-                        key={assignment.id}
-                        className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 text-sm"
-                      >
-                        <div>
-                          <p className="font-medium text-slate-900">{assignment.title}</p>
-                          <p className="text-xs text-slate-500">
-                            Due {formatDateDDMMYYYY(assignment.dueDate)}
-                          </p>
-                        </div>
-                        {assignment.hasSubmission ? (
-                          <StatusBadge
-                            status={assignment.submissionStatus ?? 'Pending'}
-                          />
-                        ) : (
-                          <span className="text-xs text-slate-400">No submission yet</span>
-                        )}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-
-              <DataTable
-                embedded
-                data={homework}
-                emptyMessage="No homework submissions for this class yet."
-                onRowClick={(entry) => setReviewEntry(entry)}
-                columns={[
-                  {
-                    key: 'submittedBy',
-                    header: 'Student',
-                    render: (entry) => entry.submittedBy,
-                  },
-                  {
-                    key: 'assignment',
-                    header: 'Assignment',
-                    render: (entry) =>
-                      entry.assignmentId
-                        ? assignmentTitleById.get(entry.assignmentId) ?? '—'
-                        : 'Free-form',
-                  },
-                  {
-                    key: 'status',
-                    header: 'Status',
-                    render: (entry) => (
-                      <StatusBadge status={entry.status ?? 'Pending'} />
-                    ),
-                  },
-                  {
-                    key: 'tick',
-                    header: '',
-                    colWidth: '2rem',
-                    render: (entry) =>
-                      entry.status === 'Completed' ? (
-                        <Check className="h-4 w-4 text-emerald-600" aria-label="Completed" />
-                      ) : (
-                        '—'
-                      ),
-                  },
-                  {
-                    key: 'feedback',
-                    header: 'Feedback',
-                    render: (entry) => feedbackLabel(entry, notes),
-                  },
-                  {
-                    key: 'url',
-                    header: 'URL',
-                    render: (entry) =>
-                      entry.url ? (
-                        <a
-                          href={entry.url}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="text-sm text-primary-600 hover:underline"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          Link
-                        </a>
-                      ) : (
-                        '—'
-                      ),
-                  },
-                  {
-                    key: 'file',
-                    header: 'File',
-                    render: (entry) =>
-                      entry.hasFile || entry.filePath ? (
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            void handleDownload(entry);
-                          }}
-                          className="inline-flex items-center gap-1 text-sm text-primary-600 hover:underline"
-                        >
-                          <Download className="h-3.5 w-3.5" />
-                          {entry.fileName || 'Download'}
-                        </button>
-                      ) : (
-                        '—'
-                      ),
-                  },
-                  {
-                    key: 'createdAt',
-                    header: 'Submitted',
-                    render: (entry) => formatDateDDMMYYYY(entry.createdAt),
-                  },
-                ]}
+      <div className="grid gap-4 xl:grid-cols-[1fr_16rem] xl:items-start">
+        <div className="min-w-0 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+          <ClassTabBar value={tab} onChange={setTab} counts={tabCounts} />
+          <div className="border-t border-slate-100 p-4 sm:p-5">
+            {tab === 'stream' && (
+              <StreamTab
+                classItem={classItem}
+                activities={streamActivities}
+                onNewNote={() => setCreateOpen(true)}
+                onAddHomework={() => setAssignOpen(true)}
+                onUploadMaterial={() => {
+                  setTab('materials');
+                  showSuccess('Materials upload will be available soon.');
+                }}
+                onViewStudents={() => setTab('students')}
               />
-            </div>
-          )}
-        </CardContent>
-      </Card>
+            )}
+            {tab === 'notes' && (
+              <LessonNotesTab
+                notes={notes}
+                homework={homework}
+                onCreate={() => setCreateOpen(true)}
+              />
+            )}
+            {tab === 'homework' && (
+              <HomeworkTab
+                assignments={assignments}
+                homework={homework}
+                notes={notes}
+                assignmentTitles={assignmentTitleById}
+                onAssign={() => setAssignOpen(true)}
+                onReview={setReviewEntry}
+              />
+            )}
+            {tab === 'materials' && (
+              <MaterialsTab
+                onUploadHint={() => showSuccess('Materials upload will be available soon.')}
+              />
+            )}
+            {tab === 'students' && (
+              <StudentsTab
+                enrollments={enrollments}
+                enrolledCount={classItem.enrolledCount ?? enrollments.length}
+                maxStudents={classItem.maxStudents}
+              />
+            )}
+          </div>
+        </div>
+
+        <QuickInfoPanel
+          classItem={classItem}
+          onNewNote={() => setCreateOpen(true)}
+          onAddHomework={() => setAssignOpen(true)}
+          onViewStudents={() => setTab('students')}
+        />
+      </div>
 
       <Modal
         open={createOpen}
@@ -483,11 +375,7 @@ export default function TeacherClassDetailPage() {
         </div>
       </Modal>
 
-      <Modal
-        open={assignOpen}
-        onClose={() => setAssignOpen(false)}
-        title="Assign homework"
-      >
+      <Modal open={assignOpen} onClose={() => setAssignOpen(false)} title="Assign homework">
         <div className="space-y-3">
           <div className="space-y-1">
             <Label>Title</Label>
@@ -595,33 +483,18 @@ export default function TeacherClassDetailPage() {
 
             <div className="flex flex-wrap items-center gap-2 border-t border-slate-100 pt-4">
               <span className="text-sm font-medium text-slate-700">Review status:</span>
-              <Button
-                type="button"
-                size="sm"
-                variant={reviewEntry.status === 'Completed' ? 'default' : 'outline'}
-                disabled={statusSaving}
-                onClick={() => void handleSetStatus('Completed')}
-              >
-                Completed
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                variant={reviewEntry.status === 'Pending' ? 'default' : 'outline'}
-                disabled={statusSaving}
-                onClick={() => void handleSetStatus('Pending')}
-              >
-                Pending
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                variant={reviewEntry.status === 'Rejected' ? 'default' : 'outline'}
-                disabled={statusSaving}
-                onClick={() => void handleSetStatus('Rejected')}
-              >
-                Rejected
-              </Button>
+              {(['Completed', 'Pending', 'Rejected'] as const).map((status) => (
+                <Button
+                  key={status}
+                  type="button"
+                  size="sm"
+                  variant={reviewEntry.status === status ? 'default' : 'outline'}
+                  disabled={statusSaving}
+                  onClick={() => void handleSetStatus(status)}
+                >
+                  {status}
+                </Button>
+              ))}
             </div>
           </div>
         )}

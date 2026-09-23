@@ -6,7 +6,11 @@ import { MonthCalendar } from '@/components/calendar/MonthCalendar';
 import type { CalendarEvent } from '@/components/calendar/WeekCalendar';
 import { classesApi, calendarApi, classSessionsApi } from '@/api/resources';
 import { mockClasses, mockClassSessions } from '@/utils/mockData';
-import { erpEventToCalendarEvent, erpEventsInRange } from '@/utils/erpCalendar';
+import {
+  erpEventToCalendarEvent,
+  erpEventsInRange,
+  isErpEventForTeacher,
+} from '@/utils/erpCalendar';
 import { generateMockSessions, loadAllSessions } from '@/utils/mockSessionStore';
 import { monthRange, sessionsInRange } from '@/utils/sessionGeneration';
 import { mergeTeacherClasses } from '@/utils/teacherClasses';
@@ -60,15 +64,7 @@ export default function TeacherCalendarPage() {
           calendarApi.getEvents().catch(() => [] as ErpCalendarEvent[]),
         ]);
         setSessions(all.filter((s) => classIds.has(s.classId)));
-        const teacherName = user.fullName?.toLowerCase();
-        setErpEvents(
-          erpAll.filter(
-            (e) =>
-              (e.teacherUserId && e.teacherUserId === user.id) ||
-              (teacherName && e.teacherName?.toLowerCase() === teacherName) ||
-              (e.classId && classIds.has(e.classId))
-          )
-        );
+        setErpEvents(erpAll.filter((e) => isErpEventForTeacher(e, user)));
       });
   }, [user, isMock]);
 

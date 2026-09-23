@@ -1,6 +1,8 @@
 import { SESSION_STATUSES } from '@/utils/constants';
+import { isErpEventForTeacher } from '@/utils/erpCalendar';
 import { mockClasses, mockClassSessions } from '@/utils/mockData';
 import type { ClassItem, ClassSession, User } from '@/types';
+import type { ErpCalendarEvent } from '@/types/sqlAccount';
 
 const SESSION_STATUS_SET = new Set<string>(SESSION_STATUSES);
 
@@ -31,14 +33,148 @@ export function mockClassesForTeacher(user: Pick<User, 'id' | 'email'>): ClassIt
   return mockClasses.filter((c) => c.teacherUserId === key);
 }
 
-export function mergeTeacherClasses(apiClasses: ClassItem[], user: Pick<User, 'id' | 'email'>): ClassItem[] {
+export type TeacherUserRef = Pick<User, 'id' | 'email' | 'fullName'>;
+
+export function mergeTeacherClasses(
+  apiClasses: ClassItem[],
+  user: TeacherUserRef
+): ClassItem[] {
   const key = mockTeacherUserId(user);
+  const name = user.fullName?.trim().toLowerCase();
   const fromApi = apiClasses.filter(
-    (c) => c.teacherUserId === user.id || c.teacherUserId === key
+    (c) =>
+      c.teacherUserId === user.id ||
+      c.teacherUserId === key ||
+      (name != null && name.length > 0 && c.teacherName?.trim().toLowerCase() === name)
   );
   const fromMock = mockClassesForTeacher(user);
   if (fromApi.length >= fromMock.length) return fromApi;
   return fromMock;
+}
+
+/** Stable id for ERP teaching groups that are not linked to a portal class row. */
+export function erpTeacherClassId(className: string): string {
+  return `name:${encodeURIComponent(className.trim())}`;
+}
+
+export function parseErpTeacherClassName(classId: string): string | null {
+  if (!classId.startsWith('name:')) return null;
+  try {
+    return decodeURIComponent(classId.slice(5));
+  } catch {
+    return null;
+  }
+}
+
+function mostCommon(values: string[]): string {
+  if (values.length === 0) return '';
+  const counts = new Map<string, number>();
+  for (const v of values) {
+    counts.set(v, (counts.get(v) ?? 0) + 1);
+  }
+  let best = values[0];
+  let bestCount = 0;
+  for (const [value, count] of counts) {
+    if (count > bestCount) {
+      best = value;
+      bestCount = count;
+    }
+  }
+  return best;
+}
+
+function weekdayLabel(isoDate: string): string {
+  const d = new Date(`${isoDate.slice(0, 10)}T12:00:00`);
+  return d.toLocaleDateString('en-US', { weekday: 'long' });
+}
+
+/**
+ * Portal Classes are sparse; the schedule is driven by ERP occurrences.
+ * Build the teacher's class list from both so My Classes matches the calendar.
+ */
+export function buildTeacherClassList(
+  portalClasses: ClassItem[],
+  erpEvents: ErpCalendarEvent[],
+  user: TeacherUserRef
+): ClassItem[] {
+  const fromPortal = mergeTeacherClasses(portalClasses, user);
+  const byName = new Map(
+    fromPortal.map((c) => [c.className.trim().toLowerCase(), c] as const)
+  );
+  const byId = new Map(fromPortal.map((c) => [c.id, c] as const));
+
+  type Acc = {
+    className: string;
+    courseName?: string | null;
+    classId?: string | null;
+    courseId?: string | null;
+    teacherName?: string | null;
+    teacherUserId?: string | null;
+    days: string[];
+    starts: string[];
+    ends: string[];
+    students: Set<string>;
+  };
+
+  const groups = new Map<string, Acc>();
+
+  for (const event of erpEvents) {
+    if (!isErpEventForTeacher(event, user)) continue;
+    if (event.status === 'Cancelled') continue;
+
+    const nameKey = event.className.trim().toLowerCase();
+    if (!nameKey) continue;
+
+    if (event.classId && byId.has(event.classId)) continue;
+    if (byName.has(nameKey)) continue;
+
+    const groupKey = event.classId?.trim() || nameKey;
+    let acc = groups.get(groupKey);
+    if (!acc) {
+      acc = {
+        className: event.className.trim(),
+        courseName: event.courseName,
+        classId: event.classId,
+        courseId: event.courseId,
+        teacherName: event.teacherName,
+        teacherUserId: event.teacherUserId,
+        days: [],
+        starts: [],
+        ends: [],
+        students: new Set(),
+      };
+      groups.set(groupKey, acc);
+    }
+
+    if (event.sessionDate) acc.days.push(weekdayLabel(event.sessionDate));
+    if (event.startTime) acc.starts.push(event.startTime.slice(0, 5));
+    if (event.endTime) acc.ends.push(event.endTime.slice(0, 5));
+    if (event.studentName?.trim()) acc.students.add(event.studentName.trim().toLowerCase());
+    if (!acc.courseName && event.courseName) acc.courseName = event.courseName;
+  }
+
+  const fromErp: ClassItem[] = [...groups.values()].map((acc) => {
+    const enrolled = acc.students.size;
+    return {
+      id: acc.classId?.trim() || erpTeacherClassId(acc.className),
+      courseId: acc.courseId?.trim() || '',
+      courseName: acc.courseName?.trim() || acc.className,
+      teacherUserId: acc.teacherUserId?.trim() || user.id,
+      teacherName: acc.teacherName?.trim() || user.fullName,
+      className: acc.className,
+      dayOfWeek: mostCommon(acc.days) || '—',
+      startTime: mostCommon(acc.starts) || '—',
+      endTime: mostCommon(acc.ends) || '—',
+      maxStudents: Math.max(8, enrolled),
+      enrolledCount: enrolled,
+      location: '—',
+      isActive: true,
+    };
+  });
+
+  return [...fromPortal, ...fromErp].sort((a, b) =>
+    a.className.localeCompare(b.className, undefined, { sensitivity: 'base' })
+  );
 }
 
 export function mergeClassSessions(apiSessions: ClassSession[], classId: string): ClassSession[] {
@@ -53,7 +189,7 @@ export function mergeClassSessions(apiSessions: ClassSession[], classId: string)
 export function findTeacherClass(
   classes: ClassItem[],
   classId: string,
-  user: Pick<User, 'id' | 'email'>
+  user: TeacherUserRef
 ): ClassItem | null {
   const merged = mergeTeacherClasses(classes, user);
   return merged.find((c) => c.id === classId) ?? null;

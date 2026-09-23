@@ -18,8 +18,8 @@ export default function Navbar({ onMenuClick }: NavbarProps) {
     : 'Admin Dashboard';
 
   return (
-    <header className="sticky top-0 z-30 flex h-14 min-w-0 items-center justify-between gap-2 border-b border-slate-200 bg-white px-3 sm:h-16 sm:px-4 lg:px-6">
-      <div className="flex min-w-0 items-center gap-2 sm:gap-3">
+    <header className="sticky top-0 z-30 flex h-14 min-w-0 items-center justify-between gap-3 border-b border-slate-200 bg-white px-3 sm:h-16 sm:px-5 lg:px-6">
+      <div className="flex min-w-0 items-center gap-2.5 sm:gap-3">
         <button
           type="button"
           onClick={onMenuClick}
@@ -28,7 +28,7 @@ export default function Navbar({ onMenuClick }: NavbarProps) {
         >
           <Menu className="h-5 w-5" />
         </button>
-        <div className="flex min-w-0 items-center gap-2 sm:gap-3">
+        <div className="flex min-w-0 items-center gap-2.5 sm:gap-3">
           {user && (
             <div
               className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[10px] font-bold sm:h-9 sm:w-9 sm:text-xs ${accountAvatarStyle(user.role)}`}
@@ -41,8 +41,8 @@ export default function Navbar({ onMenuClick }: NavbarProps) {
               <p className="truncate text-sm font-semibold text-slate-900 sm:text-base">{adminTitle}</p>
             ) : (
               <>
-                <p className="hidden text-sm text-slate-500 sm:block">Welcome back,</p>
-                <p className="truncate text-sm font-semibold text-slate-900 sm:text-base">
+                <p className="hidden text-xs text-slate-500 sm:block">Welcome back,</p>
+                <p className="truncate text-sm font-semibold leading-tight text-slate-900 sm:text-base">
                   {user?.fullName}
                 </p>
               </>
@@ -50,7 +50,7 @@ export default function Navbar({ onMenuClick }: NavbarProps) {
           </div>
         </div>
       </div>
-      <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
+      <div className="flex shrink-0 items-center gap-2 sm:gap-2.5">
         {user?.role && user.role !== 'Parent' && (
           <span className="hidden sm:inline-flex">
             <StatusBadge status={user.role} />
