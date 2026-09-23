@@ -30,10 +30,6 @@ function rowsFromEnrollments(enrollments: Enrollment[]): ClassStudentRow[] {
   return enrollments.map((e) => ({
     id: e.id,
     name: e.studentName || 'Student',
-    subtitle: e.enrollmentDate
-      ? `Enrolled ${new Date(e.enrollmentDate).toLocaleDateString()}`
-      : undefined,
-    status: e.status,
   }));
 }
 

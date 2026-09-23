@@ -114,11 +114,7 @@ export default function TeacherClassDetailPage() {
       setEnrollments(portalEnrollments);
       setScheduleStudents(
         cls && portalEnrollments.length === 0
-          ? erpStudentsForClass(erpEvents, cls, user).map((s) => ({
-              ...s,
-              subtitle: 'From schedule',
-              status: 'Scheduled',
-            }))
+          ? erpStudentsForClass(erpEvents, cls, user)
           : []
       );
       if (className) {
