@@ -24,6 +24,7 @@ import { QuickInfoPanel } from '@/components/teacher/classroom/QuickInfoPanel';
 import {
   assignmentsApi,
   calendarApi,
+  classMaterialsApi,
   classesApi,
   enrollmentsApi,
   homeworkApi,
@@ -40,7 +41,7 @@ import {
   parseErpTeacherClassName,
 } from '@/utils/teacherClasses';
 import type { ClassItem, Enrollment, LessonNote } from '@/types';
-import type { PortalAssignment, PortalHomework } from '@/types/portal';
+import type { PortalAssignment, PortalClassMaterial, PortalHomework } from '@/types/portal';
 
 export default function TeacherClassDetailPage() {
   const { classId = '' } = useParams<{ classId: string }>();
@@ -57,6 +58,7 @@ export default function TeacherClassDetailPage() {
   const [scheduleStudents, setScheduleStudents] = useState<
     { id: string; name: string; subtitle?: string; status?: string }[]
   >([]);
+  const [materials, setMaterials] = useState<PortalClassMaterial[]>([]);
   const [loading, setLoading] = useState(true);
   const [createOpen, setCreateOpen] = useState(false);
   const [assignOpen, setAssignOpen] = useState(false);
@@ -118,10 +120,15 @@ export default function TeacherClassDetailPage() {
           : []
       );
       if (className) {
-        const classAssignments = await assignmentsApi.getForClass(className).catch(() => []);
+        const [classAssignments, classMaterials] = await Promise.all([
+          assignmentsApi.getForClass(className).catch(() => []),
+          classMaterialsApi.getForClass(className).catch(() => []),
+        ]);
         setAssignments(classAssignments);
+        setMaterials(classMaterials);
       } else {
         setAssignments([]);
+        setMaterials([]);
       }
     } finally {
       setLoading(false);
@@ -280,11 +287,21 @@ export default function TeacherClassDetailPage() {
   const tabCounts: Partial<Record<ClassWorkspaceTab, number>> = {
     notes: notes.length,
     homework: assignments.length + homework.length,
+    materials: materials.length,
     students: Math.max(
       enrollments.length,
       scheduleStudents.length,
       classItem.enrolledCount || 0
     ),
+  };
+
+  const refreshMaterials = async () => {
+    if (!classItem?.className) {
+      setMaterials([]);
+      return;
+    }
+    const rows = await classMaterialsApi.getForClass(classItem.className).catch(() => []);
+    setMaterials(rows);
   };
 
   return (
@@ -294,10 +311,7 @@ export default function TeacherClassDetailPage() {
         onNewNote={() => setCreateOpen(true)}
         onAddHomework={() => setAssignOpen(true)}
         onViewStudents={() => setTab('students')}
-        onUploadMaterial={() => {
-          setTab('materials');
-          showSuccess('Materials upload will be available soon.');
-        }}
+        onUploadMaterial={() => setTab('materials')}
       />
 
       <div className="grid gap-4 xl:grid-cols-[1fr_16rem] xl:items-start">
@@ -310,10 +324,7 @@ export default function TeacherClassDetailPage() {
                 activities={streamActivities}
                 onNewNote={() => setCreateOpen(true)}
                 onAddHomework={() => setAssignOpen(true)}
-                onUploadMaterial={() => {
-                  setTab('materials');
-                  showSuccess('Materials upload will be available soon.');
-                }}
+                onUploadMaterial={() => setTab('materials')}
                 onViewStudents={() => setTab('students')}
               />
             )}
@@ -336,7 +347,12 @@ export default function TeacherClassDetailPage() {
             )}
             {tab === 'materials' && (
               <MaterialsTab
-                onUploadHint={() => showSuccess('Materials upload will be available soon.')}
+                className={classItem.className}
+                materials={materials}
+                loading={loading}
+                onRefresh={refreshMaterials}
+                onError={showError}
+                onSuccess={showSuccess}
               />
             )}
             {tab === 'students' && (

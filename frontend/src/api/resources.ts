@@ -177,7 +177,7 @@ export const classAssignmentLogsApi = {
       .then((r) => r.data),
 };
 
-import type { PortalHomework, PortalLeaveRequest, PortalAssignment, HomeworkPendingCount } from '@/types/portal';
+import type { PortalHomework, PortalLeaveRequest, PortalAssignment, PortalClassMaterial, HomeworkPendingCount } from '@/types/portal';
 
 export const homeworkApi = {
   getAll: (teacher?: string) =>
@@ -243,6 +243,49 @@ export const assignmentsApi = {
     dueDate: string;
   }) => apiClient.post<PortalAssignment>('/assignments', data).then((r) => r.data),
   remove: (id: string) => apiClient.delete(`/assignments/${id}`),
+};
+
+export const classMaterialsApi = {
+  getForClass: (className: string) =>
+    apiClient
+      .get<PortalClassMaterial[]>('/class-materials', { params: { className } })
+      .then((r) => r.data),
+  getMine: (branchName?: string) =>
+    apiClient
+      .get<PortalClassMaterial[]>('/class-materials/mine', {
+        params: branchName ? { branchName } : undefined,
+      })
+      .then((r) => r.data),
+  upload: (data: { className: string; title: string; file: File }) => {
+    const form = new FormData();
+    form.append('className', data.className);
+    form.append('title', data.title);
+    form.append('file', data.file);
+    return apiClient
+      .post<PortalClassMaterial>('/class-materials', form, {
+        timeout: 300_000,
+      })
+      .then((r) => r.data);
+  },
+  remove: (id: string) => apiClient.delete(`/class-materials/${id}`),
+  getFileBlob: (id: string, download = false) =>
+    apiClient
+      .get<Blob>(`/class-materials/${id}/file`, {
+        params: download ? { download: true } : undefined,
+        responseType: 'blob',
+      })
+      .then((r) => r.data),
+  downloadFile: async (id: string, fileName?: string | null) => {
+    const blob = await classMaterialsApi.getFileBlob(id, true);
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = fileName?.trim() || 'lesson-video';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.URL.revokeObjectURL(url);
+  },
 };
 
 export const leaveApi = {

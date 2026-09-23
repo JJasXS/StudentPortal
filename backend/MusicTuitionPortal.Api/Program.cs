@@ -1,6 +1,7 @@
 using System.Text;
 using FirebirdSql.EntityFrameworkCore.Firebird;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Http.Features;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
@@ -9,6 +10,16 @@ using MusicTuitionPortal.Api.Helpers;
 using MusicTuitionPortal.Api.Services;
 
 var builder = WebApplication.CreateBuilder(args);
+
+builder.WebHost.ConfigureKestrel(options =>
+{
+    options.Limits.MaxRequestBodySize = ClassMaterialFileStorageService.MaxBytes;
+});
+
+builder.Services.Configure<FormOptions>(options =>
+{
+    options.MultipartBodyLengthLimit = ClassMaterialFileStorageService.MaxBytes;
+});
 
 builder.Services.AddControllers()
     .AddJsonOptions(options =>
@@ -71,6 +82,8 @@ builder.Services.AddScoped<PortalClassSessionService>();
 builder.Services.AddScoped<PortalHomeworkService>();
 builder.Services.AddScoped<PortalAssignmentService>();
 builder.Services.AddSingleton<HomeworkFileStorageService>();
+builder.Services.AddSingleton<ClassMaterialFileStorageService>();
+builder.Services.AddScoped<PortalClassMaterialService>();
 builder.Services.AddScoped<PortalLeaveRequestService>();
 builder.Services.AddScoped<PortalAnnouncementService>();
 builder.Services.AddScoped<PortalDashboardNotifyService>();

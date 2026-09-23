@@ -24,6 +24,35 @@ public static class PortalFirebirdSchema
         await EnsurePortalNotifyHiddenTableAsync(connection, cancellationToken);
         await EnsurePortalHomeworkAssignmentColumnsAsync(connection, cancellationToken);
         await EnsurePortalAssignmentsTableAsync(connection, cancellationToken);
+        await EnsurePortalClassMaterialTableAsync(connection, cancellationToken);
+    }
+
+    private static async Task EnsurePortalClassMaterialTableAsync(FbConnection connection, CancellationToken ct)
+    {
+        if (await TableExistsAsync(connection, "PORTAL_CLASS_MATERIAL", ct))
+            return;
+
+        foreach (var sql in new[]
+        {
+            """
+            CREATE TABLE PORTAL_CLASS_MATERIAL (
+                ID VARCHAR(36) NOT NULL PRIMARY KEY,
+                CLASSNAME VARCHAR(200) NOT NULL,
+                TITLE VARCHAR(200) NOT NULL,
+                FILENAME VARCHAR(255) NOT NULL,
+                FILEPATH VARCHAR(500) NOT NULL,
+                CONTENTTYPE VARCHAR(100),
+                UPLOADEDBYUSERID VARCHAR(36) NOT NULL,
+                UPLOADEDBYNAME VARCHAR(200),
+                CREATEDAT TIMESTAMP NOT NULL
+            )
+            """,
+            "CREATE INDEX IX_PORTALCM_CLASS ON PORTAL_CLASS_MATERIAL (CLASSNAME)",
+        })
+        {
+            await using var cmd = new FbCommand(sql, connection);
+            await cmd.ExecuteNonQueryAsync(ct);
+        }
     }
 
     public static async Task EnsurePortalSoLineScheduleTableAsync(FbConnection connection, CancellationToken cancellationToken = default)

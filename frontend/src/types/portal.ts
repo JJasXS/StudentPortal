@@ -42,6 +42,18 @@ export interface PortalAssignment {
   submissionStatus?: string | null;
 }
 
+export interface PortalClassMaterial {
+  id: string;
+  className: string;
+  title: string;
+  fileName: string;
+  contentType?: string | null;
+  uploadedByUserId: string;
+  uploadedByName?: string | null;
+  createdAt: string;
+  hasFile?: boolean;
+}
+
 export interface HomeworkPendingCount {
   total: number;
   byBranch: { branchName: string; pendingCount: number }[];

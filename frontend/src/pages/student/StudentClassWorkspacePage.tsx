@@ -6,18 +6,22 @@ import {
   Calendar,
   CheckCircle2,
   Clock,
+  Download,
   FileText,
   FolderOpen,
   GraduationCap,
   User,
   Users,
+  Video,
 } from 'lucide-react';
 import { SlidingTabs } from '@/components/ui/SlidingTabs';
 import { EmptyState } from '@/components/ui/EmptyState';
+import { Button } from '@/components/ui/Button';
 import { TeacherFeedbackCard } from '@/components/student/TeacherFeedbackCard';
+import { MaterialVideoPlayer } from '@/components/teacher/classroom/MaterialsTab';
 import { useSqlAccountStudent } from '@/hooks/useSqlAccountStudent';
 import { useSqlAccountChildEnrollments } from '@/hooks/useSqlAccountChildEnrollments';
-import { assignmentsApi, homeworkApi, lessonNotesApi } from '@/api/resources';
+import { assignmentsApi, classMaterialsApi, homeworkApi, lessonNotesApi } from '@/api/resources';
 import { formatDateDDMMYYYY } from '@/utils/dateFormat';
 import {
   assignmentWorkStatus,
@@ -28,7 +32,7 @@ import {
   workStatusBadgeClass,
 } from '@/utils/studentLearning';
 import { cn } from '@/utils/cn';
-import type { PortalAssignment, PortalHomework } from '@/types/portal';
+import type { PortalAssignment, PortalClassMaterial, PortalHomework } from '@/types/portal';
 import type { LessonNote } from '@/types';
 
 const TABS = ['stream', 'classwork', 'materials', 'people'] as const;
@@ -52,6 +56,7 @@ export default function StudentClassWorkspacePage() {
   const [assignments, setAssignments] = useState<PortalAssignment[]>([]);
   const [submissions, setSubmissions] = useState<PortalHomework[]>([]);
   const [notes, setNotes] = useState<LessonNote[]>([]);
+  const [materials, setMaterials] = useState<PortalClassMaterial[]>([]);
   const [loading, setLoading] = useState(true);
 
   const decodedKey = decodeURIComponent(classKey);
@@ -68,18 +73,21 @@ export default function StudentClassWorkspacePage() {
     }
     setLoading(true);
     try {
-      const [asg, hw, lessonNotes] = await Promise.all([
+      const [asg, hw, lessonNotes, classMaterials] = await Promise.all([
         assignmentsApi.getMine(student.branchName),
         homeworkApi.getMine(student.branchName),
         lessonNotesApi.getForBranch(student.branchName).catch(() => []),
+        classMaterialsApi.getMine(student.branchName).catch(() => []),
       ]);
       setAssignments(asg);
       setSubmissions(hw);
       setNotes(lessonNotes);
+      setMaterials(classMaterials);
     } catch {
       setAssignments([]);
       setSubmissions([]);
       setNotes([]);
+      setMaterials([]);
     } finally {
       setLoading(false);
     }
@@ -111,6 +119,14 @@ export default function StudentClassWorkspacePage() {
       .map((n) => n!.toLowerCase());
     return notes.filter((n) => n.className && names.includes(n.className.toLowerCase()));
   }, [notes, enrollment]);
+
+  const classVideos = useMemo(() => {
+    if (!enrollment) return [];
+    const names = [enrollment.className, enrollment.linkedClassName]
+      .filter(Boolean)
+      .map((n) => n!.toLowerCase());
+    return materials.filter((m) => names.includes(m.className.toLowerCase()));
+  }, [materials, enrollment]);
 
   const classworkGroups = useMemo(() => {
     const upcoming: PortalAssignment[] = [];
@@ -185,7 +201,7 @@ export default function StudentClassWorkspacePage() {
             materials: 'Materials',
             people: 'People',
           }}
-          counts={{ classwork: classAssignments.length }}
+          counts={{ classwork: classAssignments.length, materials: classVideos.length }}
         />
 
         <div className="border-t border-slate-100 p-4 sm:p-5">
@@ -350,39 +366,91 @@ export default function StudentClassWorkspacePage() {
           )}
 
           {tab === 'materials' && (
-            classNotes.length === 0 ? (
-              <EmptyState
-                icon={FolderOpen}
-                title="No materials yet"
-                description="Lesson notes and practice resources from your teacher will appear here."
-              />
-            ) : (
-              <ul className="grid gap-3 sm:grid-cols-2">
-                {classNotes.map((n) => (
-                  <li
-                    key={n.id}
-                    className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
-                  >
-                    <div className="flex gap-3">
-                      <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary-50 text-primary-700">
-                        <FileText className="h-4 w-4" />
-                      </span>
-                      <div className="min-w-0">
-                        <p className="text-sm font-medium text-slate-900">{n.noteTitle}</p>
-                        <p className="text-xs text-slate-500">
-                          Lesson Notes
-                          {n.teacherName ? ` · ${n.teacherName}` : ''}
-                        </p>
-                        <p className="mt-1 text-xs text-slate-400">
-                          {formatDateDDMMYYYY(n.createdAt)}
-                        </p>
-                        <p className="mt-2 line-clamp-2 text-sm text-slate-600">{n.noteContent}</p>
-                      </div>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            )
+            <div className="space-y-6">
+              <section className="space-y-3">
+                <h3 className="text-sm font-semibold text-slate-900">Lesson videos</h3>
+                {classVideos.length === 0 ? (
+                  <EmptyState
+                    icon={FolderOpen}
+                    title="No videos yet"
+                    description="Lesson videos from your teacher will appear here."
+                    compact
+                  />
+                ) : (
+                  <ul className="space-y-4">
+                    {classVideos.map((m) => (
+                      <li
+                        key={m.id}
+                        className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm"
+                      >
+                        <div className="flex flex-wrap items-start justify-between gap-2 border-b border-slate-100 px-4 py-3">
+                          <div className="min-w-0">
+                            <p className="flex items-center gap-2 text-sm font-semibold text-slate-900">
+                              <Video className="h-4 w-4 shrink-0 text-primary-600" />
+                              <span className="truncate">{m.title}</span>
+                            </p>
+                            <p className="mt-0.5 text-xs text-slate-500">
+                              {formatDateDDMMYYYY(m.createdAt)}
+                              {m.uploadedByName ? ` · ${m.uploadedByName}` : ''}
+                            </p>
+                          </div>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            aria-label="Download video"
+                            onClick={() => void classMaterialsApi.downloadFile(m.id, m.fileName)}
+                          >
+                            <Download className="h-4 w-4" />
+                          </Button>
+                        </div>
+                        <div className="p-4">
+                          <MaterialVideoPlayer materialId={m.id} />
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </section>
+
+              <section className="space-y-3">
+                <h3 className="text-sm font-semibold text-slate-900">Lesson notes</h3>
+                {classNotes.length === 0 ? (
+                  <EmptyState
+                    icon={FileText}
+                    title="No notes yet"
+                    description="Practice notes from your teacher will appear here."
+                    compact
+                  />
+                ) : (
+                  <ul className="grid gap-3 sm:grid-cols-2">
+                    {classNotes.map((n) => (
+                      <li
+                        key={n.id}
+                        className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
+                      >
+                        <div className="flex gap-3">
+                          <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary-50 text-primary-700">
+                            <FileText className="h-4 w-4" />
+                          </span>
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium text-slate-900">{n.noteTitle}</p>
+                            <p className="text-xs text-slate-500">
+                              Lesson Notes
+                              {n.teacherName ? ` · ${n.teacherName}` : ''}
+                            </p>
+                            <p className="mt-1 text-xs text-slate-400">
+                              {formatDateDDMMYYYY(n.createdAt)}
+                            </p>
+                            <p className="mt-2 line-clamp-2 text-sm text-slate-600">{n.noteContent}</p>
+                          </div>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </section>
+            </div>
           )}
 
           {tab === 'people' && (

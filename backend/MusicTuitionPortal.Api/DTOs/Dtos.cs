@@ -425,6 +425,17 @@ public record CreatePortalAssignmentRequest(
     string? Instructions,
     DateTime DueDate);
 
+public record PortalClassMaterialDto(
+    string Id,
+    string ClassName,
+    string Title,
+    string FileName,
+    string? ContentType,
+    Guid UploadedByUserId,
+    string? UploadedByName,
+    DateTime CreatedAt,
+    bool HasFile = true);
+
 public record PortalHomeworkPendingCountDto(string BranchName, int PendingCount);
 
 public record ReplacementOptionDto(string Date, string Time);
