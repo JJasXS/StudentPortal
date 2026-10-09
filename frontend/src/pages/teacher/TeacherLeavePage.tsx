@@ -391,7 +391,7 @@ function TeacherLeaveList({
         }}
         counts={tabCounts}
         trailing={
-          <div className="relative" ref={menuRef}>
+          <div className="relative" ref={menuRef as RefObject<HTMLDivElement>}>
             <button
               type="button"
               onClick={onMenuToggle}

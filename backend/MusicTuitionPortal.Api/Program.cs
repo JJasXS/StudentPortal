@@ -189,9 +189,19 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
+var spaIndex = Path.Combine(app.Environment.ContentRootPath, "wwwroot", "index.html");
+var hasSpa = File.Exists(spaIndex);
+if (hasSpa)
+{
+    app.UseDefaultFiles();
+    app.UseStaticFiles();
+}
+
 app.UseCors("Frontend");
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
+if (hasSpa)
+    app.MapFallbackToFile("index.html");
 
 app.Run();

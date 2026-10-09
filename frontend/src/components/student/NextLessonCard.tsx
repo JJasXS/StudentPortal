@@ -1,10 +1,18 @@
 import { CalendarClock, Clock, MapPin } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/Card';
 import type { NextLessonResult } from '@/utils/nextLesson';
-import type { StudentClassCardData } from '@/components/student/StudentClassCard';
+
+interface NextLessonItem {
+  className: string;
+  courseName?: string;
+  dayOfWeek?: string;
+  startTime?: string;
+  endTime?: string;
+  location?: string;
+}
 
 interface NextLessonCardProps {
-  next: NextLessonResult<StudentClassCardData> | null;
+  next: NextLessonResult<NextLessonItem> | null;
 }
 
 export function NextLessonCard({ next }: NextLessonCardProps) {

@@ -51,7 +51,7 @@ export function buildStreamActivities(
       kind: 'assignment' as const,
       title: 'Homework assigned',
       subtitle: a.title,
-      description: a.instructions,
+      description: a.instructions ?? undefined,
       createdAt: a.dueDate,
       attachmentLabel: `Due ${formatDateDDMMYYYY(a.dueDate)}`,
     })),
